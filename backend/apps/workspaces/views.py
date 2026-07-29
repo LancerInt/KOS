@@ -7,6 +7,7 @@ view; creating/deleting requires ``edit`` access to that workspace.
 """
 from __future__ import annotations
 
+from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -17,7 +18,9 @@ from apps.accounts.models import Role
 from apps.accounts.permissions import IsAdministrator
 
 from .access import can_edit, effective_access
-from .models import WorkspacePermission, WorkspaceProject, WorkspaceRecord, WorkspaceSection
+from .models import (
+    WorkspacePermission, WorkspaceProject, WorkspaceRecord, WorkspaceSection,
+)
 from .serializers import (
     WorkspacePermissionSerializer, WorkspaceProjectSerializer,
     WorkspaceRecordSerializer, WorkspaceSectionSerializer,
@@ -94,9 +97,27 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         _require_edit(self.request.user, serializer.validated_data.get("workspace"))
         serializer.save(created_by=self.request.user)
 
+    def perform_update(self, serializer):
+        _require_edit(self.request.user, serializer.instance.workspace)
+        serializer.save()
+
     def perform_destroy(self, instance):
         _require_edit(self.request.user, instance.workspace)
         instance.delete()
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        """Toggle a project's completed state (closes the duration loop)."""
+        project = self.get_object()
+        _require_edit(request.user, project.workspace)
+        if project.completed_at:
+            project.completed_at = None
+            project.duration_notified_at = None
+            project.reminders_sent = []          # reopened → reminders may fire again
+        else:
+            project.completed_at = timezone.now()
+        project.save(update_fields=["completed_at", "duration_notified_at", "reminders_sent"])
+        return Response(self.get_serializer(project).data)
 
 
 class WorkspaceRecordViewSet(viewsets.ModelViewSet):
@@ -124,6 +145,19 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         _require_edit(self.request.user, instance.workspace)
         instance.delete()
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        """Toggle a record's completed state (closes / reopens its duration)."""
+        record = self.get_object()
+        _require_edit(request.user, record.workspace)
+        if record.completed_at:
+            record.completed_at = None
+            record.duration_notified_at = None
+        else:
+            record.completed_at = timezone.now()
+        record.save(update_fields=["completed_at", "duration_notified_at"])
+        return Response(self.get_serializer(record).data)
 
 
 class WorkspaceSectionViewSet(viewsets.ModelViewSet):

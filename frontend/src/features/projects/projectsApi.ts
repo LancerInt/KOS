@@ -16,6 +16,12 @@ export async function getProject(id: number | string): Promise<ProjectDetail> {
   return data;
 }
 
+/** Quick-create a project from just a name (the server auto-generates its code). */
+export async function createProject(name: string): Promise<ProjectSummary> {
+  const { data } = await api.post<ProjectSummary>("/projects/", { name });
+  return data;
+}
+
 export async function listTemplates(): Promise<ProjectTemplate[]> {
   const { data } = await api.get<Paginated<ProjectTemplate>>("/project-templates/");
   return data.results ?? (data as unknown as ProjectTemplate[]);

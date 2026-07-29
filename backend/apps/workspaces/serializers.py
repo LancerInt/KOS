@@ -5,7 +5,9 @@ import json
 
 from rest_framework import serializers
 
-from .models import WorkspacePermission, WorkspaceProject, WorkspaceRecord, WorkspaceSection
+from .models import (
+    WorkspacePermission, WorkspaceProject, WorkspaceRecord, WorkspaceSection,
+)
 
 
 class WorkspacePermissionSerializer(serializers.ModelSerializer):
@@ -18,6 +20,7 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     section_count = serializers.SerializerMethodField()
     record_count = serializers.SerializerMethodField()
+    duration = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkspaceProject
@@ -25,8 +28,12 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             "id", "workspace", "name",
             "created_by", "created_by_name", "created_at",
             "section_count", "record_count",
+            "start_date", "duration_days", "completed_at", "duration",
         )
-        read_only_fields = ("created_by", "created_at")
+        read_only_fields = ("created_by", "created_at", "completed_at")
+
+    def get_duration(self, obj) -> dict:
+        return obj.duration_state()
 
     def get_created_by_name(self, obj) -> str:
         user = obj.created_by
@@ -39,31 +46,42 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
         return obj.records.count()
 
     def validate(self, attrs):
-        workspace = attrs.get("workspace") or (self.instance.workspace if self.instance else "")
-        name = (attrs.get("name") or "").strip()
+        instance = self.instance
+        workspace = attrs.get("workspace") or (instance.workspace if instance else "")
+        # On a partial update (e.g. setting the duration) name isn't in the
+        # payload — fall back to the existing name instead of erroring.
+        provided_name = "name" in attrs
+        name = (attrs.get("name") if provided_name else (instance.name if instance else "")) or ""
+        name = name.strip()
         if not name:
             raise serializers.ValidationError({"name": "A project name is required."})
         qs = WorkspaceProject.objects.filter(workspace=workspace, name__iexact=name)
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
+        if instance:
+            qs = qs.exclude(pk=instance.pk)
         if qs.exists():
             raise serializers.ValidationError({"name": "A project with this name already exists."})
-        attrs["name"] = name
+        if provided_name:
+            attrs["name"] = name
         return attrs
 
 
 class WorkspaceRecordSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     attachment_name = serializers.SerializerMethodField()
+    duration = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkspaceRecord
         fields = (
             "id", "project", "workspace", "category", "data",
             "attachment", "attachment_name",
+            "start_date", "duration_days", "completed_at", "duration",
             "created_by", "created_by_name", "created_at", "updated_at",
         )
-        read_only_fields = ("workspace", "created_by", "created_at", "updated_at")
+        read_only_fields = ("workspace", "completed_at", "created_by", "created_at", "updated_at")
+
+    def get_duration(self, obj) -> dict:
+        return obj.duration_state()
 
     def get_created_by_name(self, obj) -> str:
         user = obj.created_by

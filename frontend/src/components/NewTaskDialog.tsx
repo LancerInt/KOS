@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Alert,
+  Autocomplete,
   Button,
   Dialog,
   DialogActions,
@@ -11,7 +12,7 @@ import {
   TextField,
 } from "@mui/material";
 
-import { listProjects } from "../features/projects/projectsApi";
+import { listProjects, createProject } from "../features/projects/projectsApi";
 import type { ProjectSummary } from "../features/projects/types";
 import { createTask } from "../features/tasks/tasksApi";
 import type { TaskDetail } from "../features/tasks/types";
@@ -25,7 +26,8 @@ interface Props {
 
 export default function NewTaskDialog({ open, onClose, onCreated, defaultProjectId }: Props) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [project, setProject] = useState<number | "">(defaultProjectId ?? "");
+  const [projectValue, setProjectValue] = useState<ProjectSummary | null>(null);
+  const [projectInput, setProjectInput] = useState("");
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("medium");
   const [dueDate, setDueDate] = useState("");
@@ -34,20 +36,29 @@ export default function NewTaskDialog({ open, onClose, onCreated, defaultProject
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      if (defaultProjectId) setProject(defaultProjectId);
-      else listProjects().then(setProjects).catch(() => setError("Could not load projects."));
+    if (open && !defaultProjectId) {
+      listProjects().then(setProjects).catch(() => setError("Could not load projects."));
     }
   }, [open, defaultProjectId]);
 
+  const hasProject = !!defaultProjectId || !!projectValue || projectInput.trim().length > 0;
+
   const submit = async () => {
-    if (!project) return;
+    if (!title || !hasProject) return;
     setError(null);
     setSaving(true);
     try {
+      // Resolve the project: a chosen one, the default, or a newly-typed name.
+      let projectId = defaultProjectId ?? projectValue?.id;
+      if (!projectId && projectInput.trim()) {
+        const created = await createProject(projectInput.trim());
+        projectId = created.id;
+      }
+      if (!projectId) { setError("Pick a project or type a new name."); return; }
+
       const task = await createTask({
         title,
-        project: Number(project),
+        project: projectId,
         priority,
         due_date: dueDate || undefined,
         deliverable: deliverable || undefined,
@@ -56,6 +67,8 @@ export default function NewTaskDialog({ open, onClose, onCreated, defaultProject
       setTitle("");
       setDueDate("");
       setDeliverable("");
+      setProjectValue(null);
+      setProjectInput("");
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? "Could not create the task.");
     } finally {
@@ -71,11 +84,20 @@ export default function NewTaskDialog({ open, onClose, onCreated, defaultProject
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           <TextField label="Task title" value={title} onChange={(e) => setTitle(e.target.value)} size="small" fullWidth required autoFocus />
           {!defaultProjectId && (
-            <TextField label="Project" select value={project} onChange={(e) => setProject(Number(e.target.value))} size="small" fullWidth required>
-              {projects.map((p) => (
-                <MenuItem key={p.id} value={p.id}>{p.code} · {p.name}</MenuItem>
-              ))}
-            </TextField>
+            <Autocomplete
+              freeSolo
+              options={projects}
+              value={projectValue}
+              inputValue={projectInput}
+              onChange={(_, v) => setProjectValue(typeof v === "string" ? null : v)}
+              onInputChange={(_, v) => setProjectInput(v)}
+              getOptionLabel={(o) => (typeof o === "string" ? o : `${o.code} · ${o.name}`)}
+              isOptionEqualToValue={(o, v) => o.id === v.id}
+              renderInput={(params) => (
+                <TextField {...params} label="Project" size="small" required
+                  helperText="Pick a project, or type a new name to create one" />
+              )}
+            />
           )}
           <Stack direction="row" spacing={2}>
             <TextField label="Priority" select value={priority} onChange={(e) => setPriority(e.target.value)} size="small" fullWidth>
@@ -90,7 +112,7 @@ export default function NewTaskDialog({ open, onClose, onCreated, defaultProject
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} color="inherit">Cancel</Button>
-        <Button onClick={submit} variant="contained" disabled={saving || !title || !project}>
+        <Button onClick={submit} variant="contained" disabled={saving || !title || !hasProject}>
           {saving ? "Creating…" : "Create task"}
         </Button>
       </DialogActions>

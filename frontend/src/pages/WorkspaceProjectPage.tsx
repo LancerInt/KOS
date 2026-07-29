@@ -8,12 +8,12 @@ import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
-
 import { getWorkspace, type WorkspaceCategory } from "../features/workspaces/workspaces";
-import { getProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
-import { listRecords, createRecord, deleteRecord, type WorkspaceRecord } from "../features/workspaces/recordsApi";
+import { getProject, updateProject, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
+import { listRecords, createRecord, deleteRecord, completeRecord, type WorkspaceRecord } from "../features/workspaces/recordsApi";
 import { listSections, createSection, deleteSection, type WorkspaceSection } from "../features/workspaces/sectionsApi";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
+import { DurationChip, DurationPanel, durationText } from "../features/workspaces/durationDisplay";
 import { tokens, monoFont } from "../theme";
 
 // Warm sand section tiles (dark ink text), on the near-white page.
@@ -79,6 +79,7 @@ export default function WorkspaceProjectPage() {
   const selectedRecords = selected ? records.filter((r) => r.category === selected.name) : [];
   const level = accessLevel(mine, ws.key);
   const canEdit = level === "edit";
+  const isEnt = ws.key === "entomology";
 
   const saveSection = async () => {
     const name = newName.trim();
@@ -153,6 +154,20 @@ export default function WorkspaceProjectPage() {
         </Box>
       </Stack>
 
+      {project && (
+        <Box sx={{ mt: 1.5 }}>
+          <DurationPanel
+            duration={project.duration}
+            startDate={project.start_date}
+            completedAt={project.completed_at}
+            canEdit={canEdit}
+            allowSet={true}
+            onSet={(start, days) => updateProject(pid, { start_date: start, duration_days: days }).then(setProject)}
+            onToggleComplete={() => completeProject(pid).then(setProject)}
+          />
+        </Box>
+      )}
+
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 2.5, mb: 1.25 }}>
         <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600 }}>
           Sections
@@ -197,6 +212,7 @@ export default function WorkspaceProjectPage() {
             category={selected}
             records={selectedRecords}
             canEdit={canEdit}
+            showDuration={isEnt}
             onClose={() => setSelected(null)}
             onChanged={load}
             onDeleteSection={canEdit && selected.sectionId ? () => removeSection(selected.sectionId!) : undefined}
@@ -242,37 +258,52 @@ function SectionTag({ name, subtitle, subtleSub, onClick }: {
   );
 }
 
-function CategoryPanel({ project, category, records, canEdit, onClose, onChanged, onDeleteSection }: {
+function CategoryPanel({ project, category, records, canEdit, showDuration, onClose, onChanged, onDeleteSection }: {
   project: number;
   category: WorkspaceCategory;
   records: WorkspaceRecord[];
   canEdit: boolean;
+  showDuration: boolean;
   onClose: () => void;
   onChanged: () => void;
   onDeleteSection?: () => void;
 }) {
   const [form, setForm] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
+  const [durStart, setDurStart] = useState("");
+  const [durDays, setDurDays] = useState("");
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   // The "primary" field is the meaningful one — it's the record's headline and
   // the field required to save (a name or a description).
   const primaryField = category.fields.find((f) => /name|title|description|subject/i.test(f)) ?? category.fields[0];
   const primaryFilled = (form[primaryField] ?? "").trim().length > 0;
+  // With durations on, the real Start-date + Duration inputs replace any
+  // free-text "Duration" field on the category.
+  const textFields = category.fields.filter((f) => !(showDuration && /duration/i.test(f)));
 
   const set = (f: string, v: string) => setForm((s) => ({ ...s, [f]: v }));
-  const resetForm = () => { setForm({}); setFile(null); setAdding(false); };
+  const startAdding = () => {
+    setForm({}); setFile(null);
+    setDurStart(showDuration ? new Date().toISOString().slice(0, 10) : "");
+    setDurDays("");
+    setAdding(true);
+  };
+  const resetForm = () => { setForm({}); setFile(null); setDurStart(""); setDurDays(""); setAdding(false); };
 
   const save = async () => {
     if (!primaryFilled) return;
     setSaving(true);
     try {
       const data: Record<string, string> = {};
-      for (const f of category.fields) {
+      for (const f of textFields) {
         const v = (form[f] ?? "").trim();
         if (v) data[f] = v;
       }
-      await createRecord(project, category.name, data, file);
+      const schedule = showDuration && durStart && Number(durDays) > 0
+        ? { start_date: durStart, duration_days: Number(durDays) }
+        : undefined;
+      await createRecord(project, category.name, data, file, schedule);
       resetForm();
       onChanged();
     } finally {
@@ -281,6 +312,7 @@ function CategoryPanel({ project, category, records, canEdit, onClose, onChanged
   };
 
   const remove = async (id: number) => { await deleteRecord(id); onChanged(); };
+  const toggleComplete = async (id: number) => { await completeRecord(id); onChanged(); };
 
   return (
     <Box sx={{ p: 3 }}>
@@ -293,14 +325,14 @@ function CategoryPanel({ project, category, records, canEdit, onClose, onChanged
       </Stack>
 
       {canEdit && (!adding ? (
-        <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={() => setAdding(true)}
+        <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={startAdding}
           sx={{ alignSelf: "flex-start", mb: 2 }}>
           Add {category.name.toLowerCase()}
         </Button>
       ) : (
         <Paper sx={{ p: 2, borderRadius: "6px", mb: 2, bgcolor: tokens.paper }}>
           <Stack spacing={1.25}>
-            {category.fields.map((f) => {
+            {textFields.map((f) => {
               const multiline = /description|notes|remarks|details|comment/i.test(f);
               return (
                 <TextField key={f} size="small" label={f} value={form[f] ?? ""} onChange={(e) => set(f, e.target.value)}
@@ -308,6 +340,19 @@ function CategoryPanel({ project, category, records, canEdit, onClose, onChanged
                   multiline={multiline} minRows={multiline ? 3 : undefined} />
               );
             })}
+            {showDuration && (
+              <>
+                <Stack direction="row" spacing={1}>
+                  <TextField size="small" type="date" label="Start date" InputLabelProps={{ shrink: true }}
+                    value={durStart} onChange={(e) => setDurStart(e.target.value)} sx={{ flex: 1 }} />
+                  <TextField size="small" type="number" label="Duration (days)" InputLabelProps={{ shrink: true }}
+                    value={durDays} onChange={(e) => setDurDays(e.target.value)} sx={{ width: 140 }} inputProps={{ min: 1 }} />
+                </Stack>
+                <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>
+                  Optional — you'll be notified when this duration is complete.
+                </Typography>
+              </>
+            )}
             {category.allowFiles && (
               <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button component="label" variant="outlined" size="small" startIcon={<AttachFileRoundedIcon sx={{ fontSize: 16 }} />}>
@@ -343,7 +388,8 @@ function CategoryPanel({ project, category, records, canEdit, onClose, onChanged
         <Stack spacing={1}>
           {records.map((r) => {
             const headline = r.data[primaryField] || "Untitled";
-            const rest = category.fields.filter((f) => f !== primaryField).map((f) => r.data[f]).filter(Boolean).slice(0, 3).join(" · ");
+            const rest = textFields.filter((f) => f !== primaryField).map((f) => r.data[f]).filter(Boolean).slice(0, 3).join(" · ");
+            const hasDur = r.duration && r.duration.status !== "none";
             return (
               <Paper key={r.id} sx={{ p: 1.25, borderRadius: "6px" }}>
                 <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
@@ -356,6 +402,19 @@ function CategoryPanel({ project, category, records, canEdit, onClose, onChanged
                         <AttachFileRoundedIcon sx={{ fontSize: 13 }} />
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{r.attachment_name || "Attachment"}</span>
                       </Typography>
+                    )}
+                    {hasDur && (
+                      <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 0.6 }}>
+                        <DurationChip duration={r.duration} />
+                        <Typography sx={{ fontSize: 11, color: tokens.text3 }}>{durationText(r.duration, r.completed_at)}</Typography>
+                        {canEdit && (
+                          <Box component="button" onClick={() => toggleComplete(r.id)}
+                            sx={{ border: "none", background: "transparent", p: 0, cursor: "pointer", fontSize: 11, fontWeight: 600,
+                              color: r.duration.status === "completed" ? tokens.text3 : tokens.kriyaInk }}>
+                            {r.duration.status === "completed" ? "Reopen" : "Mark complete"}
+                          </Box>
+                        )}
+                      </Stack>
                     )}
                     <Typography sx={{ fontSize: 10.5, color: tokens.text3, fontFamily: monoFont, mt: 0.25 }}>
                       {r.created_by_name || "—"} · {r.created_at.slice(0, 10)}

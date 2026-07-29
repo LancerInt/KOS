@@ -24,6 +24,13 @@ class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
     filterset_fields = ["is_read", "event", "requires_acknowledgement"]
 
     def get_queryset(self):
+        # Lazily raise "duration complete" notifications for the viewer's own
+        # Entomology projects, so they surface without a running scheduler.
+        try:
+            from apps.workspaces.duration import sync_due_durations
+            sync_due_durations(self.request.user)
+        except Exception:
+            pass
         return Notification.objects.filter(recipient=self.request.user)
 
     @action(detail=False, methods=["get"])
