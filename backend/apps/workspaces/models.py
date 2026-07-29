@@ -11,8 +11,38 @@ table per category.
 """
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+
+
+def compute_duration_state(start_date, duration_days, completed_at, today=None) -> dict:
+    """Shared status summary for a timed item (project or section step)."""
+    if not start_date or not duration_days:
+        return {"status": "none"}
+    if today is None:
+        today = timezone.localdate()
+    end = start_date + timedelta(days=duration_days)
+    total = duration_days
+    elapsed = max(0, min((today - start_date).days, total))
+    left = (end - today).days
+    if completed_at:
+        status = "completed"
+    elif today >= end:
+        status = "due"           # duration elapsed, awaiting results / completion
+    elif left <= 3:
+        status = "ending_soon"
+    else:
+        status = "active"
+    return {
+        "status": status,
+        "end_date": end.isoformat(),
+        "days_total": total,
+        "days_elapsed": elapsed,
+        "days_left": left,
+    }
 
 
 class WorkspaceProject(models.Model):
@@ -27,6 +57,15 @@ class WorkspaceProject(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Optional timed duration (used by Entomology trials). end_date is derived.
+    start_date = models.DateField(null=True, blank=True)
+    duration_days = models.PositiveIntegerField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    # When the "duration complete" notification was sent — prevents duplicates.
+    duration_notified_at = models.DateTimeField(null=True, blank=True)
+    # Which staged reminders (due-7 / due-1 / due / overdue) have already fired.
+    reminders_sent = models.JSONField(default=list, blank=True)
+
     class Meta:
         ordering = ("-created_at",)
         constraints = [
@@ -35,6 +74,15 @@ class WorkspaceProject(models.Model):
 
     def __str__(self) -> str:
         return f"{self.workspace}/{self.name}"
+
+    @property
+    def end_date(self):
+        if self.start_date and self.duration_days:
+            return self.start_date + timedelta(days=self.duration_days)
+        return None
+
+    def duration_state(self, today=None) -> dict:
+        return compute_duration_state(self.start_date, self.duration_days, self.completed_at, today)
 
 
 class WorkspacePermission(models.Model):
@@ -78,6 +126,11 @@ class WorkspaceRecord(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Optional timed duration for this record (Entomology step-by-step).
+    start_date = models.DateField(null=True, blank=True)
+    duration_days = models.PositiveIntegerField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    duration_notified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ("-created_at",)
@@ -85,6 +138,15 @@ class WorkspaceRecord(models.Model):
 
     def __str__(self) -> str:
         return f"{self.workspace}/{self.category} #{self.pk}"
+
+    @property
+    def end_date(self):
+        if self.start_date and self.duration_days:
+            return self.start_date + timedelta(days=self.duration_days)
+        return None
+
+    def duration_state(self, today=None) -> dict:
+        return compute_duration_state(self.start_date, self.duration_days, self.completed_at, today)
 
 
 class WorkspaceSection(models.Model):

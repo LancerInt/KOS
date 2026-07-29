@@ -8,6 +8,7 @@ Project and membership changes are audited (§7.7).
 """
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 from django.db import transaction
@@ -95,6 +96,16 @@ def build_from_template(data: dict, user) -> Project:
     return project
 
 
+def _unique_project_code(name: str) -> str:
+    """Derive a short unique project code from a name (auto-code for quick create)."""
+    base = re.sub(r"[^A-Z0-9]", "", (name or "").upper())[:6] or "PRJ"
+    code, n = base, 1
+    while Project.objects.filter(code=code).exists():
+        n += 1
+        code = f"{base}{n}"[:30]
+    return code
+
+
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.select_related("portfolio", "owner", "manager", "department").all()
     # Anyone signed in may create a project (and owns what they create); editing or
@@ -115,7 +126,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         owner = serializer.validated_data.get("owner") or self.request.user
-        project = serializer.save(owner=owner)
+        code = (serializer.validated_data.get("code") or "").strip() or _unique_project_code(
+            serializer.validated_data.get("name", "")
+        )
+        project = serializer.save(owner=owner, code=code)
         Membership.objects.get_or_create(
             user=self.request.user, project=project,
             defaults={"project_role": ProjectRole.OWNER, "added_by": self.request.user},

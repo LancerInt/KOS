@@ -14,6 +14,7 @@ import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { listProjects, createProject, deleteProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
+import { DurationChip } from "../features/workspaces/durationDisplay";
 import { tokens, monoFont } from "../theme";
 
 export default function WorkspacePage() {
@@ -25,6 +26,8 @@ export default function WorkspacePage() {
   const [projects, setProjects] = useState<WorkspaceProject[] | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newStart, setNewStart] = useState("");
+  const [newEnd, setNewEnd] = useState("");
   const [newErr, setNewErr] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -49,6 +52,15 @@ export default function WorkspacePage() {
   const builtinCount = ws.categories?.length ?? 0;
   const level = accessLevel(mine, ws.key);
   const canEdit = level === "edit";
+  const hasDuration = true; // project durations are available on every workspace
+
+  const openNew = () => {
+    setNewErr("");
+    setNewName("");
+    setNewStart(new Date().toISOString().slice(0, 10));
+    setNewEnd("");
+    setNewOpen(true);
+  };
 
   const saveProject = async () => {
     const name = newName.trim();
@@ -56,7 +68,13 @@ export default function WorkspacePage() {
     setCreating(true);
     setNewErr("");
     try {
-      const created = await createProject(ws.key, name);
+      const durDays = newStart && newEnd
+        ? Math.round((new Date(newEnd).getTime() - new Date(newStart).getTime()) / 86400000)
+        : 0;
+      const extra = hasDuration && durDays > 0
+        ? { start_date: newStart, duration_days: durDays }
+        : undefined;
+      const created = await createProject(ws.key, name, extra);
       setNewName("");
       setNewOpen(false);
       navigate(`/workspaces/${ws.key}/projects/${created.id}`);
@@ -130,7 +148,7 @@ export default function WorkspacePage() {
           )}
         </Stack>
         {canEdit && (
-          <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={() => { setNewErr(""); setNewOpen(true); }}>
+          <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={openNew}>
             New project
           </Button>
         )}
@@ -147,7 +165,7 @@ export default function WorkspacePage() {
               : "Nothing here yet. Projects will appear once someone adds them."}
           </Typography>
           {canEdit && (
-            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setNewErr(""); setNewOpen(true); }}>
+            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openNew}>
               New project
             </Button>
           )}
@@ -177,6 +195,7 @@ export default function WorkspacePage() {
                   </Tooltip>
                 )}
               </Stack>
+              <DurationChip duration={p.duration} />
               <Stack direction="row" alignItems="center" spacing={1.5}>
                 <Typography sx={{ fontSize: 11.5, color: tokens.text2, fontFamily: monoFont }}>
                   {builtinCount + p.section_count} sections
@@ -204,6 +223,19 @@ export default function WorkspacePage() {
             <TextField size="small" label="Project name" value={newName} autoFocus fullWidth
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") saveProject(); }} />
+            {hasDuration && (
+              <>
+                <Stack direction="row" spacing={1}>
+                  <TextField size="small" type="date" label="Start date" InputLabelProps={{ shrink: true }}
+                    value={newStart} onChange={(e) => setNewStart(e.target.value)} sx={{ flex: 1 }} />
+                  <TextField size="small" type="date" label="End date" InputLabelProps={{ shrink: true }}
+                    value={newEnd} onChange={(e) => setNewEnd(e.target.value)} sx={{ flex: 1 }} />
+                </Stack>
+                <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>
+                  You'll get reminders as the end date nears, and if it's overdue.
+                </Typography>
+              </>
+            )}
             {newErr && <Typography sx={{ fontSize: 12.5, color: tokens.attn }}>{newErr}</Typography>}
           </Stack>
         </DialogContent>

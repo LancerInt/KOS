@@ -79,7 +79,11 @@ export default function NotificationsPage() {
               </Box>
             ) : (
               <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                {n.project && <Button size="small" onClick={() => navigate(`/projects/${n.project}`)}>Open</Button>}
+                {(n.url && n.url !== "/") ? (
+                  <Button size="small" onClick={() => navigate(n.url)}>Open</Button>
+                ) : n.project ? (
+                  <Button size="small" onClick={() => navigate(`/projects/${n.project}`)}>Open</Button>
+                ) : null}
                 {!n.is_read && <Button size="small" color="inherit" onClick={() => markRead(n.id).then(load)}>Mark read</Button>}
                 {n.acknowledged_at && <Chip label="acknowledged" size="small" sx={{ height: 20, fontSize: 10.5, bgcolor: "#E7F5EE", color: "#1F7A4D" }} />}
               </Stack>

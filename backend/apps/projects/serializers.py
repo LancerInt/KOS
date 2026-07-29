@@ -58,7 +58,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "success_criteria", "working_rules", "sprint_enabled",
             "member_count", "my_role", "progress", "created_at",
         )
-        extra_kwargs = {"owner": {"required": False}}
+        extra_kwargs = {"owner": {"required": False}, "code": {"required": False}}
 
     def get_owner_name(self, obj: Project) -> str:
         return (obj.owner.get_full_name() or obj.owner.username) if obj.owner_id else ""
