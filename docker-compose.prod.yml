@@ -38,6 +38,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # AI provider — keys come from your shell/.env, never committed.
+      # Grok is the development default; set AI_PROVIDER=openai to switch.
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-grok}
+      AI_MODEL: ${AI_MODEL:-}
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER}
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
@@ -62,6 +68,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # AI provider — keys come from your shell/.env, never committed.
+      # Grok is the development default; set AI_PROVIDER=openai to switch.
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-grok}
+      AI_MODEL: ${AI_MODEL:-}
     volumes:
       - media:/app/media
     restart: unless-stopped
@@ -78,6 +90,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # AI provider — keys come from your shell/.env, never committed.
+      # Grok is the development default; set AI_PROVIDER=openai to switch.
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-grok}
+      AI_MODEL: ${AI_MODEL:-}
     restart: unless-stopped
     depends_on:
       - backend

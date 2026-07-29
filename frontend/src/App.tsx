@@ -28,6 +28,9 @@ import RegulatoryPage from "./pages/RegulatoryPage";
 import WorkspacePage from "./pages/WorkspacePage";
 import WorkspaceProjectPage from "./pages/WorkspaceProjectPage";
 import WorkspacePermissionsPage from "./pages/WorkspacePermissionsPage";
+import AiSettingsPage from "./pages/AiSettingsPage";
+import MeetingNotesPage from "./pages/MeetingNotesPage";
+import HrToolsPage from "./pages/HrToolsPage";
 
 export default function App() {
   const dispatch = useAppDispatch();
@@ -69,8 +72,11 @@ export default function App() {
             <Route path="/crm" element={<CrmPage />} />
             <Route path="/regulatory" element={<RegulatoryPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/meetings" element={<MeetingNotesPage />} />
+            <Route path="/hr" element={<HrToolsPage />} />
             <Route path="/admin/roles" element={<RolesPage />} />
             <Route path="/admin/permissions" element={<WorkspacePermissionsPage />} />
+            <Route path="/admin/ai" element={<AiSettingsPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/integrations" element={<IntegrationsPage />} />
           </Route>

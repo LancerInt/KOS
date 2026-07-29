@@ -37,6 +37,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # AI provider — keys come from your shell/.env, never committed.
+      # Grok is the development default; set AI_PROVIDER=openai to switch.
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-grok}
+      AI_MODEL: ${AI_MODEL:-}
       DEBUG: "True"
       DJANGO_SECRET_KEY: dev-insecure-secret-change-me
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
@@ -59,6 +65,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # AI provider — keys come from your shell/.env, never committed.
+      # Grok is the development default; set AI_PROVIDER=openai to switch.
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-grok}
+      AI_MODEL: ${AI_MODEL:-}
       DJANGO_SECRET_KEY: dev-insecure-secret-change-me
     volumes:
       - ./backend:/app
@@ -74,6 +86,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # AI provider — keys come from your shell/.env, never committed.
+      # Grok is the development default; set AI_PROVIDER=openai to switch.
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-grok}
+      AI_MODEL: ${AI_MODEL:-}
       DJANGO_SECRET_KEY: dev-insecure-secret-change-me
     volumes:
       - ./backend:/app

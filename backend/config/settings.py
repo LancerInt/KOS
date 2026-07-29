@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "apps.crm",
     "apps.regulatory",
     "apps.workspaces",
+    "apps.ai",
 ]
 
 # Custom user model — set in Phase 0 so it exists before the first migration
@@ -147,6 +148,37 @@ CELERY_BEAT_SCHEDULE = {
     "weekly-retention-purge": {
         "task": "apps.audit.tasks.purge_expired_records",
         "schedule": crontab(hour=3, minute=30, day_of_week="sun"),
+    },
+    # --- AI automation (apps.ai) ---------------------------------------- #
+    # Each scan is individually switchable at runtime from the AI settings
+    # screen, so the schedule stays fixed while the behaviour stays tunable.
+    "ai-overdue-scan": {
+        "task": "apps.ai.tasks.scan_overdue_tasks",
+        "schedule": crontab(minute="*/5"),
+    },
+    "ai-blocked-priority-scan": {
+        "task": "apps.ai.tasks.scan_blocked_and_priority",
+        "schedule": crontab(minute="*/15"),
+    },
+    "ai-missed-milestones": {
+        "task": "apps.ai.tasks.scan_missed_milestones",
+        "schedule": crontab(minute=20, hour="*/4"),
+    },
+    "ai-project-health": {
+        "task": "apps.ai.tasks.scan_project_health",
+        "schedule": crontab(minute=10),  # hourly, offset off the top of the hour
+    },
+    "ai-daily-summaries": {
+        "task": "apps.ai.tasks.generate_daily_summaries",
+        "schedule": crontab(hour=8, minute=0),
+    },
+    "ai-weekly-reports": {
+        "task": "apps.ai.tasks.generate_weekly_reports",
+        "schedule": crontab(hour=8, minute=30, day_of_week="mon"),
+    },
+    "ai-monthly-reports": {
+        "task": "apps.ai.tasks.generate_monthly_reports",
+        "schedule": crontab(hour=9, minute=0, day_of_month="1"),
     },
 }
 
@@ -243,6 +275,27 @@ else:
 
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@kos.local")
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:5173")
+
+# --------------------------------------------------------------------------- #
+# AI provider (apps.ai)
+# --------------------------------------------------------------------------- #
+# Keys are read from the server environment and never stored in the database or
+# returned over the API — the frontend must never hold one. Everything else
+# about the provider (which vendor, which model, temperature, automation
+# toggles) is runtime configuration on the AI settings screen.
+#
+# Groq, Grok (xAI) and OpenAI are all supported — note Groq and Grok are
+# different vendors with confusingly similar names. Switching is a config
+# change only: set AI_PROVIDER plus the matching key. No ERP module changes.
+AI_API_KEYS = {
+    "groq": env("GROQ_API_KEY", default=""),
+    "grok": env("GROK_API_KEY", default=""),
+    "openai": env("OPENAI_API_KEY", default=""),
+}
+
+# Seeds the settings singleton the first time it is created.
+AI_DEFAULT_PROVIDER = env("AI_PROVIDER", default="grok")
+AI_DEFAULT_MODEL = env("AI_MODEL", default="")
 
 # --------------------------------------------------------------------------- #
 # Security (tightened in prod via env) — PRD §31.1, §32

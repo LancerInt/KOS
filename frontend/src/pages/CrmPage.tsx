@@ -10,6 +10,9 @@ import {
   convertToProject, createCustomer, createOpportunity, listCustomers, listOpportunities, updateOpportunity,
   type Customer, type Opportunity, type Stage,
 } from "../features/crm/crmApi";
+import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
+import { useAiPageContext } from "../features/ai/AiContext";
+import { crm as crmAi } from "../features/ai/aiApi";
 import { useAppSelector } from "../hooks";
 import { tokens, monoFont } from "../theme";
 
@@ -44,6 +47,19 @@ export default function CrmPage() {
   const weightedTotal = useMemo(
     () => opps.filter((o) => o.is_open).reduce((s, o) => s + o.weighted_amount, 0),
     [opps],
+  );
+
+  useAiPageContext(
+    useMemo(
+      () => ({
+        label: "CRM & Sales",
+        text:
+          `The user is viewing the CRM pipeline: ${customers.length} customers, ` +
+          `${opps.filter((o) => o.is_open).length} open opportunities, ` +
+          `weighted open pipeline ${Math.round(weightedTotal)} INR.`,
+      }),
+      [customers.length, opps, weightedTotal],
+    ),
   );
 
   return (
@@ -151,6 +167,42 @@ function CustomersTab({ customers }: { customers: Customer[] }) {
             <Typography sx={{ fontFamily: monoFont, fontSize: 12.5, color: tokens.kriyaInk }}>{money("INR", c.pipeline_value)}</Typography>
             <Typography sx={{ fontSize: 10.5, color: tokens.text3 }}>{c.open_opportunities} open</Typography>
           </Box>
+          <AiActionBar>
+            <AiActionButton
+              label="Summary"
+              title={`Customer summary · ${c.name}`}
+              run={() => crmAi.summary(c.id)}
+            />
+            <AiActionButton
+              label="Draft reply"
+              title={`Draft a reply to ${c.name}`}
+              fields={[
+                {
+                  name: "incoming_message",
+                  label: "Their message",
+                  placeholder: "Paste the customer's email or enquiry…",
+                  multiline: true,
+                  required: true,
+                },
+                { name: "intent", label: "What should the reply do? (optional)", placeholder: "e.g. confirm delivery date and offer a call" },
+              ]}
+              run={(v) => crmAi.reply(c.id, v.incoming_message, { intent: v.intent })}
+            />
+            <AiActionButton
+              label="Proposal"
+              title={`Proposal for ${c.name}`}
+              fields={[
+                {
+                  name: "brief",
+                  label: "Brief",
+                  placeholder: "What is being proposed, scope, commercial notes…",
+                  multiline: true,
+                  required: true,
+                },
+              ]}
+              run={(v) => crmAi.proposal(c.id, v.brief)}
+            />
+          </AiActionBar>
         </Paper>
       ))}
       {customers.length === 0 && <Typography sx={{ fontSize: 13.5, color: tokens.text3 }}>No customers yet.</Typography>}

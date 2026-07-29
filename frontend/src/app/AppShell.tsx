@@ -12,12 +12,17 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
+import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
 
 import { useAppDispatch, useAppSelector } from "../hooks";
 import { logout } from "../features/auth/authSlice";
 import { unreadCount } from "../features/notifications/notificationsApi";
 import { WORKSPACES } from "../features/workspaces/workspaces";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
+import { AiProvider } from "../features/ai/AiContext";
+import AiAssistantDrawer from "../features/ai/AiAssistantDrawer";
 import OfflineBanner from "../offline/OfflineBanner";
 import { tokens } from "../theme";
 
@@ -42,6 +47,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/", label: "My Work", icon: <HomeRoundedIcon fontSize="small" /> },
       { to: "/dashboard", label: "Dashboard", icon: <InsightsRoundedIcon fontSize="small" />, capability: "view_reports" },
+      { to: "/meetings", label: "Meetings & Notes", icon: <EventNoteRoundedIcon fontSize="small" /> },
       { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
     ],
   },
@@ -57,8 +63,10 @@ const NAV: NavGroup[] = [
     title: "Platform",
     items: [
       { to: "/reports", label: "Reports", icon: <AssessmentRoundedIcon fontSize="small" />, capability: "view_reports" },
+      { to: "/hr", label: "HR Tools", icon: <BadgeRoundedIcon fontSize="small" />, capability: "view_reports" },
       { to: "/audit", label: "Audit", icon: <FactCheckRoundedIcon fontSize="small" />, capability: "administer" },
       { to: "/integrations", label: "Integrations", icon: <HubRoundedIcon fontSize="small" />, capability: "administer" },
+      { to: "/admin/ai", label: "AI Automation", icon: <AutoAwesomeRoundedIcon fontSize="small" />, capability: "administer" },
       { to: "/admin/roles", label: "Roles & Access", icon: <AdminPanelSettingsRoundedIcon fontSize="small" />, capability: "administer" },
     ],
   },
@@ -146,6 +154,7 @@ export default function AppShell() {
   );
 
   return (
+    <AiProvider>
     <Box sx={{ display: "grid", gridTemplateColumns: collapsed ? "64px 1fr" : "232px 1fr", minHeight: "100vh",
       transition: "grid-template-columns .18s ease" }}>
       {/* Teal sidebar */}
@@ -262,6 +271,10 @@ export default function AppShell() {
         <GlobalSearchBar />
         <Outlet />
       </Box>
+
+      {/* Floating assistant — available from every page (AI spec §Frontend). */}
+      <AiAssistantDrawer />
     </Box>
+    </AiProvider>
   );
 }
