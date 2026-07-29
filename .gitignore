@@ -1,0 +1,30 @@
+# --- Python / Django ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.sqlite3
+/backend/.env
+/backend/media/
+/backend/staticfiles/
+.pytest_cache/
+
+# --- Node / Vite ---
+node_modules/
+/frontend/.env
+/frontend/dist/
+/frontend/.vite/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# --- Local run logs (detached backend/frontend) ---
+/_backend.out
+/_backend.err
+/_frontend.out
+/_frontend.err

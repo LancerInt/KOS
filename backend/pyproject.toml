@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["migrations", "staticfiles"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"config/settings.py" = ["F401", "E402"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+addopts = "-q --reuse-db"
+filterwarnings = ["ignore::DeprecationWarning"]

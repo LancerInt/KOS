@@ -1,0 +1,38 @@
+# --- Core framework ---
+Django==5.1.4
+djangorestframework==3.15.2
+djangorestframework-simplejwt==5.3.1
+django-cors-headers==4.6.0
+django-filter==24.3
+django-environ==0.11.2
+
+# --- API schema / docs ---
+drf-spectacular==0.28.0
+
+# --- Outbound HTTP (ERP integration, §27) ---
+requests==2.32.3
+
+# --- Database ---
+psycopg[binary]==3.2.3
+
+# --- Async / background jobs ---
+celery==5.4.0
+redis==5.2.1
+django-celery-beat==2.7.0
+
+# --- Static / media ---
+whitenoise==6.8.2
+Pillow==11.0.0
+
+# --- Auth / MFA ---
+pyotp==2.9.0
+qrcode==8.0
+
+# --- Server ---
+gunicorn==23.0.0
+
+# --- Dev / test ---
+pytest==8.3.4
+pytest-django==4.9.0
+factory-boy==3.3.1
+ruff==0.8.4
