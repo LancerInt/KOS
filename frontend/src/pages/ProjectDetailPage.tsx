@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
@@ -15,6 +15,9 @@ import { listSprints, type Sprint } from "../features/agile/agileApi";
 import TaskDrawer from "../components/TaskDrawer";
 import NewTaskDialog from "../components/NewTaskDialog";
 import NewSprintDialog from "../components/NewSprintDialog";
+import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
+import { useAiPageContext } from "../features/ai/AiContext";
+import { project as projectAi } from "../features/ai/aiApi";
 import { useAppSelector } from "../hooks";
 import { tokens, monoFont } from "../theme";
 
@@ -55,6 +58,25 @@ export default function ProjectDetailPage() {
     loadSprints();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Tell the assistant what is on screen. Declared before the early returns so
+  // the hook order stays stable while the project loads.
+  useAiPageContext(
+    useMemo(
+      () =>
+        project
+          ? {
+              label: `Project · ${project.name}`,
+              projectId: project.id,
+              text:
+                `The user is viewing project ${project.code} "${project.name}" ` +
+                `(status ${project.status}, health ${project.health}, ${project.progress}% complete, ` +
+                `target date ${project.target_date ?? "not set"}). It has ${tasks.length} tasks listed.`,
+            }
+          : null,
+      [project, tasks.length],
+    ),
+  );
 
   if (error) {
     return (
@@ -99,6 +121,20 @@ export default function ProjectDetailPage() {
               Automation →
             </Button>
           </Stack>
+
+          {/* AI actions for this project */}
+          <Box sx={{ mt: 1.75 }}>
+            <AiActionBar>
+              <AiActionButton label="Summarize" title={`Summary · ${project.name}`} run={() => projectAi.summary(project.id)} />
+              <AiActionButton label="Analyse risks" title={`Risk analysis · ${project.name}`} run={() => projectAi.risks(project.id)} />
+              <AiActionButton label="Health score" title={`Health score · ${project.name}`} run={() => projectAi.health(project.id)} />
+              <AiActionButton label="Predict delay" title={`Delay prediction · ${project.name}`} run={() => projectAi.delay(project.id)} />
+              <AiActionButton label="Explain project" title={`Explain · ${project.name}`} run={() => projectAi.explain(project.id)} />
+              <AiActionButton label="Analyse tasks" title={`Task analysis · ${project.name}`} run={() => projectAi.analyseTasks(project.id)} />
+              <AiActionButton label="Find duplicates" title={`Duplicate detection · ${project.name}`} run={() => projectAi.duplicates(project.id)} />
+              <AiActionButton label="Balance workload" title={`Workload · ${project.name}`} run={() => projectAi.workload(project.id)} />
+            </AiActionBar>
+          </Box>
         </Box>
         <Paper sx={{ p: 2, borderRadius: 3, width: 220 }}>
           <Typography sx={{ fontSize: 11, color: tokens.text3, mb: 1 }}>Progress</Typography>

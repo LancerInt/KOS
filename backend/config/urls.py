@@ -42,6 +42,8 @@ api_patterns = [
     path("", include("apps.regulatory.urls")),
     # Sidebar workspaces — flexible per-category records
     path("", include("apps.workspaces.urls")),
+    # AI automation — assistant, per-module AI actions, automation & logs
+    path("", include("apps.ai.urls")),
     # OpenAPI schema + docs
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

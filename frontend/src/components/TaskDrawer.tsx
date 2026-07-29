@@ -22,6 +22,7 @@ import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import {
   getTask,
   listProjectTasks,
+  patchTask,
   setTaskStatus,
 } from "../features/tasks/tasksApi";
 import { addCommentSafe, toggleChecklistSafe } from "../offline/actions";
@@ -35,6 +36,8 @@ import {
   createApproval, decideApproval, listTaskApprovals, type ApprovalRequest,
 } from "../features/approvals/approvalsApi";
 import { FlowRail, CATEGORY_COLOR, STATUSES, StatusChip } from "../features/tasks/display";
+import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
+import { applySubtasks, task as taskAi, type SubtaskSuggestion } from "../features/ai/aiApi";
 import { PRIORITY_COLOR } from "../features/projects/display";
 import { useAppSelector } from "../hooks";
 import { tokens, monoFont } from "../theme";
@@ -274,6 +277,65 @@ export default function TaskDrawer({ taskId, open, onClose, onChanged }: Props) 
                 </Stack>
               </Meta>
             </Stack>
+
+            {/* AI actions. Generation only previews — applying is an explicit
+                second step that writes through the normal task API. */}
+            <Box sx={{ py: 0.5 }}>
+              <AiActionBar>
+                <AiActionButton label="Summarize" title={`Summary · ${task.title}`} run={() => taskAi.summary(task.id)} />
+                <AiActionButton
+                  label="Rewrite"
+                  title="Rewrite the description"
+                  run={() => taskAi.rewrite(task.id)}
+                  disabled={!task.description}
+                  disabledReason="This task has no description to rewrite."
+                  apply={{
+                    label: "Replace description",
+                    onApply: async (outcome) => {
+                      const text = String((outcome.data as { text?: string }).text ?? "").trim();
+                      if (!text) return false;
+                      await patchTask(task.id, { description: text });
+                      load();
+                      onChanged?.();
+                    },
+                  }}
+                />
+                <AiActionButton
+                  label="Create subtasks"
+                  title="Suggested subtasks"
+                  run={() => taskAi.subtasks(task.id)}
+                  apply={{
+                    label: "Add subtasks",
+                    onApply: async (outcome) => {
+                      const suggestions = (outcome.data as { subtasks?: SubtaskSuggestion[] }).subtasks ?? [];
+                      const titles = suggestions.map((s) => s.title).filter(Boolean);
+                      if (!titles.length) return false;
+                      await applySubtasks(task.id, titles);
+                      load();
+                      onChanged?.();
+                    },
+                  }}
+                />
+                <AiActionButton label="Estimate effort" title="Effort estimate" run={() => taskAi.estimate(task.id)} />
+                <AiActionButton
+                  label="Prioritise"
+                  title="Suggested priority"
+                  run={() => taskAi.prioritize(task.id)}
+                  apply={{
+                    label: "Apply priority",
+                    onApply: async (outcome) => {
+                      const priority = String(
+                        (outcome.data as { suggested_priority?: string }).suggested_priority ?? "",
+                      ).toLowerCase();
+                      if (!["low", "medium", "high", "critical"].includes(priority)) return false;
+                      await patchTask(task.id, { priority });
+                      load();
+                      onChanged?.();
+                    },
+                  }}
+                />
+              </AiActionBar>
+            </Box>
 
             {task.deliverable && (
               <Section title="Deliverable"><Typography sx={{ fontSize: 13.5 }}>{task.deliverable}</Typography></Section>

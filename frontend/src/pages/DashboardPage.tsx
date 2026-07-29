@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import WarningRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import InboxRoundedIcon from "@mui/icons-material/InboxRounded";
@@ -13,6 +13,9 @@ import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
 import { Box, CircularProgress, Paper, Stack, Typography } from "@mui/material";
 
 import { getDashboard, type Dashboard, type Management } from "../features/reports/reportsApi";
+import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
+import { useAiPageContext } from "../features/ai/AiContext";
+import { dashboard as dashboardAi, generateReport } from "../features/ai/aiApi";
 import { tokens, monoFont, categoryColors } from "../theme";
 
 const CAT_SEGMENTS = [
@@ -35,15 +38,44 @@ export default function DashboardPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   useEffect(() => { getDashboard().then(setData).catch(() => setData(null)); }, []);
 
+  useAiPageContext(
+    useMemo(
+      () =>
+        data
+          ? {
+              label: "Dashboard",
+              text:
+                `The user is viewing their dashboard. Assigned to them: ${data.me.assigned_total}, ` +
+                `overdue: ${data.me.overdue}, due within 7 days: ${data.me.due_soon}.` +
+                (data.management
+                  ? ` Organisation-wide: ${data.management.projects_total} projects, ` +
+                    `${data.management.tasks_open} open tasks, ${data.management.tasks_overdue} overdue, ` +
+                    `${data.management.open_blockers} open blockers.`
+                  : ""),
+            }
+          : null,
+      [data],
+    ),
+  );
+
   if (!data) return <Stack alignItems="center" sx={{ py: 8 }}><CircularProgress size={26} /></Stack>;
 
   const me = data.me;
   return (
     <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
       <Typography variant="h1" sx={{ fontSize: 27, mb: 0.5 }}>Overview</Typography>
-      <Typography sx={{ fontSize: 13.5, color: tokens.text3, mb: 2.5 }}>
+      <Typography sx={{ fontSize: 13.5, color: tokens.text3, mb: 1.5 }}>
         Where things stand across your work{data.management ? " and the organisation" : ""}.
       </Typography>
+
+      <Box sx={{ mb: 2.5 }}>
+        <AiActionBar>
+          <AiActionButton label="AI insights" title="Dashboard insights" run={() => dashboardAi.insights()} />
+          <AiActionButton label="Explain these numbers" title="What the figures mean" run={() => dashboardAi.explain()} />
+          <AiActionButton label="Today's recommendations" title="What to focus on today" run={() => dashboardAi.recommendations()} />
+          <AiActionButton label="Weekly report" title="Weekly report" run={() => generateReport("weekly")} />
+        </AiActionBar>
+      </Box>
 
       {/* personal */}
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3,1fr)" }, gap: 1.25, mb: 1.5 }}>

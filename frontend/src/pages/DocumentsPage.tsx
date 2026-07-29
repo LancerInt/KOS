@@ -15,6 +15,8 @@ import {
   submitDocument, uploadVersion,
   type DocCategory, type DocStatus, type KDocument,
 } from "../features/documents/documentsApi";
+import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
+import { improveGrammar, rewrite, summarize, translate } from "../features/ai/aiApi";
 import { useAppSelector } from "../hooks";
 import { tokens, monoFont } from "../theme";
 
@@ -69,9 +71,46 @@ export default function DocumentsPage() {
       </Stack>
 
       <Typography variant="h1" sx={{ fontSize: 27, mt: 2, mb: 0.5 }}>Documents</Typography>
-      <Typography sx={{ fontSize: 13.5, color: tokens.text3, mb: 2.5 }}>
+      <Typography sx={{ fontSize: 13.5, color: tokens.text3, mb: 1.5 }}>
         Versioned files with approval status, expiry reminders and a download trail.
       </Typography>
+
+      {/* Document AI tools. These work on text you paste — stored files are
+          binaries the server does not extract text from. */}
+      <Box sx={{ mb: 2.5 }}>
+        <AiActionBar>
+          <AiActionButton
+            label="Summarize"
+            title="Summarize text"
+            fields={[{ name: "text", label: "Text", placeholder: "Paste the document text…", multiline: true, required: true }]}
+            run={(v) => summarize(v.text, { audience: "the project team" })}
+          />
+          <AiActionButton
+            label="Rewrite"
+            title="Rewrite text"
+            fields={[
+              { name: "text", label: "Text", placeholder: "Paste the text to rewrite…", multiline: true, required: true },
+              { name: "instruction", label: "How should it change? (optional)", placeholder: "e.g. make it more formal and shorter" },
+            ]}
+            run={(v) => rewrite(v.text, { instruction: v.instruction })}
+          />
+          <AiActionButton
+            label="Improve grammar"
+            title="Grammar and spelling"
+            fields={[{ name: "text", label: "Text", placeholder: "Paste the text to correct…", multiline: true, required: true }]}
+            run={(v) => improveGrammar(v.text)}
+          />
+          <AiActionButton
+            label="Translate"
+            title="Translate text"
+            fields={[
+              { name: "text", label: "Text", placeholder: "Paste the text to translate…", multiline: true, required: true },
+              { name: "language", label: "Target language", placeholder: "e.g. Tamil, Hindi, German", required: true },
+            ]}
+            run={(v) => translate(v.text, v.language)}
+          />
+        </AiActionBar>
+      </Box>
 
       {canWrite && <UploadForm projectId={projectId} onDone={load} />}
 

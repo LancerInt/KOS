@@ -12,6 +12,9 @@ import { PRIORITY_COLOR } from "../features/projects/display";
 import { useAppSelector } from "../hooks";
 import TaskDrawer from "../components/TaskDrawer";
 import NewTaskDialog from "../components/NewTaskDialog";
+import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
+import { useAiPageContext } from "../features/ai/AiContext";
+import { dashboard as dashboardAi, generateEmail } from "../features/ai/aiApi";
 import { tokens, monoFont } from "../theme";
 
 function initials(u: UserMini): string {
@@ -75,6 +78,30 @@ export default function MyWorkPage() {
 
   const shown = tasks ? bucket(tasks, tab) : [];
   const decisions = tasks ? bucket(tasks, "decision") : [];
+
+  useAiPageContext(
+    useMemo(
+      () =>
+        tasks
+          ? {
+              label: "My Work",
+              text:
+                `The user is viewing their own work queue: ${tasks.length} tasks assigned, ` +
+                `${counts.today} due today, ${counts.overdue} overdue, ${counts.blocked} blocked, ` +
+                `${counts.review} waiting for review.\n\n` +
+                tasks
+                  .slice(0, 30)
+                  .map(
+                    (t) =>
+                      `- "${t.title}" (status ${t.status_label}, priority ${t.priority}, ` +
+                      `due ${t.due_date ?? "no date"}${t.is_overdue ? ", OVERDUE" : ""})`,
+                  )
+                  .join("\n"),
+            }
+          : null,
+      [tasks, counts],
+    ),
+  );
   const dateStr = new Date().toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).replace(",", " ·");
 
   return (
@@ -97,6 +124,33 @@ export default function MyWorkPage() {
           </Stack>
         </Stack>
 
+        {/* AI actions for the user's own queue */}
+        <Box sx={{ gridColumn: "1 / -1", mt: -1 }}>
+          <AiActionBar>
+            <AiActionButton
+              label="What should I do today?"
+              title="Today's recommendations"
+              run={() => dashboardAi.recommendations()}
+            />
+            <AiActionButton label="AI insights" title="Insights on my work" run={() => dashboardAi.insights()} />
+            <AiActionButton
+              label="Generate email"
+              title="Draft an email"
+              fields={[
+                {
+                  name: "purpose",
+                  label: "What should the email say?",
+                  placeholder: "e.g. update my manager on where the consent renewal stands",
+                  multiline: true,
+                  required: true,
+                },
+                { name: "recipient", label: "Recipient (optional)", placeholder: "e.g. Priya, Operations Manager" },
+              ]}
+              run={(v) => generateEmail({ purpose: v.purpose, recipient: v.recipient })}
+            />
+          </AiActionBar>
+        </Box>
+
         {/* tabs */}
         <Stack direction="row" spacing={0.5} sx={{ gridColumn: "1 / -1", borderBottom: `1px solid ${tokens.line}`, flexWrap: "wrap", mt: -0.5 }}>
           {TABS.map((t) => {
@@ -108,8 +162,8 @@ export default function MyWorkPage() {
                   color: active ? tokens.kriyaInk : tokens.text2, borderBottom: `2px solid ${active ? tokens.kriya : "transparent"}`, mb: "-1px" }}>
                 {t.label}
                 <Box sx={{ fontSize: 11, fontFamily: monoFont, px: 0.75, borderRadius: 5, minWidth: 18, textAlign: "center",
-                  bgcolor: t.hot && n > 0 ? tokens.attnWash : active ? tokens.kriyaWash : "#EEF0F3",
-                  color: t.hot && n > 0 ? tokens.attn : active ? tokens.kriyaInk : tokens.text2 }}>{n}</Box>
+                  bgcolor: t.hot && n > 0 ? tokens.kriyaWash : active ? tokens.kriyaWash : "#EEF0F3",
+                  color: t.hot && n > 0 ? tokens.kriyaInk : active ? tokens.kriyaInk : tokens.text2 }}>{n}</Box>
               </Box>
             );
           })}
@@ -121,16 +175,16 @@ export default function MyWorkPage() {
 
           {tasks && counts.overdue > 0 && tab !== "overdue" && (
             <Paper sx={{ p: 1.5, mb: 1.5, borderRadius: "6px", display: "flex", alignItems: "center", gap: 1.5,
-              bgcolor: tokens.attnWash, borderColor: "#F2C9BC", borderLeft: `3px solid ${tokens.attn}` }}>
+              bgcolor: tokens.kriyaWash, borderColor: "#C7E2E6", borderLeft: `3px solid ${tokens.kriya}` }}>
               <Box sx={{ width: 30, height: 30, borderRadius: "6px", bgcolor: "#fff", display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <WarningAmberRoundedIcon sx={{ fontSize: 17, color: tokens.attn }} />
+                <WarningAmberRoundedIcon sx={{ fontSize: 17, color: tokens.kriya }} />
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: "#A23A22" }}>{counts.overdue} overdue task{counts.overdue === 1 ? "" : "s"} need attention.</Typography>
-                <Typography sx={{ fontSize: 12, color: "#9A5847" }}>Respond within 24h or they surface on the Management dashboard.</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: tokens.kriyaInk }}>{counts.overdue} overdue task{counts.overdue === 1 ? "" : "s"} need attention.</Typography>
+                <Typography sx={{ fontSize: 12, color: tokens.text2 }}>Respond within 24h or they surface on the Management dashboard.</Typography>
               </Box>
               <Button size="small" onClick={() => setTab("overdue")}
-                sx={{ bgcolor: tokens.attn, color: "#fff", fontWeight: 600, "&:hover": { bgcolor: tokens.attn, filter: "brightness(1.06)" } }}>
+                sx={{ bgcolor: tokens.kriya, color: "#fff", fontWeight: 600, "&:hover": { bgcolor: tokens.kriyaInk } }}>
                 Review
               </Button>
             </Paper>
