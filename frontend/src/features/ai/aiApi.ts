@@ -53,6 +53,14 @@ export interface AiSettings {
   daily_summary_enabled: boolean;
   weekly_report_enabled: boolean;
   monthly_report_enabled: boolean;
+  outbound_email_enabled: boolean;
+  outbound_max_recipients: number;
+  outbound_hourly_limit_per_user: number;
+  critical_alert_enabled: boolean;
+  critical_alert_cooldown_hours: number;
+  /** Comma or newline separated addresses blind-copied on every critical alert. */
+  critical_alert_bcc: string;
+  critical_alert_include_managers: boolean;
   reminder_repeat_minutes: number;
   manager_notify_hours: number;
   escalate_hours: number;
@@ -130,6 +138,167 @@ export interface AiReport {
   period_end: string;
   content: Record<string, unknown>;
   metrics: Record<string, unknown>;
+  emailed_at: string | null;
+  created_at: string;
+}
+
+export interface StandupContent {
+  greeting: string;
+  yesterday: string[];
+  today_priorities: string[];
+  overdue: string[];
+  blockers: string[];
+  attention: string[];
+  recommendations: string[];
+  productivity_insight: string;
+  suggested_order: string[];
+  /** Present only when the model ignored the JSON contract — its raw prose. */
+  narrative?: string;
+}
+
+export interface StandupCounts {
+  assigned_open: number;
+  completed_yesterday: number;
+  pending: number;
+  overdue: number;
+  due_today: number;
+  upcoming_week: number;
+  blocked: number;
+  high_priority: number;
+  meetings_today: number;
+  unread_notifications: number;
+  needs_acknowledgement: number;
+}
+
+export interface DailyStandup {
+  id: number;
+  standup_date: string;
+  content: StandupContent;
+  /** The figures the stand-up was built from — `counts` plus the task lists. */
+  metrics: { counts?: StandupCounts; [key: string]: unknown };
+  trigger: "scheduled" | "manual";
+  generation_count: number;
+  /** False when the provider was down and deterministic copy was used. */
+  ai_ok: boolean;
+  error: string;
+  duration_ms: number;
+  notified_at: string | null;
+  emailed_at: string | null;
+  created_at: string;
+}
+
+export interface StandupResponse {
+  ok: boolean;
+  exists?: boolean;
+  /** True when generation was handed to a Celery worker — poll `getStandup`. */
+  queued?: boolean;
+  generated?: boolean;
+  standup: DailyStandup | null;
+  detail?: string;
+}
+
+export interface ExecutiveRiskEntry {
+  name?: string;
+  team?: string;
+  risk?: string;
+  reason?: string;
+  action?: string;
+}
+
+export interface ExecutiveContent {
+  title: string;
+  overall_health: string;
+  high_risk_projects: (ExecutiveRiskEntry | string)[];
+  teams_needing_attention: (ExecutiveRiskEntry | string)[];
+  productivity_overview: string;
+  upcoming_deadlines: string[];
+  critical_issues: string[];
+  key_achievements: string[];
+  recommended_actions: string[];
+  executive_recommendations: string[];
+  strategic_insights: string[];
+  narrative?: string;
+}
+
+/** A project row from the computed risk table — figures, not AI output. */
+export interface ExecutiveProjectRisk {
+  id: number;
+  name: string;
+  code: string;
+  status: string;
+  health: string;
+  manager: string;
+  risk_score: number;
+  reasons: string[];
+  open_tasks: number;
+  overdue_tasks: number;
+  blocked_tasks: number;
+  target_date: string;
+  days_to_target: number | null;
+  completion_percent: number;
+}
+
+export interface ExecutiveMetrics {
+  period_start: string;
+  period_end: string;
+  health_score: number;
+  projects: Record<string, number>;
+  delivery: Record<string, number>;
+  productivity: Record<string, number>;
+  milestones: Record<string, number>;
+  governance: Record<string, number>;
+  quality: Record<string, number>;
+  commercial: { available: boolean; [key: string]: number | boolean | string };
+  detail?: {
+    high_risk_projects?: ExecutiveProjectRisk[];
+    delayed_projects?: ExecutiveProjectRisk[];
+    all_project_risk?: ExecutiveProjectRisk[];
+    team?: { person: string; completed: number; open: number; overdue: number; blocked: number }[];
+    team_needing_attention?: { person: string; open: number; overdue: number; blocked: number }[];
+    critical_issues?: { project: string; description: string; target_date: string }[];
+    upcoming_deadlines?: { title: string; project: string; due_date: string; priority: string }[];
+    completed_projects?: { name: string; code: string }[];
+  };
+}
+
+export interface ExecutiveSummary {
+  id: number;
+  period: "daily" | "weekly" | "monthly";
+  title: string;
+  period_start: string;
+  period_end: string;
+  content: ExecutiveContent;
+  metrics: ExecutiveMetrics;
+  health_score: number;
+  risk_count: number;
+  trigger: "scheduled" | "manual";
+  generated_by_name: string;
+  generation_count: number;
+  ai_ok: boolean;
+  error: string;
+  duration_ms: number;
+  emailed_at: string | null;
+  created_at: string;
+}
+
+export interface ExecutiveSummaryResponse {
+  ok: boolean;
+  exists?: boolean;
+  queued?: boolean;
+  generated?: boolean;
+  summary: ExecutiveSummary | null;
+  detail?: string;
+}
+
+export interface ExecutiveSummaryListEntry {
+  id: number;
+  period: "daily" | "weekly" | "monthly";
+  title: string;
+  period_start: string;
+  period_end: string;
+  health_score: number;
+  risk_count: number;
+  ai_ok: boolean;
   emailed_at: string | null;
   created_at: string;
 }
@@ -245,6 +414,58 @@ export interface EmailPayload {
 
 export function generateEmail(payload: EmailPayload) {
   return post<EmailData>("/ai/generate-email/", payload);
+}
+
+// --- sending a composed email --------------------------------------------- //
+/**
+ * Sending is a separate call from generating on purpose: generating is free to
+ * repeat and changes nothing, sending is irreversible. The body posted here is
+ * whatever the user approved on screen — the server never regenerates it.
+ */
+export interface SendEmailPayload {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  reply_to?: string;
+  subject: string;
+  body: string;
+  project_id?: number;
+  task_id?: number;
+  /** `log_id` from the generate-email response, tying the sent mail to its draft. */
+  draft_log_id?: number | null;
+}
+
+export interface SentEmail {
+  id: number;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  reply_to: string;
+  subject: string;
+  body: string;
+  source: "manual" | "critical_alert";
+  sender_name: string;
+  status: "queued" | "sent" | "failed";
+  error: string;
+  attempts: number;
+  sent_at: string | null;
+  recipient_count: number;
+  created_at: string;
+}
+
+export async function sendEmail(payload: SendEmailPayload): Promise<SentEmail> {
+  const { data } = await api.post<SentEmail>("/ai/send-email/", payload);
+  return data;
+}
+
+export async function listSentEmails(): Promise<SentEmail[]> {
+  const { data } = await api.get<SentEmail[] | { results: SentEmail[] }>("/ai/emails/");
+  return Array.isArray(data) ? data : data.results;
+}
+
+export async function resendEmail(id: number): Promise<SentEmail> {
+  const { data } = await api.post<SentEmail>(`/ai/emails/${id}/resend/`);
+  return data;
 }
 
 // --- projects ------------------------------------------------------------- //
@@ -406,4 +627,141 @@ export async function listRequestLogs(): Promise<AiRequestLog[]> {
 export async function getUsageStats(): Promise<AiUsageStats> {
   const { data } = await api.get<AiUsageStats>("/ai/logs/stats/");
   return data;
+}
+
+// --- daily stand-up -------------------------------------------------------- //
+/**
+ * Today's stand-up, read from storage.
+ *
+ * Never generates, so calling it on every dashboard mount costs nothing and
+ * makes no provider call.
+ */
+export async function getStandup(): Promise<StandupResponse> {
+  const { data } = await api.get<StandupResponse>("/ai/standup/");
+  return data;
+}
+
+/**
+ * Generate today's stand-up.
+ *
+ * Returns the stored one if it already exists; pass `force` to spend a fresh
+ * provider call ("Regenerate"). A `queued: true` reply means a Celery worker
+ * took the job — poll {@link getStandup} until the stand-up appears.
+ */
+export async function generateStandup(force = false): Promise<StandupResponse> {
+  const { data } = await api.post<StandupResponse>("/ai/standup/", { force });
+  return data;
+}
+
+export async function listStandups(): Promise<DailyStandup[]> {
+  const { data } = await api.get<Paginated<DailyStandup>>("/ai/standups/");
+  return data.results ?? [];
+}
+
+/** Flatten a stand-up to plain text, for Copy and Export. */
+export function standupToText(standup: DailyStandup): string {
+  const c = standup.content;
+  const lines: string[] = [c.greeting || "Your stand-up"];
+  const block = (heading: string, items?: string[]) => {
+    const list = (items ?? []).filter((i) => typeof i === "string" && i.trim());
+    if (list.length) lines.push("", heading, ...list.map((i) => `  • ${i}`));
+  };
+  block("Yesterday", c.yesterday);
+  block("Today's priorities", c.today_priorities);
+  block("Overdue", c.overdue);
+  block("Blockers", c.blockers);
+  block("Needs attention", c.attention);
+  block("Recommendations", c.recommendations);
+  block("Suggested order", c.suggested_order);
+  if (c.productivity_insight) lines.push("", c.productivity_insight);
+  if (c.narrative) lines.push("", c.narrative);
+  return lines.join("\n").trim();
+}
+
+// --- executive summary ----------------------------------------------------- //
+export type ExecutivePeriod = "daily" | "weekly" | "monthly";
+
+export async function getExecutiveSummary(period: ExecutivePeriod = "daily"): Promise<ExecutiveSummaryResponse> {
+  const { data } = await api.get<ExecutiveSummaryResponse>("/ai/executive-summary/", { params: { period } });
+  return data;
+}
+
+/**
+ * Generate the executive summary for a period.
+ *
+ * Reuses the stored summary unless `force` is set, so two managers pressing the
+ * button on the same morning share one provider call.
+ */
+export async function generateExecutiveSummary(
+  period: ExecutivePeriod = "daily",
+  force = false,
+): Promise<ExecutiveSummaryResponse> {
+  const { data } = await api.post<ExecutiveSummaryResponse>("/ai/executive-summary/", { period, force });
+  return data;
+}
+
+export async function emailExecutiveSummary(
+  summaryId?: number,
+  period?: ExecutivePeriod,
+): Promise<{ ok: boolean; emailed: number; notified: number; emailed_at: string | null }> {
+  const { data } = await api.post("/ai/executive-summary/email/", {
+    summary_id: summaryId,
+    period: summaryId ? undefined : period,
+  });
+  return data;
+}
+
+export async function listExecutiveSummaries(period?: ExecutivePeriod): Promise<ExecutiveSummaryListEntry[]> {
+  const { data } = await api.get<Paginated<ExecutiveSummaryListEntry>>("/ai/executive-summaries/", {
+    params: period ? { period } : undefined,
+  });
+  return data.results ?? [];
+}
+
+/**
+ * Download the CSV export.
+ *
+ * Fetched through the axios client rather than by pointing the browser at the
+ * URL, so the export travels with the auth header like every other API call.
+ */
+export async function downloadExecutiveSummaryCsv(summaryId?: number, period?: ExecutivePeriod): Promise<void> {
+  const response = await api.get("/ai/executive-summary/export.csv", {
+    params: summaryId ? { summary_id: summaryId } : { period },
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(response.data as Blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `kos-executive-summary-${period ?? "latest"}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Flatten an executive summary to plain text, for Copy and the PDF/print view. */
+export function executiveSummaryToText(summary: ExecutiveSummary): string {
+  const c = summary.content;
+  const lines: string[] = [c.title || "Executive summary", `Overall health: ${summary.health_score}/100`];
+  if (c.overall_health) lines.push("", c.overall_health);
+
+  const named = (item: ExecutiveRiskEntry | string) =>
+    typeof item === "string"
+      ? item
+      : [item.name ?? item.team, item.reason, item.action].filter(Boolean).join(" — ");
+
+  const block = (heading: string, items?: (ExecutiveRiskEntry | string)[]) => {
+    const list = (items ?? []).map(named).filter(Boolean);
+    if (list.length) lines.push("", heading, ...list.map((i) => `  • ${i}`));
+  };
+
+  block("High-risk projects", c.high_risk_projects);
+  block("Teams needing attention", c.teams_needing_attention);
+  if (c.productivity_overview) lines.push("", "Productivity", c.productivity_overview);
+  block("Critical issues", c.critical_issues);
+  block("Upcoming deadlines", c.upcoming_deadlines);
+  block("Key achievements", c.key_achievements);
+  block("Recommended actions", c.recommended_actions);
+  block("Executive recommendations", c.executive_recommendations);
+  block("Strategic insights", c.strategic_insights);
+  if (c.narrative) lines.push("", c.narrative);
+  return lines.join("\n").trim();
 }

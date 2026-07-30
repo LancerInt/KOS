@@ -25,6 +25,7 @@ import FormatListBulletedRoundedIcon from "@mui/icons-material/FormatListBullete
 import ViewKanbanRoundedIcon from "@mui/icons-material/ViewKanbanRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 
 import { listAllProjects, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
@@ -33,6 +34,7 @@ import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { useAppSelector } from "../hooks";
 import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
 import { useAiPageContext } from "../features/ai/AiContext";
+import DailyStandupWidget from "../features/ai/DailyStandupWidget";
 import { dashboard as dashboardAi, generateReport, generateEmail } from "../features/ai/aiApi";
 import { tokens, monoFont, categoryColors } from "../theme";
 
@@ -228,13 +230,28 @@ export default function DashboardPage() {
           <AiActionButton label="What should I focus on?" title="Today's recommendations" run={() => dashboardAi.recommendations()} />
           <AiActionButton label="AI insights" title="Insights on my projects" run={() => dashboardAi.insights()} />
           <AiActionButton label="Weekly report" title="Weekly report" run={() => generateReport("weekly")} />
+          {canReports && (
+            <Button
+              size="small" variant="outlined"
+              startIcon={<InsightsRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => navigate("/executive-summary")}
+              sx={{ whiteSpace: "nowrap" }}
+            >
+              Executive summary
+            </Button>
+          )}
           <AiActionButton
             label="Generate email" title="Draft an email"
             fields={[
               { name: "purpose", label: "What should the email say?", placeholder: "e.g. update my manager on where a project stands", multiline: true, required: true },
               { name: "recipient", label: "Recipient (optional)", placeholder: "e.g. Priya, Operations Manager" },
+              { name: "to", label: "Send to (optional)", placeholder: "e.g. priya@example.com" },
             ]}
             run={(v) => generateEmail({ purpose: v.purpose, recipient: v.recipient })}
+            // Review the draft, then send it — with Cc and Bcc — without leaving
+            // the dialog. The "to" field above only pre-fills the compose form;
+            // nothing is sent until the user presses Send there.
+            email={{}}
           />
         </AiActionBar>
       </Box>
@@ -290,7 +307,8 @@ export default function DashboardPage() {
           </Stack>
 
           {layout === "list" ? (
-            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 270px" }, gap: 3, alignItems: "start" }}>
+            // Rail widened from 270px to fit the stand-up's prose comfortably.
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 320px" }, gap: 3, alignItems: "start" }}>
               <Box sx={{ minWidth: 0 }}>
                 {listShown.length === 0 ? (
                   <Paper sx={{ p: 5, textAlign: "center", borderRadius: "6px" }}>
@@ -309,6 +327,9 @@ export default function DashboardPage() {
               </Box>
 
               <Box sx={{ position: { md: "sticky" }, top: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+                {/* The stand-up leads the rail: it is the one panel that says
+                    what to do next rather than what the numbers are. */}
+                <DailyStandupWidget />
                 <Panel title="By status">
                   <StatusRing counts={counts} active={filter} onPick={setFilter} />
                 </Panel>

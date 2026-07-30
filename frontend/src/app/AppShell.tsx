@@ -13,6 +13,7 @@ import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
 import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
+import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 
 import { useAppDispatch, useAppSelector } from "../hooks";
 import { logout } from "../features/auth/authSlice";
@@ -44,6 +45,12 @@ const NAV: NavGroup[] = [
   {
     items: [
       { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
+      {
+        to: "/executive-summary",
+        label: "Executive Summary",
+        icon: <InsightsRoundedIcon fontSize="small" />,
+        capability: "view_reports",
+      },
       { to: "/meetings", label: "Meetings & Notes", icon: <EventNoteRoundedIcon fontSize="small" /> },
       { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
     ],

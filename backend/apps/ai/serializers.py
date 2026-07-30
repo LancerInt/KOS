@@ -5,6 +5,8 @@ paid provider call — an empty prompt should cost nothing.
 """
 from __future__ import annotations
 
+import re
+
 from rest_framework import serializers
 
 from .models import (
@@ -14,9 +16,13 @@ from .models import (
     AIReport,
     AIRequestLog,
     AISettings,
+    DailyStandup,
+    ExecutiveSummary,
+    OutboundEmail,
 )
 
 MAX_INPUT_CHARS = 60_000
+MAX_EMAIL_BODY_CHARS = 100_000
 
 
 class AIOutcomeSerializer(serializers.Serializer):
@@ -141,6 +147,110 @@ class ReportRequestSerializer(serializers.Serializer):
     project_id = serializers.IntegerField(required=False, allow_null=True)
 
 
+class StandupRequestSerializer(serializers.Serializer):
+    """``force`` is the difference between "Refresh" and "Regenerate".
+
+    Without it the endpoint returns the stored stand-up and costs nothing; with
+    it the user has explicitly asked to spend another provider call.
+    """
+
+    force = serializers.BooleanField(required=False, default=False)
+    date = serializers.DateField(required=False, allow_null=True)
+
+
+class ExecutiveSummaryRequestSerializer(serializers.Serializer):
+    period = serializers.ChoiceField(choices=["daily", "weekly", "monthly"], default="daily")
+    force = serializers.BooleanField(required=False, default=False)
+
+
+class ExecutiveEmailSerializer(serializers.Serializer):
+    """Email an existing summary. Omit ``summary_id`` to send the latest."""
+
+    summary_id = serializers.IntegerField(required=False, allow_null=True)
+    period = serializers.ChoiceField(choices=["daily", "weekly", "monthly"], required=False)
+
+
+class AddressListField(serializers.ListField):
+    """A recipient list that accepts either a list or a pasted string.
+
+    The compose form sends ``["a@x.com", "b@y.com"]``; a user pasting from
+    another mail client sends ``"a@x.com, b@y.com"``. Both are the same
+    intention, and rejecting the second over punctuation is the kind of
+    validation people hate. Normalisation and address validation happen in
+    :mod:`apps.ai.outbound`, so there is exactly one definition of a valid
+    address in the system.
+    """
+
+    child = serializers.CharField(max_length=320)
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("max_length", 100)
+        # DRF forbids declaring both; an optional address list defaults to empty,
+        # a required one has no default by definition.
+        if not kwargs["required"]:
+            kwargs.setdefault("default", list)
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            data = [part for part in re.split(r"[,;\n]+", data) if part.strip()]
+        return super().to_internal_value(data)
+
+
+class SendEmailSerializer(serializers.Serializer):
+    """A message a user composed — usually from an AI draft — and wants sent.
+
+    The body is accepted verbatim. This endpoint does not regenerate or rewrite
+    anything: what the user read on screen is what leaves, which is the whole
+    point of the review step before Send.
+    """
+
+    to = AddressListField(required=True, allow_empty=False)
+    cc = AddressListField()
+    bcc = AddressListField()
+    reply_to = serializers.CharField(required=False, allow_blank=True, default="", max_length=320)
+
+    subject = serializers.CharField(max_length=300)
+    body = serializers.CharField(max_length=MAX_EMAIL_BODY_CHARS)
+
+    #: Ties the sent mail back to the work it is about, so the task's history
+    #: shows that the client was emailed.
+    project_id = serializers.IntegerField(required=False, allow_null=True)
+    task_id = serializers.IntegerField(required=False, allow_null=True)
+    #: The ``log_id`` from the generate-email response, when the draft was AI-written.
+    draft_log_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_subject(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("A subject line is required.")
+        return value
+
+    def validate_body(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("The message body is empty.")
+        return value
+
+
+class OutboundEmailSerializer(serializers.ModelSerializer):
+    sender_name = serializers.SerializerMethodField()
+    recipient_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = OutboundEmail
+        fields = (
+            "id", "to", "cc", "bcc", "reply_to", "subject", "body",
+            "source", "sender", "sender_name", "task", "project", "draft_log",
+            "status", "error", "attempts", "sent_at", "recipient_count", "created_at",
+        )
+        read_only_fields = fields
+
+    def get_sender_name(self, obj) -> str:
+        if obj.sender is None:
+            return "KOS automation"
+        return obj.sender.get_full_name() or obj.sender.get_username()
+
+
 class AIStatusSerializer(serializers.Serializer):
     """What the assistant panel needs to know before offering AI actions.
 
@@ -197,6 +307,13 @@ class AISettingsSerializer(serializers.ModelSerializer):
             "is_enabled", "automation_enabled", "email_enabled",
             "overdue_scan_enabled", "blocked_scan_enabled", "health_scan_enabled",
             "daily_summary_enabled", "weekly_report_enabled", "monthly_report_enabled",
+            "standup_enabled", "standup_hour", "standup_minute",
+            "standup_notify_enabled", "standup_email_enabled",
+            "executive_summary_enabled", "executive_daily_enabled",
+            "executive_weekly_enabled", "executive_monthly_enabled", "executive_email_enabled",
+            "outbound_email_enabled", "outbound_max_recipients", "outbound_hourly_limit_per_user",
+            "critical_alert_enabled", "critical_alert_cooldown_hours",
+            "critical_alert_bcc", "critical_alert_include_managers",
             "reminder_repeat_minutes", "manager_notify_hours", "escalate_hours",
             "max_calls_per_hour", "max_items_per_scan", "updated_at",
         )
@@ -205,6 +322,30 @@ class AISettingsSerializer(serializers.ModelSerializer):
     def validate_temperature(self, value):
         if not 0 <= value <= 2:
             raise serializers.ValidationError("Temperature must be between 0 and 2.")
+        return value
+
+    def validate_critical_alert_bcc(self, value):
+        """Reject a bad watch-list address here, not at 3am when it matters.
+
+        An invalid address in this field would otherwise fail silently at send
+        time, and the whole point of the list is that nobody is watching it.
+        """
+        from .outbound import EmailRejected, parse_addresses
+
+        try:
+            parse_addresses(value)
+        except EmailRejected as exc:
+            raise serializers.ValidationError(str(exc)) from None
+        return value
+
+    def validate_standup_hour(self, value):
+        if not 0 <= value <= 23:
+            raise serializers.ValidationError("The stand-up hour must be between 0 and 23.")
+        return value
+
+    def validate_standup_minute(self, value):
+        if not 0 <= value <= 59:
+            raise serializers.ValidationError("The stand-up minute must be between 0 and 59.")
         return value
 
     def validate(self, attrs):
@@ -250,3 +391,55 @@ class AIReportSerializer(serializers.ModelSerializer):
         model = AIReport
         fields = ("id", "period", "title", "user", "project", "period_start", "period_end",
                   "content", "metrics", "emailed_at", "created_at")
+
+
+class DailyStandupSerializer(serializers.ModelSerializer):
+    """A stand-up as the widget reads it.
+
+    ``metrics`` carries the full collected data, so the widget can show counts
+    and the underlying task lists without a second round trip.
+    """
+
+    user_name = serializers.CharField(source="user.get_full_name", read_only=True, default="")
+
+    class Meta:
+        model = DailyStandup
+        fields = ("id", "user", "user_name", "standup_date", "content", "metrics",
+                  "trigger", "generation_count", "ai_ok", "error", "duration_ms",
+                  "notified_at", "emailed_at", "created_at", "updated_at")
+        read_only_fields = fields
+
+
+class DailyStandupListSerializer(serializers.ModelSerializer):
+    """History list — omits ``metrics``, which is by far the largest field and
+    is not needed to render a row in "previous stand-ups"."""
+
+    class Meta:
+        model = DailyStandup
+        fields = ("id", "standup_date", "content", "trigger", "generation_count",
+                  "ai_ok", "emailed_at", "created_at")
+        read_only_fields = fields
+
+
+class ExecutiveSummarySerializer(serializers.ModelSerializer):
+    generated_by_name = serializers.CharField(
+        source="generated_by.get_full_name", read_only=True, default=""
+    )
+
+    class Meta:
+        model = ExecutiveSummary
+        fields = ("id", "period", "title", "period_start", "period_end", "content", "metrics",
+                  "health_score", "risk_count", "trigger", "generated_by", "generated_by_name",
+                  "generation_count", "ai_ok", "error", "duration_ms", "notified_at",
+                  "emailed_at", "created_at", "updated_at")
+        read_only_fields = fields
+
+
+class ExecutiveSummaryListSerializer(serializers.ModelSerializer):
+    """History list — the headline figures only, so the trend chart is cheap."""
+
+    class Meta:
+        model = ExecutiveSummary
+        fields = ("id", "period", "title", "period_start", "period_end", "health_score",
+                  "risk_count", "ai_ok", "emailed_at", "created_at")
+        read_only_fields = fields

@@ -220,6 +220,41 @@ DUPLICATES = {
     ]
 }
 
+DAILY_STANDUP = {
+    "greeting": "one-line greeting addressed to the person by name",
+    "yesterday": ["something they completed yesterday, phrased as an accomplishment", "..."],
+    "today_priorities": ["what they should work on today, most important first", "..."],
+    "overdue": ["an overdue item and how late it is", "..."],
+    "blockers": ["something blocking their work and what it is waiting on", "..."],
+    "attention": ["anything needing a response today — acknowledgements, meetings, decisions", "..."],
+    "recommendations": ["a specific recommendation, with the reason it comes first", "..."],
+    "productivity_insight": "one honest sentence on how their workload is trending",
+    "suggested_order": ["task title, in the order they should be tackled today", "..."],
+}
+
+EXECUTIVE_SUMMARY = {
+    "title": "summary title",
+    "overall_health": "2-4 sentence verdict on the health of the business this period",
+    "high_risk_projects": [
+        {
+            "name": "project name exactly as given",
+            "risk": RISK,
+            "reason": "why it is at risk, quoting the given figures",
+            "action": "the specific intervention recommended",
+        }
+    ],
+    "teams_needing_attention": [
+        {"team": "person or team name exactly as given", "reason": "what the figures show", "action": "what to do"}
+    ],
+    "productivity_overview": "what the delivery and productivity figures say",
+    "upcoming_deadlines": ["a deadline leadership should know about", "..."],
+    "critical_issues": ["an issue that needs an executive decision", "..."],
+    "key_achievements": ["something genuinely delivered this period", "..."],
+    "recommended_actions": ["a concrete action for this week", "..."],
+    "executive_recommendations": ["a decision only leadership can make", "..."],
+    "strategic_insights": ["a trend or structural observation worth acting on", "..."],
+}
+
 WORKLOAD = {
     "summary": "how work is distributed across the team",
     "overloaded": [{"person": "name", "reason": "why", "suggested_moves": ["task to reassign", "..."]}],

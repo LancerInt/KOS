@@ -18,7 +18,9 @@ from __future__ import annotations
 import logging
 
 from django.contrib.auth import get_user_model
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -46,6 +48,10 @@ from .models import (
     AIRequestLog,
     AISettings,
     AIAction,
+    DailyStandup,
+    ExecutiveSummary,
+    GenerationTrigger,
+    OutboundEmail,
 )
 from .serializers import (
     AIAutomationLogSerializer,
@@ -60,15 +66,24 @@ from .serializers import (
     ChatSerializer,
     CreateTasksSerializer,
     CustomerReplySerializer,
+    DailyStandupListSerializer,
+    DailyStandupSerializer,
     EmailSerializer,
+    ExecutiveEmailSerializer,
+    ExecutiveSummaryListSerializer,
+    ExecutiveSummaryRequestSerializer,
+    ExecutiveSummarySerializer,
     GoalSerializer,
     JobDescriptionSerializer,
     MetricsSerializer,
     NotesSerializer,
+    OutboundEmailSerializer,
     PerformanceSerializer,
     ProposalSerializer,
     ReportRequestSerializer,
     RewriteSerializer,
+    SendEmailSerializer,
+    StandupRequestSerializer,
     SubtaskCountSerializer,
     SummarizeSerializer,
     TextInputSerializer,
@@ -324,6 +339,129 @@ class AIEmailView(AIView):
             language=data["language"], user=request.user, subject=subject,
         )
         return envelope(outcome, AIAction.GENERATE_EMAIL)
+
+
+class AIEmailSendView(AIView):
+    """Send a composed email out of KOS — to Gmail or any other mailbox.
+
+    Deliberately a separate endpoint from ``generate-email``. Generating is
+    free to repeat and changes nothing; sending is irreversible and leaves the
+    building. Keeping them apart is what guarantees the rule the rest of this
+    module follows — **nothing is ever sent without the user seeing it first** —
+    because the only way to reach this endpoint is to post the text back.
+
+    The body is whatever the user approved on screen. This endpoint never
+    regenerates or edits it.
+    """
+
+    @extend_schema(request=SendEmailSerializer, responses=OutboundEmailSerializer)
+    def post(self, request: Request) -> Response:
+        from .outbound import EmailRejected, prepare
+        from .tasks import send_outbound_email
+
+        data = validated(SendEmailSerializer, request)
+
+        # Resolve the linked records through the same visibility rules as
+        # everything else: attaching an email to a project must not become a way
+        # to discover that a confidential project exists.
+        project = get_project(request.user, data["project_id"]) if data.get("project_id") else None
+        task = get_task(request.user, data["task_id"]) if data.get("task_id") else None
+        if task is not None and project is None:
+            project = task.project
+
+        try:
+            email = prepare(
+                to=data["to"], cc=data["cc"], bcc=data["bcc"],
+                reply_to=data["reply_to"],
+                subject=data["subject"], body=data["body"],
+                sender=request.user,
+                source=OutboundEmail.Source.MANUAL,
+                task=task, project=project,
+                draft_log_id=data.get("draft_log_id"),
+            )
+        except EmailRejected as exc:
+            # A rejected message is the user's input being wrong or a limit being
+            # hit — a 400 with the reason, not a 500 and not a silent no-op.
+            raise ValidationError({"detail": str(exc)}) from None
+
+        # Mail sent from KOS is the organisation speaking to the outside world.
+        # Who sent what, to whom — including the blind copies — is recorded
+        # before the message is handed to the worker.
+        record(
+            action=AuditAction.UPDATE, obj=email,
+            new_value={
+                "to": email.to, "cc": email.cc, "bcc": email.bcc,
+                "subject": email.subject, "task": email.task_id, "project": email.project_id,
+            },
+            reason="Email sent from KOS", request=request,
+        )
+
+        # SMTP can take seconds. Hand it to a worker, and fall back to sending
+        # inline when no broker is reachable — a slow response beats telling
+        # someone their email failed because a queue is down.
+        if not queued(send_outbound_email, email.id):
+            from .outbound import send
+
+            send(email)
+            email.refresh_from_db()
+
+        return Response(
+            OutboundEmailSerializer(email).data,
+            status=status.HTTP_202_ACCEPTED if email.status == "queued" else status.HTTP_201_CREATED,
+        )
+
+
+class OutboundEmailViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """The sent-mail record.
+
+    Scoped like the automation log: administrators see everything, everyone else
+    sees what they sent themselves plus what went out about projects they can
+    already see. A user must not be able to read mail sent about a project they
+    have no access to simply because it exists.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = OutboundEmailSerializer
+    queryset = OutboundEmail.objects.none()
+    filterset_fields = ["status", "source", "project", "task"]
+
+    def get_queryset(self):
+        from django.db.models import Q
+
+        user = self.request.user
+        qs = OutboundEmail.objects.select_related("sender", "task", "project")
+        if user.is_superuser or user.has_capability(Capability.ADMINISTER):
+            return qs
+        projects = visible_projects(user, Project.objects.all())
+        return qs.filter(
+            Q(sender=user) | Q(project__in=projects) | Q(task__project__in=projects)
+        ).distinct()
+
+    @extend_schema(request=None, responses=OutboundEmailSerializer)
+    @action(detail=True, methods=["post"])
+    def resend(self, request: Request, pk=None):
+        """Try a failed message again.
+
+        Only failures are resendable — offering it on a message that already
+        went out would make sending the same email twice a single click away.
+        """
+        from .outbound import send
+
+        email = self.get_object()
+        if email.status != "failed":
+            raise ValidationError("Only a failed email can be resent.")
+        if email.sender_id != request.user.id and not (
+            request.user.is_superuser or request.user.has_capability(Capability.ADMINISTER)
+        ):
+            raise PermissionDenied("You can only resend an email you sent.")
+
+        send(email)
+        record(
+            action=AuditAction.UPDATE, obj=email,
+            new_value={"status": email.status, "attempts": email.attempts},
+            reason="Failed email resent", request=request,
+        )
+        return Response(OutboundEmailSerializer(email).data)
 
 
 # --------------------------------------------------------------------------- #
@@ -894,3 +1032,273 @@ class AIAutomationLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, v
         from django.db.models import Q
 
         return qs.filter(Q(project__in=projects) | Q(user=user) | Q(task__project__in=projects))
+
+
+# --------------------------------------------------------------------------- #
+# Daily stand-up & executive summary
+#
+# Generation takes as long as the provider does, so both POST endpoints hand
+# the work to a Celery worker and return 202 rather than holding the request
+# open. When no broker is reachable — a developer machine without Redis, most
+# often — they fall back to running inline and return the finished briefing:
+# a slow response is a far better answer than a 500 telling someone their AI
+# feature is broken because a queue is down.
+# --------------------------------------------------------------------------- #
+def queued(task, *args, **kwargs) -> bool:
+    """Try to hand a task to a worker. False means "no broker, run it here"."""
+    try:
+        task.apply_async(args=args, kwargs=kwargs, retry=False)
+        return True
+    except Exception as exc:  # kombu raises its own OperationalError family
+        logger.info("Celery unavailable (%s); running %s inline instead.", exc, task.name)
+        return False
+
+
+class DailyStandupView(AIView):
+    """Today's stand-up for the signed-in user.
+
+    ``GET`` never generates: it answers from the stored row, so opening the
+    dashboard costs nothing and repeated visits cost nothing. ``POST``
+    generates — reusing the stored stand-up unless ``force`` asks for a fresh
+    one, which is what separates "Refresh" from "Regenerate".
+    """
+
+    @extend_schema(responses=DailyStandupSerializer)
+    def get(self, request: Request) -> Response:
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        standup = DailyStandup.objects.filter(user=request.user, standup_date=today).first()
+        if standup is None:
+            return Response({
+                "ok": True,
+                "exists": False,
+                "standup": None,
+                "detail": "No stand-up has been generated for today yet.",
+            })
+        return Response({"ok": True, "exists": True, "standup": DailyStandupSerializer(standup).data})
+
+    @extend_schema(request=StandupRequestSerializer, responses=DailyStandupSerializer)
+    def post(self, request: Request) -> Response:
+        from django.utils import timezone
+
+        from . import briefings
+        from .tasks import generate_standup_for_user
+
+        data = validated(StandupRequestSerializer, request)
+        today = timezone.localdate()
+        requested = data.get("date") or today
+        force = bool(data.get("force"))
+
+        # A stand-up for a past date can only ever be served from storage —
+        # regenerating it would describe today's data under yesterday's heading.
+        if requested != today:
+            standup = DailyStandup.objects.filter(user=request.user, standup_date=requested).first()
+            if standup is None:
+                raise ValidationError("No stand-up exists for that date.")
+            return Response({"ok": True, "generated": False, "standup": DailyStandupSerializer(standup).data})
+
+        existing = DailyStandup.objects.filter(user=request.user, standup_date=today).first()
+        if existing is not None and not force:
+            # Already there: answer straight away rather than queueing a job
+            # whose only outcome would be to hand back this same row.
+            return Response({"ok": True, "generated": False, "standup": DailyStandupSerializer(existing).data})
+
+        if queued(generate_standup_for_user, request.user.id, force=force, actor_id=request.user.id):
+            return Response(
+                {"ok": True, "queued": True, "standup": None,
+                 "detail": "Your stand-up is being generated."},
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        standup, generated = briefings.generate_standup(
+            request.user, today=today, trigger=GenerationTrigger.MANUAL,
+            actor=request.user, force=force,
+        )
+        if standup is None:
+            return Response({
+                "ok": True,
+                "generated": False,
+                "standup": None,
+                "detail": "You have no open work, so there is nothing to brief you on today.",
+            })
+        return Response({
+            "ok": True, "queued": False, "generated": generated,
+            "standup": DailyStandupSerializer(standup).data,
+        })
+
+
+class DailyStandupHistoryViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Previous stand-ups. Strictly the requesting user's own — a stand-up is
+    personal, and there is no supervisory read of somebody else's."""
+
+    permission_classes = [IsAuthenticated]
+    queryset = DailyStandup.objects.none()  # real scoping happens in get_queryset()
+
+    def get_queryset(self):
+        return DailyStandup.objects.filter(user=self.request.user)
+
+    def get_serializer_class(self):
+        return DailyStandupListSerializer if self.action == "list" else DailyStandupSerializer
+
+
+def require_executive_access(user) -> None:
+    """Gate for every executive endpoint.
+
+    The summary aggregates the whole organisation, including projects the reader
+    may not be a member of, so it is restricted to the two capabilities that
+    already mean "sees across the business".
+    """
+    if user.is_superuser:
+        return
+    if user.has_capability(Capability.VIEW_REPORTS) or user.has_capability(Capability.ADMINISTER):
+        return
+    raise PermissionDenied("You do not have permission to view the executive summary.")
+
+
+def resolve_summary(summary_id, period) -> ExecutiveSummary:
+    """The summary a request is about: an explicit id, else the latest of a period."""
+    if summary_id:
+        return get_object_or_404(ExecutiveSummary, pk=summary_id)
+    qs = ExecutiveSummary.objects.all()
+    if period in {"daily", "weekly", "monthly"}:
+        qs = qs.filter(period=period)
+    summary = qs.first()  # Meta.ordering puts the most recent first
+    if summary is None:
+        raise ValidationError("No executive summary has been generated yet.")
+    return summary
+
+
+class ExecutiveAIView(AIView):
+    """Base for the executive endpoints — capability-checked before dispatch."""
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        require_executive_access(request.user)
+
+
+class ExecutiveSummaryView(ExecutiveAIView):
+    """The latest executive summary, and the button that generates one.
+
+    ``GET`` reads storage only. ``POST`` reuses the stored summary for the
+    period unless ``force`` is set, so two managers pressing "Generate" on the
+    same morning share one provider call rather than making two.
+    """
+
+    @extend_schema(responses=ExecutiveSummarySerializer)
+    def get(self, request: Request) -> Response:
+        period = request.query_params.get("period") or "daily"
+        qs = ExecutiveSummary.objects.all()
+        if period in {"daily", "weekly", "monthly"}:
+            qs = qs.filter(period=period)
+        summary = qs.first()
+        if summary is None:
+            return Response({
+                "ok": True,
+                "exists": False,
+                "summary": None,
+                "detail": "No executive summary has been generated yet.",
+            })
+        return Response({"ok": True, "exists": True, "summary": ExecutiveSummarySerializer(summary).data})
+
+    @extend_schema(request=ExecutiveSummaryRequestSerializer, responses=ExecutiveSummarySerializer)
+    def post(self, request: Request) -> Response:
+        from . import briefings
+        from .tasks import generate_executive_summary_on_demand
+
+        data = validated(ExecutiveSummaryRequestSerializer, request)
+        period, force = data["period"], bool(data.get("force"))
+
+        start, end = briefings.period_span(period)
+        existing = ExecutiveSummary.objects.filter(period=period, period_end=end).first()
+        if existing is not None and not force:
+            return Response({
+                "ok": True, "generated": False,
+                "summary": ExecutiveSummarySerializer(existing).data,
+            })
+
+        if queued(generate_executive_summary_on_demand, period, force=force, actor_id=request.user.id):
+            return Response(
+                {"ok": True, "queued": True, "summary": None,
+                 "detail": f"The {period} executive summary is being generated."},
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        summary, generated = briefings.generate_executive_summary(
+            period, trigger=GenerationTrigger.MANUAL, actor=request.user, force=force,
+            # A manual generation must not spray email at leadership; that is
+            # what the explicit "Email report" action is for.
+            deliver_it=False,
+        )
+        return Response({
+            "ok": True, "queued": False, "generated": generated,
+            "summary": ExecutiveSummarySerializer(summary).data,
+        })
+
+
+class ExecutiveSummaryHistoryViewSet(
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
+    """Past summaries — the source of the health-score trend on the page."""
+
+    permission_classes = [IsAuthenticated]
+    queryset = ExecutiveSummary.objects.none()  # real scoping happens in get_queryset()
+    filterset_fields = ["period"]
+
+    def get_queryset(self):
+        require_executive_access(self.request.user)
+        return ExecutiveSummary.objects.select_related("generated_by")
+
+    def get_serializer_class(self):
+        return ExecutiveSummaryListSerializer if self.action == "list" else ExecutiveSummarySerializer
+
+
+class ExecutiveSummaryEmailView(ExecutiveAIView):
+    """Email an existing summary to everyone who may read reports."""
+
+    @extend_schema(request=ExecutiveEmailSerializer, responses=None)
+    def post(self, request: Request) -> Response:
+        from . import briefings
+
+        data = validated(ExecutiveEmailSerializer, request)
+        summary = resolve_summary(data.get("summary_id"), data.get("period"))
+
+        actions = briefings.email_executive_summary(summary)
+        summary.refresh_from_db()
+        emailed = sum(1 for a in actions if a.startswith("emailed:"))
+        notified = sum(1 for a in actions if a.startswith("notified:"))
+
+        # Sending a business briefing to leadership is an action worth recording
+        # who took, not just that it happened.
+        record(
+            action=AuditAction.UPDATE, obj=summary,
+            new_value={"emailed": emailed, "notified": notified, "period": summary.period},
+            reason="Executive summary emailed manually", request=request,
+        )
+        return Response({
+            "ok": True,
+            "summary_id": summary.id,
+            "emailed": emailed,
+            "notified": notified,
+            "emailed_at": summary.emailed_at,
+        })
+
+
+class ExecutiveSummaryCsvView(ExecutiveAIView):
+    """CSV export of a summary — its figures and findings, one row each."""
+
+    @extend_schema(responses={(200, "text/csv"): OpenApiTypes.STR})
+    def get(self, request: Request) -> HttpResponse:
+        import csv
+
+        from . import briefings
+
+        summary = resolve_summary(
+            request.query_params.get("summary_id"), request.query_params.get("period")
+        )
+        filename = f"kos-executive-summary-{summary.period}-{summary.period_end}.csv"
+
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        csv.writer(response).writerows(briefings.executive_summary_csv_rows(summary))
+        return response

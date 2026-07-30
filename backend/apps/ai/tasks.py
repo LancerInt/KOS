@@ -861,3 +861,227 @@ def run_all_ai_scans() -> dict:
         "milestones": scan_missed_milestones(),
         "health": scan_project_health(),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Daily stand-up (§ "AI Daily Stand-Up")
+# --------------------------------------------------------------------------- #
+@shared_task
+def generate_daily_standups() -> dict:
+    """Generate everyone's stand-up once the configured time has passed.
+
+    Beat ticks this every 15 minutes rather than at a fixed hour, and the gate
+    below is what makes the time configurable at runtime. The tick also makes
+    the job self-healing: if the worker was down at 09:00, the next tick after
+    it recovers still produces the day's stand-ups, and the ``(user, date)``
+    uniqueness guarantees nobody gets two.
+    """
+    from . import briefings
+
+    config = AISettings.load()
+    if not (config.is_enabled and config.automation_enabled and config.standup_enabled):
+        return {"skipped": "disabled"}
+
+    now = timezone.localtime()
+    today = now.date()
+    due_at = time(hour=min(config.standup_hour, 23), minute=min(config.standup_minute, 59))
+    if now.time() < due_at:
+        return {"skipped": "before configured time", "due_at": due_at.isoformat()}
+
+    from .models import DailyStandup
+
+    already = set(
+        DailyStandup.objects.filter(standup_date=today).values_list("user_id", flat=True)
+    )
+
+    generated = skipped = failed = 0
+    for user in User.objects.filter(is_active=True):
+        if generated >= config.max_items_per_scan:
+            logger.info(
+                "Stand-up cap (%s) reached; remaining users deferred to the next tick.",
+                config.max_items_per_scan,
+            )
+            break
+        if user.id in already:
+            continue
+        try:
+            record, was_generated = briefings.generate_standup(user, today=today, config=config)
+        except Exception:
+            # One user's bad data must not stop the rest of the organisation
+            # getting their stand-up.
+            logger.exception("Stand-up generation failed for user %s", user.id)
+            failed += 1
+            continue
+        if was_generated and record is not None:
+            generated += 1
+        else:
+            skipped += 1
+
+    return {"generated": generated, "skipped": skipped, "failed": failed}
+
+
+# --------------------------------------------------------------------------- #
+# Executive summary (§ "AI Executive Summary")
+# --------------------------------------------------------------------------- #
+@shared_task
+def generate_executive_summary(period: str = "daily") -> dict:
+    """Build and deliver the organisation-wide executive summary for a period."""
+    from . import briefings
+    from .models import ReportPeriod as Period
+
+    config = AISettings.load()
+    if not (config.is_enabled and config.automation_enabled and config.executive_summary_enabled):
+        return {"skipped": "disabled"}
+
+    per_period_switch = {
+        Period.DAILY: config.executive_daily_enabled,
+        Period.WEEKLY: config.executive_weekly_enabled,
+        Period.MONTHLY: config.executive_monthly_enabled,
+    }
+    if period not in per_period_switch:
+        return {"skipped": f"unknown period {period!r}"}
+    if not per_period_switch[period]:
+        return {"skipped": f"{period} summary disabled"}
+
+    record, generated = briefings.generate_executive_summary(period, config=config)
+    return {
+        "summary_id": record.id,
+        "period": period,
+        "generated": generated,
+        "health_score": record.health_score,
+        "ai_ok": record.ai_ok,
+    }
+
+
+@shared_task
+def generate_standup_for_user(user_id: int, *, force: bool = False, actor_id: int | None = None) -> dict:
+    """One person's stand-up, on demand.
+
+    The worker-side half of the "Generate stand-up" button: the HTTP request
+    queues this and returns immediately, and the browser reads the result back
+    from the stored row.
+    """
+    from . import briefings
+    from .models import GenerationTrigger
+
+    user = User.objects.filter(pk=user_id, is_active=True).first()
+    if user is None:
+        return {"skipped": "no such user"}
+
+    actor = User.objects.filter(pk=actor_id).first() if actor_id else None
+    record, generated = briefings.generate_standup(
+        user, trigger=GenerationTrigger.MANUAL, actor=actor, force=force
+    )
+    return {"standup_id": record.id if record else None, "generated": generated}
+
+
+# --------------------------------------------------------------------------- #
+# Outbound email
+# --------------------------------------------------------------------------- #
+@shared_task
+def send_outbound_email(email_id: int) -> dict:
+    """Put one prepared message on the wire.
+
+    The row was validated and stored by the request that created it, so this
+    only has to talk to the mail server. Delivery outcome — including the
+    failure reason — is recorded on the row, not raised, so the compose screen
+    can show the user what happened without the worker retrying blindly.
+    """
+    from .models import OutboundEmail
+    from .outbound import send
+
+    email = OutboundEmail.objects.filter(pk=email_id).first()
+    if email is None:
+        return {"skipped": "no such email"}
+    sent = send(email)
+    return {"email_id": email.id, "sent": sent, "error": email.error}
+
+
+@shared_task
+def retry_failed_emails(max_attempts: int = 3, hours: int = 24) -> dict:
+    """Re-send messages that failed transiently.
+
+    Bounded twice over — by attempt count and by age — because a message that
+    has failed three times or is a day old is failing for a reason that another
+    attempt will not fix, and a permanently retrying queue is worse than a
+    visible failure.
+    """
+    from .models import EmailStatus, OutboundEmail
+    from .outbound import send
+
+    since = timezone.now() - timedelta(hours=hours)
+    stuck = OutboundEmail.objects.filter(
+        status=EmailStatus.FAILED, attempts__lt=max_attempts, created_at__gte=since
+    )[:50]
+
+    sent = failed = 0
+    for email in stuck:
+        if send(email):
+            sent += 1
+        else:
+            failed += 1
+    return {"sent": sent, "still_failing": failed}
+
+
+@shared_task
+def alert_critical_task(task_id: int, *, reason: str = "", use_ai: bool = True) -> dict:
+    """Email everyone who needs to know that a task reached a critical stage."""
+    from apps.tasks.models import Task
+
+    from . import critical
+
+    task = (
+        Task.objects.filter(pk=task_id)
+        .select_related("project", "project__manager", "project__owner", "primary_owner")
+        .prefetch_related("owners")
+        .first()
+    )
+    if task is None:
+        return {"skipped": "no such task"}
+
+    # Re-check on arrival: the task may have been fixed between the save that
+    # triggered this and the worker picking it up, and an alert about a problem
+    # that no longer exists trains people to ignore alerts.
+    if not reason:
+        reason = critical.detect_transition(task) or ""
+    if not reason or ctx.is_closed(task.status):
+        return {"skipped": "no longer critical"}
+
+    return critical.alert(task, reason, use_ai=use_ai)
+
+
+@shared_task
+def generate_executive_summary_on_demand(
+    period: str = "daily", *, force: bool = False, actor_id: int | None = None
+) -> dict:
+    """Worker-side half of the "Generate executive summary" button.
+
+    Unlike the scheduled job this does not email leadership — a manual
+    generation is someone looking at a screen, not a broadcast.
+    """
+    from . import briefings
+    from .models import GenerationTrigger
+
+    actor = User.objects.filter(pk=actor_id).first() if actor_id else None
+    record, generated = briefings.generate_executive_summary(
+        period, trigger=GenerationTrigger.MANUAL, actor=actor, force=force, deliver_it=False
+    )
+    return {"summary_id": record.id, "generated": generated, "health_score": record.health_score}
+
+
+@shared_task
+def generate_daily_executive_summary() -> dict:
+    """Named entry point for the daily Beat schedule."""
+    return generate_executive_summary("daily")
+
+
+@shared_task
+def generate_weekly_executive_summary() -> dict:
+    """Named entry point for the weekly Beat schedule."""
+    return generate_executive_summary("weekly")
+
+
+@shared_task
+def generate_monthly_executive_summary() -> dict:
+    """Named entry point for the monthly Beat schedule."""
+    return generate_executive_summary("monthly")

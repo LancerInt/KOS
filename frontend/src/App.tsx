@@ -29,6 +29,7 @@ import WorkspacePermissionsPage from "./pages/WorkspacePermissionsPage";
 import AiSettingsPage from "./pages/AiSettingsPage";
 import MeetingNotesPage from "./pages/MeetingNotesPage";
 import HrToolsPage from "./pages/HrToolsPage";
+import ExecutiveSummaryPage from "./pages/ExecutiveSummaryPage";
 
 export default function App() {
   const dispatch = useAppDispatch();
@@ -56,6 +57,7 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/dashboard" element={<Navigate to="/" replace />} />
             <Route path="/reports" element={<Navigate to="/" replace />} />
+            <Route path="/executive-summary" element={<ExecutiveSummaryPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />

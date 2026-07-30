@@ -180,6 +180,34 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.ai.tasks.generate_monthly_reports",
         "schedule": crontab(hour=9, minute=0, day_of_month="1"),
     },
+    # --- AI daily stand-up & executive summary --------------------------- #
+    # The stand-up ticks every 15 minutes and the task itself waits for the
+    # hour configured in AI settings (default 09:00). Keeping the time in the
+    # database rather than in this crontab is what lets an administrator move
+    # it without a redeploy, and makes the job self-healing after an outage.
+    "ai-daily-standup": {
+        "task": "apps.ai.tasks.generate_daily_standups",
+        "schedule": crontab(minute="*/15"),
+    },
+    "ai-executive-summary-daily": {
+        "task": "apps.ai.tasks.generate_daily_executive_summary",
+        "schedule": crontab(hour=9, minute=15),
+    },
+    "ai-executive-summary-weekly": {
+        "task": "apps.ai.tasks.generate_weekly_executive_summary",
+        "schedule": crontab(hour=9, minute=30, day_of_week="mon"),
+    },
+    "ai-executive-summary-monthly": {
+        "task": "apps.ai.tasks.generate_monthly_executive_summary",
+        "schedule": crontab(hour=9, minute=45, day_of_month="1"),
+    },
+    # Outbound mail that hit a transient SMTP failure. Bounded by attempt count
+    # and age inside the task, so this cannot become a permanently retrying
+    # queue — a message that fails three times is failing for a real reason.
+    "ai-retry-failed-emails": {
+        "task": "apps.ai.tasks.retry_failed_emails",
+        "schedule": crontab(minute="*/20"),
+    },
 }
 
 # --------------------------------------------------------------------------- #

@@ -63,6 +63,26 @@ EXTRACTION_SYSTEM = (
     "leave them empty when unstated. Write task titles in the imperative."
 )
 
+STANDUP_SYSTEM = (
+    f"{BASE_SYSTEM}\n"
+    "You write one person's daily stand-up, addressed to them directly and read first thing in "
+    "the morning. Be warm but brief — this is a briefing, not a report. Name real tasks; never "
+    "pad the list to look fuller. Where you recommend an order of work, justify it from the data: "
+    "what is blocking others, what is closest to its deadline, what is already late. "
+    "If someone had a genuinely quiet day, say so in one line rather than manufacturing activity."
+)
+
+EXECUTIVE_SYSTEM = (
+    f"{BASE_SYSTEM}\n"
+    "You brief executives and department heads on the state of the organisation. Every figure you "
+    "need has already been calculated and is given to you — quote those numbers exactly and never "
+    "compute, estimate or invent a new one. Your value is judgement, not arithmetic: what the "
+    "figures mean, which of them matter this week, and what leadership should do about them. "
+    "Lead with what is going wrong. Recommendations must be specific and assignable — "
+    "'move a backend engineer onto Project Alpha' rather than 'improve resourcing'. "
+    "Where a data source is described as unavailable, say nothing about it at all."
+)
+
 
 def json_instruction(schema: dict[str, Any]) -> str:
     """Append the required output shape to a system prompt."""
@@ -139,4 +159,23 @@ def tasks_from_notes_prompt(notes: str, *, context: str) -> str:
         "Read these notes and extract the decisions made and the tasks that must now be created."
         + _section("Context", context)
         + _section("Notes", notes)
+    )
+
+
+def standup_prompt(standup_context: str, *, person: str) -> str:
+    return (
+        f"Write today's stand-up for {person or 'this person'}. Cover what they finished yesterday, "
+        "what deserves their attention today and in what order, anything overdue, and anything "
+        "blocking them. Close with one honest observation about how their workload is trending."
+        + _section("Their day", standup_context)
+    )
+
+
+def executive_prompt(executive_context: str, *, period_label: str) -> str:
+    return (
+        f"Write the {period_label} executive summary for the leadership team. Judge the overall "
+        "health of the business, name the projects and teams that need intervention, and give "
+        "specific recommended actions. Ground every statement in the figures below and reuse their "
+        "exact values."
+        + _section("Organisation figures", executive_context)
     )

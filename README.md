@@ -124,6 +124,8 @@ timings and rate caps — is runtime configuration at **Platform → AI Automati
 | Daily 08:00 | `generate_daily_summaries` | Personal briefing email per user |
 | Mon 08:30 | `generate_weekly_reports` | Team report to leadership |
 | 1st 09:00 | `generate_monthly_reports` | KPI / productivity / executive summary |
+| 20 min | `retry_failed_emails` | Re-sends outbound mail that hit a transient SMTP failure |
+| on save | `alert_critical_task` | Emails owners the moment a task reaches a critical stage |
 
 The escalation ladder: overdue detected → owner reminded → reminded again after
 30 min → manager notified after 2 h → escalated to leadership after 24 h (all
@@ -136,6 +138,50 @@ Run them without a worker:
 docker compose exec backend python manage.py ai_scan          # recurring scans
 docker compose exec backend python manage.py ai_scan --all    # plus daily/weekly/monthly
 ```
+
+### Sending email (`apps.ai.outbound`)
+
+Two things send mail out of KOS, and both go through one audited path.
+
+**Drafts a user sends.** "Generate email" produces a draft; the compose dialog
+lets the user edit it, add **Cc** and **Bcc**, and press Send. Drafting
+(`POST /api/ai/generate-email/`) and sending (`POST /api/ai/send-email/`) are
+separate endpoints on purpose — generating is free to repeat and changes
+nothing, sending is irreversible. The only way to reach the send endpoint is to
+post the approved text back, which is what guarantees nothing is ever sent
+unread.
+
+**Critical-stage alerts.** A task *crossing into* a critical stage emails its
+owners immediately, without waiting for the next scan. A crossing means: raised
+to critical priority, flagged as a critical risk, critical/high work becoming
+blocked or on hold, or a critical task passing its due date. Owners are on To,
+project management on Cc, and a configurable watch-list on **Bcc** so a shared
+operations mailbox can see every alert without appearing in the team's
+reply-all. Re-saving an already-critical task sends nothing, and a per-task
+cooldown (default 12 h) stops a triage session becoming a mail storm.
+
+Every message — including its Bcc list — is stored as an `OutboundEmail` row
+with its delivery outcome, visible at **Django admin → Outbound emails** and
+over `GET /api/ai/emails/`. Guard rails: kill switches for automated and
+user-sent mail separately, a per-user hourly cap, a per-message recipient cap,
+and header-injection stripping on every address and subject.
+
+**Gmail** is configuration, not code — point the standard Django SMTP settings
+at it:
+
+```bash
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=kos@your-domain.com
+EMAIL_HOST_PASSWORD=<16-character app password>
+DEFAULT_FROM_EMAIL=KOS <kos@your-domain.com>
+```
+
+Gmail requires an [app password](https://myaccount.google.com/apppasswords)
+(2-Step Verification must be on) and rewrites `From` to the authenticated
+account. KOS therefore sets `Reply-To` to the person who sent the message, so
+replies reach them rather than a no-reply mailbox.
 
 ### Design guarantees
 

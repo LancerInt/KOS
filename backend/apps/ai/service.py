@@ -465,6 +465,37 @@ def detect_duplicates(tasks, *, user=None) -> AIOutcome:
                  schema=schemas.DUPLICATES, user=user)
 
 
+def daily_standup(standup_context: str, *, person: str = "", user=None, config=None) -> AIOutcome:
+    """One person's morning stand-up.
+
+    Takes rendered context rather than the user object so the caller owns the
+    access-scoping decision — this function must never be the thing that
+    decides which records a stand-up may mention.
+    """
+    return _json(
+        AIAction.DAILY_STANDUP,
+        prompts.standup_prompt(standup_context, person=person),
+        system=prompts.STANDUP_SYSTEM,
+        schema=schemas.DAILY_STANDUP,
+        user=user, subject=user, config=config, max_tokens=1600,
+    )
+
+
+def executive_summary(executive_context: str, *, period_label: str, user=None, config=None) -> AIOutcome:
+    """The organisation-wide leadership briefing.
+
+    Same contract as :func:`daily_standup`: the figures arrive already computed,
+    and the model is asked to interpret them rather than to produce them.
+    """
+    return _json(
+        AIAction.EXECUTIVE_SUMMARY,
+        prompts.executive_prompt(executive_context, period_label=period_label),
+        system=prompts.EXECUTIVE_SYSTEM,
+        schema=schemas.EXECUTIVE_SUMMARY,
+        user=user, config=config, max_tokens=2600,
+    )
+
+
 def balance_workload(users, *, user=None) -> AIOutcome:
     prompt = (
         "Assess how work is spread across this team. Identify who is overloaded, who has capacity, "

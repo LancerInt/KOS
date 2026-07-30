@@ -10,6 +10,7 @@ from .views import (
     AIAutomationLogViewSet,
     AIChatView,
     AIConversationViewSet,
+    AIEmailSendView,
     AIEmailView,
     AIGrammarView,
     AIReportViewSet,
@@ -24,12 +25,19 @@ from .views import (
     CustomerReplyView,
     CustomerSummaryView,
     DailyRecommendationsView,
+    DailyStandupHistoryViewSet,
+    DailyStandupView,
     DashboardExplainView,
     DashboardInsightsView,
+    ExecutiveSummaryCsvView,
+    ExecutiveSummaryEmailView,
+    ExecutiveSummaryHistoryViewSet,
+    ExecutiveSummaryView,
     ExtractTasksView,
     GenerateReportView,
     JobDescriptionView,
     MeetingSummaryView,
+    OutboundEmailViewSet,
     PerformanceSummaryView,
     ProjectAnalyseView,
     ProjectDelayView,
@@ -53,6 +61,9 @@ router.register("ai/conversations", AIConversationViewSet, basename="ai-conversa
 router.register("ai/reports", AIReportViewSet, basename="ai-report")
 router.register("ai/logs", AIRequestLogViewSet, basename="ai-log")
 router.register("ai/automation-logs", AIAutomationLogViewSet, basename="ai-automation-log")
+router.register("ai/standups", DailyStandupHistoryViewSet, basename="ai-standup-history")
+router.register("ai/executive-summaries", ExecutiveSummaryHistoryViewSet, basename="ai-executive-history")
+router.register("ai/emails", OutboundEmailViewSet, basename="ai-outbound-email")
 
 urlpatterns = [
     # Status & configuration
@@ -66,6 +77,8 @@ urlpatterns = [
     path("ai/grammar/", AIGrammarView.as_view(), name="ai-grammar"),
     path("ai/translate/", AITranslateView.as_view(), name="ai-translate"),
     path("ai/generate-email/", AIEmailView.as_view(), name="ai-generate-email"),
+    # Drafting and sending are separate endpoints on purpose — see AIEmailSendView.
+    path("ai/send-email/", AIEmailSendView.as_view(), name="ai-send-email"),
 
     # Projects
     path("ai/projects/<int:pk>/summary/", ProjectSummaryView.as_view(), name="ai-project-summary"),
@@ -104,6 +117,14 @@ urlpatterns = [
     path("ai/dashboard/insights/", DashboardInsightsView.as_view(), name="ai-dashboard-insights"),
     path("ai/dashboard/explain/", DashboardExplainView.as_view(), name="ai-dashboard-explain"),
     path("ai/dashboard/recommendations/", DailyRecommendationsView.as_view(), name="ai-recommendations"),
+
+    # Daily stand-up — GET reads today's, POST generates or regenerates it.
+    path("ai/standup/", DailyStandupView.as_view(), name="ai-standup"),
+
+    # Executive summary
+    path("ai/executive-summary/", ExecutiveSummaryView.as_view(), name="ai-executive-summary"),
+    path("ai/executive-summary/email/", ExecutiveSummaryEmailView.as_view(), name="ai-executive-summary-email"),
+    path("ai/executive-summary/export.csv", ExecutiveSummaryCsvView.as_view(), name="ai-executive-summary-csv"),
 
     # Reports
     path("ai/reports/generate/", GenerateReportView.as_view(), name="ai-generate-report"),

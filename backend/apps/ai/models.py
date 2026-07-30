@@ -8,6 +8,9 @@ Five concerns, kept separate:
 * :class:`AIConversation`  — assistant chat threads.
 * :class:`TaskEscalation`  — the per-task state machine for the reminder ladder.
 * :class:`AIReport`        — generated daily / weekly / monthly reports.
+* :class:`DailyStandup`    — one person's AI stand-up for one day.
+* :class:`ExecutiveSummary`— one organisation-wide executive briefing.
+* :class:`OutboundEmail`   — one email this system sent to the outside world.
 
 The two log models answer different questions. The request log answers "what did
 we send the vendor and what did it cost"; the automation log answers "why did the
@@ -56,6 +59,70 @@ class AISettings(models.Model):
     daily_summary_enabled = models.BooleanField(default=True)
     weekly_report_enabled = models.BooleanField(default=True)
     monthly_report_enabled = models.BooleanField(default=True)
+
+    # --- daily stand-up ----------------------------------------------------- #
+    # The stand-up beat entry ticks every 15 minutes and this is the gate: the
+    # run only proceeds once local time has reached standup_hour:standup_minute.
+    # Keeping the *time* here rather than in the crontab is what makes it
+    # configurable at runtime without a redeploy or a beat restart.
+    standup_enabled = models.BooleanField(default=True, help_text="Generate the AI daily stand-up.")
+    standup_hour = models.PositiveSmallIntegerField(
+        default=9, help_text="Local hour the stand-up is generated at (0-23)."
+    )
+    standup_minute = models.PositiveSmallIntegerField(
+        default=0, help_text="Local minute the stand-up is generated at (0-59)."
+    )
+    standup_notify_enabled = models.BooleanField(
+        default=True, help_text="Raise an in-app notification when a stand-up is ready."
+    )
+    standup_email_enabled = models.BooleanField(
+        default=True, help_text="Email the stand-up (still honours each user's own preferences)."
+    )
+
+    # --- executive summary -------------------------------------------------- #
+    executive_summary_enabled = models.BooleanField(
+        default=True, help_text="Master switch for the AI executive summary."
+    )
+    executive_daily_enabled = models.BooleanField(default=True)
+    executive_weekly_enabled = models.BooleanField(default=True)
+    executive_monthly_enabled = models.BooleanField(default=True)
+    executive_email_enabled = models.BooleanField(
+        default=True, help_text="Email each generated executive summary to leadership."
+    )
+
+    # --- outbound email (user-composed, sent from the AI draft) -------------- #
+    # ``email_enabled`` above governs *automation* mail. This governs mail a
+    # person composes and sends from the screen, which is a different decision:
+    # an administrator may well want to silence the robots while leaving people
+    # able to send. Both must be on for the critical-task alert, which is an
+    # automation that uses the outbound path.
+    outbound_email_enabled = models.BooleanField(
+        default=True, help_text="Let users send email to external addresses from KOS."
+    )
+    outbound_max_recipients = models.PositiveSmallIntegerField(
+        default=25, help_text="Most addresses one message may reach across To, Cc and Bcc combined."
+    )
+    outbound_hourly_limit_per_user = models.PositiveIntegerField(
+        default=30, help_text="Messages one user may send per hour. 0 = unlimited."
+    )
+
+    # --- critical-stage alerting -------------------------------------------- #
+    critical_alert_enabled = models.BooleanField(
+        default=True, help_text="Email immediately when a task reaches a critical stage."
+    )
+    critical_alert_cooldown_hours = models.PositiveIntegerField(
+        default=12, help_text="Do not re-alert on the same task within this many hours."
+    )
+    #: Addresses that are **blind**-copied on every critical alert — a shared
+    #: operations mailbox, a duty pager, a compliance archive. Bcc rather than
+    #: Cc so the watchers stay invisible to the task's own team.
+    critical_alert_bcc = models.TextField(
+        blank=True,
+        help_text="Comma or newline separated addresses blind-copied on every critical alert.",
+    )
+    critical_alert_include_managers = models.BooleanField(
+        default=True, help_text="Copy the project manager and owner on critical alerts."
+    )
 
     # --- escalation ladder (§ "Automated Features") ------------------------- #
     reminder_repeat_minutes = models.PositiveIntegerField(
@@ -141,6 +208,8 @@ class AIAction(models.TextChoices):
     REPORT = "report", "Generate report"
     DUPLICATE_DETECTION = "duplicate_detection", "Duplicate detection"
     WORKLOAD = "workload", "Workload balancing"
+    DAILY_STANDUP = "daily_standup", "Daily stand-up"
+    EXECUTIVE_SUMMARY = "executive_summary", "Executive summary"
 
 
 class AIRequestLog(models.Model):
@@ -194,10 +263,13 @@ class AutomationEvent(models.TextChoices):
     SLA_VIOLATION = "sla_violation", "SLA violation"
     PROJECT_HEALTH = "project_health", "Project health analysis"
     CRITICAL_STATUS = "critical_status", "Critical status"
+    CRITICAL_TASK = "critical_task", "Task reached a critical stage"
     DAILY_SUMMARY = "daily_summary", "Daily summary"
     WEEKLY_REPORT = "weekly_report", "Weekly report"
     MONTHLY_REPORT = "monthly_report", "Monthly report"
     MILESTONE_MISSED = "milestone_missed", "Milestone missed"
+    DAILY_STANDUP = "daily_standup", "Daily stand-up"
+    EXECUTIVE_SUMMARY = "executive_summary", "Executive summary"
 
 
 class AIAutomationLog(models.Model):
@@ -236,6 +308,82 @@ class AIAutomationLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.event} [{'ok' if self.ok else 'failed'}] {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class EmailStatus(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    SENT = "sent", "Sent"
+    FAILED = "failed", "Failed"
+
+
+class OutboundEmail(TimeStampedModel):
+    """One email KOS sent to the outside world.
+
+    Distinct from :class:`apps.notifications.models.Notification`, which is
+    in-app messaging to KOS users. This is mail leaving the building — to a
+    customer's Gmail, a supplier, a regulator — so it is stored in full rather
+    than as a delivery flag. Two reasons that matters:
+
+    * **Accountability.** "Who emailed the client that date?" has to have an
+      answer, and it has to include the Bcc list, which is invisible everywhere
+      else by definition.
+    * **Retry.** SMTP fails transiently. A failed row keeps its body and its
+      error, so sending again is a re-send, not a re-compose.
+
+    Recipients are stored as JSON lists rather than a comma string because
+    "did this address receive it" must be answerable without parsing.
+    """
+
+    class Source(models.TextChoices):
+        #: A person composed and sent it from a screen.
+        MANUAL = "manual", "Sent by a user"
+        #: An automation sent it — currently only the critical-task alert.
+        CRITICAL_ALERT = "critical_alert", "Critical task alert"
+
+    to = models.JSONField(default=list)
+    cc = models.JSONField(default=list, blank=True)
+    bcc = models.JSONField(default=list, blank=True)
+    reply_to = models.CharField(max_length=320, blank=True)
+
+    subject = models.CharField(max_length=300)
+    body = models.TextField()
+
+    source = models.CharField(max_length=20, choices=Source.choices, default=Source.MANUAL)
+    #: Null for automation-sent mail — nobody pressed anything.
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sent_emails",
+    )
+
+    task = models.ForeignKey(
+        "tasks.Task", on_delete=models.SET_NULL, null=True, blank=True, related_name="outbound_emails"
+    )
+    project = models.ForeignKey(
+        "projects.Project", on_delete=models.SET_NULL, null=True, blank=True, related_name="outbound_emails"
+    )
+    #: The draft this was sent from, when the AI wrote it. Null when hand-typed.
+    draft_log = models.ForeignKey(
+        AIRequestLog, on_delete=models.SET_NULL, null=True, blank=True, related_name="sent_emails"
+    )
+
+    status = models.CharField(max_length=10, choices=EmailStatus.choices, default=EmailStatus.QUEUED, db_index=True)
+    error = models.CharField(max_length=400, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["sender", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.subject} → {', '.join(self.to)[:80]} [{self.status}]"
+
+    @property
+    def recipient_count(self) -> int:
+        return len(self.to) + len(self.cc) + len(self.bcc)
 
 
 class AIConversation(TimeStampedModel):
@@ -354,3 +502,111 @@ class AIReport(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.get_period_display()} report · {self.title}"
+
+
+class GenerationTrigger(models.TextChoices):
+    """Why a stand-up or executive summary was generated.
+
+    Kept on the row itself because "the 9am job produced this" and "a manager
+    pressed the button at 14:30" are answers to different questions, and the
+    execution log is the only other place that distinction survives.
+    """
+
+    SCHEDULED = "scheduled", "Scheduled"
+    MANUAL = "manual", "Manual"
+
+
+class GeneratedBriefing(TimeStampedModel):
+    """Shared behaviour of the two AI briefings.
+
+    Both are "run something expensive, store the result, record how the run
+    went" — so the execution record (timing, AI status, delivery status) is
+    modelled once here rather than duplicated in each table.
+    """
+
+    content = models.JSONField(default=dict, blank=True, help_text="Structured body from the AI.")
+    metrics = models.JSONField(default=dict, blank=True, help_text="The figures it was built from.")
+
+    trigger = models.CharField(
+        max_length=10, choices=GenerationTrigger.choices, default=GenerationTrigger.SCHEDULED
+    )
+    generated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        help_text="Who pressed the button. Null for scheduled runs.",
+    )
+
+    #: False when the provider was unavailable and deterministic copy was used
+    #: instead — the briefing is still valid, just not AI-written.
+    ai_ok = models.BooleanField(default=True)
+    error = models.CharField(max_length=400, blank=True)
+    duration_ms = models.PositiveIntegerField(default=0)
+    request_log = models.ForeignKey(
+        AIRequestLog, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    notified_at = models.DateTimeField(null=True, blank=True)
+    emailed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
+
+
+class DailyStandup(GeneratedBriefing):
+    """One person's stand-up for one day.
+
+    ``(user, standup_date)`` is unique, which is what makes this row the cache:
+    the scheduled job and the "Refresh" button both look here first, so a day's
+    stand-up costs exactly one provider call unless someone asks for a
+    regeneration explicitly.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_standups"
+    )
+    standup_date = models.DateField(db_index=True)
+    #: Bumped by each explicit regeneration, so the UI can say "regenerated".
+    generation_count = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ("-standup_date", "-created_at")
+        constraints = [
+            models.UniqueConstraint(fields=["user", "standup_date"], name="unique_standup_per_user_per_day")
+        ]
+        indexes = [models.Index(fields=["user", "standup_date"])]
+
+    def __str__(self) -> str:
+        return f"Stand-up for {self.user_id} on {self.standup_date}"
+
+    @property
+    def greeting(self) -> str:
+        return str(self.content.get("greeting") or "")
+
+
+class ExecutiveSummary(GeneratedBriefing):
+    """An organisation-wide executive briefing for one period.
+
+    Unique on ``(period, period_end)`` for the same reason as the stand-up: the
+    Monday weekly job and a manager pressing "Generate" on Monday afternoon must
+    not produce two different versions of the same week.
+    """
+
+    period = models.CharField(max_length=10, choices=ReportPeriod.choices, db_index=True)
+    period_start = models.DateField()
+    period_end = models.DateField()
+
+    title = models.CharField(max_length=240, blank=True)
+    #: Denormalised from ``content`` so the list endpoint and charts do not have
+    #: to parse every JSON body to draw a trend line.
+    health_score = models.PositiveSmallIntegerField(default=0)
+    risk_count = models.PositiveSmallIntegerField(default=0)
+    generation_count = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ("-period_end", "-created_at")
+        constraints = [
+            models.UniqueConstraint(fields=["period", "period_end"], name="unique_executive_summary_per_period")
+        ]
+        indexes = [models.Index(fields=["period", "period_end"])]
+
+    def __str__(self) -> str:
+        return f"{self.get_period_display()} executive summary · {self.period_end}"

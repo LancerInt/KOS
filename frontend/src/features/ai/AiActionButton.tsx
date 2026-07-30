@@ -17,11 +17,13 @@ import {
 } from "@mui/material";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 
 import { tokens } from "../../theme";
 import { aiErrorMessage, type AiOutcome } from "./aiApi";
 import { useAiAssistant } from "./AiContext";
 import AiResultView from "./AiResultView";
+import SendEmailDialog from "./SendEmailDialog";
 
 /**
  * The "✨ …" buttons that appear throughout the ERP.
@@ -88,6 +90,24 @@ export interface AiApplyAction {
   onApply: (outcome: AiOutcome<object>) => Promise<boolean | void> | boolean | void;
 }
 
+/**
+ * Offer to send the result as an email.
+ *
+ * Opt-in rather than inferred from the result's shape: several actions happen
+ * to produce a `subject` and a `body`, and only the screen knows which of them
+ * are meant to leave the building.
+ */
+export interface AiEmailAction {
+  /**
+   * Pre-fills the To field — a customer's address, say. When omitted, a
+   * collected input field named `to` is used instead, so a screen can ask for
+   * the address up front without wiring any state of its own.
+   */
+  defaultTo?: string;
+  projectId?: number;
+  taskId?: number;
+}
+
 /** An input collected before the action runs — e.g. the customer's message. */
 export interface AiInputField {
   name: string;
@@ -112,6 +132,8 @@ interface AiActionButtonProps {
   disabled?: boolean;
   disabledReason?: string;
   apply?: AiApplyAction;
+  /** Offer "Send email…" on the result. See {@link AiEmailAction}. */
+  email?: AiEmailAction;
   /** Render as an icon-only button — used in dense toolbars. */
   iconOnly?: boolean;
 }
@@ -127,6 +149,7 @@ export default function AiActionButton({
   disabled = false,
   disabledReason,
   apply,
+  email,
   iconOnly = false,
 }: AiActionButtonProps) {
   const { status } = useAiAssistant();
@@ -137,6 +160,13 @@ export default function AiActionButton({
   const [applying, setApplying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [composing, setComposing] = useState(false);
+
+  // The draft to send. A result with neither a subject nor a body is not an
+  // email however the screen labelled it, so Send stays hidden for it.
+  const draft = outcome?.structured ? (outcome.data as Record<string, unknown>) : null;
+  const canSendEmail =
+    Boolean(email) && Boolean(draft && (draft.subject || draft.body)) && !loading && !error;
 
   const aiOff = status ? !status.enabled : false;
   const isDisabled = disabled || aiOff;
@@ -293,6 +323,16 @@ export default function AiActionButton({
               Generate
             </Button>
           )}
+          {canSendEmail && (
+            <Button
+              size="small"
+              variant={apply ? "outlined" : "contained"}
+              onClick={() => setComposing(true)}
+              startIcon={<SendRoundedIcon sx={{ fontSize: 16 }} />}
+            >
+              Send email…
+            </Button>
+          )}
           {apply && outcome && !loading && !error && (
             <Button size="small" variant="contained" onClick={doApply} disabled={applying}>
               {applying ? "Applying…" : apply.label}
@@ -300,6 +340,28 @@ export default function AiActionButton({
           )}
         </DialogActions>
       </Dialog>
+
+      {/* Composing sits on top of the result so the draft stays readable behind
+          it, and closing the compose window returns to the draft rather than
+          throwing away a generation the user has already paid for. */}
+      {email && (
+        <SendEmailDialog
+          open={composing}
+          onClose={() => setComposing(false)}
+          subject={String(draft?.subject ?? "")}
+          body={String(draft?.body ?? outcome?.text ?? "")}
+          to={email.defaultTo ?? values.to ?? ""}
+          draftLogId={outcome?.log_id}
+          projectId={email.projectId}
+          taskId={email.taskId}
+          onSent={() => {
+            // Sent is the end of this flow — leaving the draft open invites a
+            // second send of a message that has already gone.
+            setComposing(false);
+            setOpen(false);
+          }}
+        />
+      )}
     </>
   );
 }
