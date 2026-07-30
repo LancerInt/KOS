@@ -28,12 +28,19 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             "id", "workspace", "name",
             "created_by", "created_by_name", "created_at",
             "section_count", "record_count",
-            "start_date", "duration_days", "completed_at", "duration",
+            "start_at", "end_at", "completed_at", "duration",
         )
         read_only_fields = ("created_by", "created_at", "completed_at")
 
     def get_duration(self, obj) -> dict:
         return obj.duration_state()
+
+    def _check_window(self, attrs):
+        instance = self.instance
+        start_at = attrs.get("start_at", getattr(instance, "start_at", None))
+        end_at = attrs.get("end_at", getattr(instance, "end_at", None))
+        if start_at and end_at and end_at <= start_at:
+            raise serializers.ValidationError({"end_at": "The end must be after the start."})
 
     def get_created_by_name(self, obj) -> str:
         user = obj.created_by
@@ -62,6 +69,7 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"name": "A project with this name already exists."})
         if provided_name:
             attrs["name"] = name
+        self._check_window(attrs)
         return attrs
 
 
@@ -75,13 +83,21 @@ class WorkspaceRecordSerializer(serializers.ModelSerializer):
         fields = (
             "id", "project", "workspace", "category", "data",
             "attachment", "attachment_name",
-            "start_date", "duration_days", "completed_at", "duration",
+            "start_at", "end_at", "completed_at", "duration",
             "created_by", "created_by_name", "created_at", "updated_at",
         )
         read_only_fields = ("workspace", "completed_at", "created_by", "created_at", "updated_at")
 
     def get_duration(self, obj) -> dict:
         return obj.duration_state()
+
+    def validate(self, attrs):
+        instance = self.instance
+        start_at = attrs.get("start_at", getattr(instance, "start_at", None))
+        end_at = attrs.get("end_at", getattr(instance, "end_at", None))
+        if start_at and end_at and end_at <= start_at:
+            raise serializers.ValidationError({"end_at": "The end must be after the start."})
+        return attrs
 
     def get_created_by_name(self, obj) -> str:
         user = obj.created_by

@@ -25,16 +25,16 @@ from apps.notifications.services import notify
 from .models import WorkspaceProject, WorkspaceRecord
 
 
-def _fmt(d) -> str:
-    return d.strftime("%d %b %Y")
+def _fmt(dt) -> str:
+    return timezone.localtime(dt).strftime("%d %b %Y, %H:%M")
 
 
 # ---- Projects: staged reminders --------------------------------------------
 
 def _project_stages(project):
-    """(key, target_date, event, requires_ack) for stages on/after the start."""
-    end = project.end_date
-    start = project.start_date
+    """(key, target_datetime, event, requires_ack) for stages on/after the start."""
+    end = project.end_at
+    start = project.start_at
     stages = [
         ("due-7", end - timedelta(days=7), NotificationEvent.DUE_SOON, False),
         ("due-1", end - timedelta(days=1), NotificationEvent.DUE_SOON, False),
@@ -45,7 +45,7 @@ def _project_stages(project):
 
 
 def _stage_message(project, key):
-    end, name = project.end_date, project.name
+    end, name = project.end_at, project.name
     if key == "due-7":
         return (f"1 week to go — {name}",
                 f"Your project “{name}” is due on {_fmt(end)} — about a week left. "
@@ -54,17 +54,17 @@ def _stage_message(project, key):
         return (f"Due tomorrow — {name}",
                 f"Your project “{name}” is due tomorrow ({_fmt(end)}). Mark it complete when it's done.")
     if key == "due":
-        return (f"Due today — {name}",
-                f"Your project “{name}” reaches its due date today ({_fmt(end)}). Mark it complete.")
+        return (f"Due now — {name}",
+                f"Your project “{name}” reaches its end time ({_fmt(end)}). Mark it complete.")
     return (f"Overdue — {name}",
-            f"Your project “{name}” passed its due date ({_fmt(end)}) and isn't complete yet. "
+            f"Your project “{name}” passed its end time ({_fmt(end)}) and isn't complete yet. "
             f"Acknowledge with a new expected date or a reason.")
 
 
-def _sync_project(project, today) -> int:
-    if project.completed_at or not project.end_date or not project.created_by_id:
+def _sync_project(project, now) -> int:
+    if project.completed_at or not project.end_at or not project.start_at or not project.created_by_id:
         return 0
-    reached = [s for s in _project_stages(project) if s[1] <= today]
+    reached = [s for s in _project_stages(project) if s[1] <= now]
     if not reached:
         return 0
     sent = set(project.reminders_sent or [])
@@ -87,7 +87,7 @@ def _sync_project(project, today) -> int:
 def _due_records(base):
     return base.filter(
         completed_at__isnull=True, duration_notified_at__isnull=True,
-        start_date__isnull=False, duration_days__isnull=False,
+        start_at__isnull=False, end_at__isnull=False,
     )
 
 
@@ -99,13 +99,13 @@ def _record_label(record) -> str:
 
 
 def _notify_record(record) -> None:
-    end, label = record.end_date, _record_label(record)
+    end, label = record.end_at, _record_label(record)
     notify(
         record.created_by,
         event=NotificationEvent.DURATION_COMPLETE,
         title=f"Duration complete — {label}",
-        body=(f"“{label}” ({record.category}) has completed its {record.duration_days}-day duration "
-              f"(ended {_fmt(end)}). Mark it complete or update its schedule."),
+        body=(f"“{label}” ({record.category}) has reached its end time "
+              f"({_fmt(end)}). Mark it complete or update its schedule."),
         url=f"/workspaces/{record.workspace}/projects/{record.project_id}",
     )
     record.duration_notified_at = timezone.now()
@@ -115,12 +115,12 @@ def _notify_record(record) -> None:
 # ---- Runners ---------------------------------------------------------------
 
 def _run(project_qs, record_qs) -> int:
-    today = timezone.localdate()
+    now = timezone.now()
     count = 0
-    for p in project_qs.filter(start_date__isnull=False, duration_days__isnull=False, completed_at__isnull=True):
-        count += _sync_project(p, today)
+    for p in project_qs.filter(start_at__isnull=False, end_at__isnull=False, completed_at__isnull=True):
+        count += _sync_project(p, now)
     for r in _due_records(record_qs):
-        if r.end_date and r.end_date <= today and r.created_by_id:
+        if r.end_at and r.end_at <= now and r.created_by_id:
             _notify_record(r)
             count += 1
     return count

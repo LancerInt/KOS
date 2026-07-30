@@ -11,6 +11,7 @@ table per category.
 """
 from __future__ import annotations
 
+import math
 from datetime import timedelta
 
 from django.conf import settings
@@ -18,30 +19,59 @@ from django.db import models
 from django.utils import timezone
 
 
-def compute_duration_state(start_date, duration_days, completed_at, today=None) -> dict:
-    """Shared status summary for a timed item (project or section step)."""
-    if not start_date or not duration_days:
+def _left_label(seconds: float) -> str:
+    """A compact "time remaining" string: "2d 5h", "5h 20m", "45m", "Ended"."""
+    if seconds <= 0:
+        return "Ended"
+    d = int(seconds // 86400)
+    h = int((seconds % 86400) // 3600)
+    m = int((seconds % 3600) // 60)
+    if d > 0:
+        return f"{d}d {h}h" if h else f"{d}d"
+    if h > 0:
+        return f"{h}h {m}m" if m else f"{h}h"
+    return f"{max(1, m)}m"
+
+
+def compute_duration_state(start_at, end_at, completed_at, now=None) -> dict:
+    """Shared status summary for a timed item (project or record), to the hour.
+
+    Durations are datetimes (start_at → end_at). Returns both hour-precise fields
+    (``end_at``, ``end_label``, ``hours_left``, ``pct``, ``left_label``) and
+    coarse day counts kept for the existing progress rails.
+    """
+    if not start_at or not end_at:
         return {"status": "none"}
-    if today is None:
-        today = timezone.localdate()
-    end = start_date + timedelta(days=duration_days)
-    total = duration_days
-    elapsed = max(0, min((today - start_date).days, total))
-    left = (end - today).days
+    if now is None:
+        now = timezone.now()
+    total = (end_at - start_at).total_seconds() or 1.0
+    left = (end_at - now).total_seconds()
+    elapsed = max(0.0, min(total, (now - start_at).total_seconds()))
+    pct = round(elapsed / total * 100)
+    days_total = max(1, round(total / 86400))
+    days_left = math.ceil(left / 86400) if left > 0 else 0
+    days_elapsed = max(0, min(days_total, days_total - days_left))
     if completed_at:
         status = "completed"
-    elif today >= end:
-        status = "due"           # duration elapsed, awaiting results / completion
-    elif left <= 3:
+    elif now >= end_at:
+        status = "due"               # duration elapsed, awaiting results / completion
+    elif left <= 86400:              # within a day
         status = "ending_soon"
     else:
         status = "active"
+    local_end = timezone.localtime(end_at)
     return {
         "status": status,
-        "end_date": end.isoformat(),
-        "days_total": total,
-        "days_elapsed": elapsed,
-        "days_left": left,
+        "start_at": start_at.isoformat(),
+        "end_date": local_end.date().isoformat(),
+        "end_at": end_at.isoformat(),
+        "end_label": local_end.strftime("%d %b, %H:%M"),
+        "days_total": days_total,
+        "days_elapsed": days_elapsed,
+        "days_left": max(0, days_left),
+        "hours_left": max(0, math.ceil(left / 3600)) if left > 0 else 0,
+        "pct": pct,
+        "left_label": _left_label(left),
     }
 
 
@@ -57,7 +87,10 @@ class WorkspaceProject(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    # Optional timed duration (used by Entomology trials). end_date is derived.
+    # Optional timed duration — start → end, to the hour.
+    start_at = models.DateTimeField(null=True, blank=True)
+    end_at = models.DateTimeField(null=True, blank=True)
+    # Legacy date-only fields (kept as the migration source; no longer written).
     start_date = models.DateField(null=True, blank=True)
     duration_days = models.PositiveIntegerField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -77,12 +110,10 @@ class WorkspaceProject(models.Model):
 
     @property
     def end_date(self):
-        if self.start_date and self.duration_days:
-            return self.start_date + timedelta(days=self.duration_days)
-        return None
+        return timezone.localtime(self.end_at).date() if self.end_at else None
 
-    def duration_state(self, today=None) -> dict:
-        return compute_duration_state(self.start_date, self.duration_days, self.completed_at, today)
+    def duration_state(self, now=None) -> dict:
+        return compute_duration_state(self.start_at, self.end_at, self.completed_at, now)
 
 
 class WorkspacePermission(models.Model):
@@ -126,7 +157,10 @@ class WorkspaceRecord(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    # Optional timed duration for this record (Entomology step-by-step).
+    # Optional timed duration for this record (Entomology step-by-step), to the hour.
+    start_at = models.DateTimeField(null=True, blank=True)
+    end_at = models.DateTimeField(null=True, blank=True)
+    # Legacy date-only fields (migration source; no longer written).
     start_date = models.DateField(null=True, blank=True)
     duration_days = models.PositiveIntegerField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -141,12 +175,10 @@ class WorkspaceRecord(models.Model):
 
     @property
     def end_date(self):
-        if self.start_date and self.duration_days:
-            return self.start_date + timedelta(days=self.duration_days)
-        return None
+        return timezone.localtime(self.end_at).date() if self.end_at else None
 
-    def duration_state(self, today=None) -> dict:
-        return compute_duration_state(self.start_date, self.duration_days, self.completed_at, today)
+    def duration_state(self, now=None) -> dict:
+        return compute_duration_state(self.start_at, self.end_at, self.completed_at, now)
 
 
 class WorkspaceSection(models.Model):
