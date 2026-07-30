@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Amazon USA — Section builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#16181D; --text:#1B1E25; --text2:#5A6373; --text3:#8A93A3;
+    --paper:#FBFAF6; --surface:#FFFFFF; --line:#E5E7EB;
+    --teal:#0F7A8B; --teal-ink:#0B5D6B; --teal-wash:#E6F3F5;
+    --coral:#E05A3C; --coral-ink:#B23A22; --coral-wash:#FCEAE4;
+    --purple:#7C5CD6; --purple-soft:#EFEBFB;
+    --blue:#2E7DE0; --blue-soft:#E6EEF8;
+    --marigold:#C07A1E; --marigold-ink:#8A551A; --marigold-soft:#F7ECDA;
+    --sand:#EAE1D2; --sand-border:#DDD2BF;
+    --sans:"IBM Plex Sans",system-ui,sans-serif; --disp:"Manrope",sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--text);font-family:var(--sans);letter-spacing:.01em;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:840px;margin:0 auto;padding:28px 24px 100px;}
+
+  .top{display:flex;align-items:center;gap:14px;margin-bottom:20px;}
+  .badge{width:44px;height:44px;border-radius:11px;flex-shrink:0;display:grid;place-items:center;color:#fff;background:linear-gradient(150deg,#E9A94A,var(--marigold));box-shadow:0 6px 16px rgba(192,122,30,.34);}
+  .badge svg{width:24px;height:24px;}
+  h1{font-family:var(--disp);font-weight:800;font-size:23px;letter-spacing:-.02em;margin:0;color:var(--ink);}
+  .sub{font-size:13px;color:var(--text3);margin-top:1px;}
+
+  .bar{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+  .bar .ttl{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);font-weight:700;}
+  .seg{display:inline-flex;margin-left:auto;padding:3px;border-radius:10px;background:#EEF0F3;border:1px solid var(--line);}
+  .seg button{border:none;background:transparent;font-family:var(--sans);font-weight:600;font-size:12.5px;color:var(--text2);padding:6px 14px;border-radius:7px;cursor:pointer;}
+  .seg button.on{background:#fff;color:var(--teal-ink);box-shadow:0 1px 2px rgba(20,22,29,.12);}
+
+  .btn{border:1px solid var(--line);background:#fff;color:var(--text2);font-family:var(--sans);font-weight:600;font-size:12px;padding:6px 11px;border-radius:8px;cursor:pointer;}
+  .btn:hover{border-color:#C5CAD2;}
+  .btn.primary{background:var(--teal);border-color:var(--teal);color:#fff;}
+  .btn.primary:hover{background:var(--teal-ink);}
+  .btn.add{border-style:dashed;border-color:var(--sand-border);color:var(--marigold-ink);background:#FDFBF7;width:100%;padding:11px;font-size:13px;}
+  .btn.add:hover{border-color:var(--marigold);background:var(--marigold-soft);}
+  .newsec{border:1.5px dashed var(--sand-border);border-radius:14px;padding:14px;width:100%;color:var(--marigold-ink);background:#FDFBF7;font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer;}
+  .newsec:hover{border-color:var(--marigold);background:var(--marigold-soft);}
+  .mut{color:var(--text3);font-size:11.5px;}
+
+  /* SECTION card — the hero */
+  .section{background:#fff;border:1px solid var(--line);border-radius:16px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 2px rgba(20,22,29,.04);}
+  .s-head{display:flex;align-items:center;gap:11px;padding:16px 18px;cursor:pointer;}
+  .s-head:hover{background:#FCFBF9;}
+  .s-num{width:28px;height:28px;border-radius:8px;background:var(--marigold-soft);color:var(--marigold-ink);display:grid;place-items:center;font-family:var(--mono);font-size:12px;font-weight:600;flex-shrink:0;}
+  .s-name{font-family:var(--disp);font-weight:700;font-size:18px;color:var(--ink);border:none;background:transparent;flex:1;min-width:0;padding:2px 0;}
+  .s-name:focus{outline:none;box-shadow:inset 0 -2px 0 var(--marigold);}
+  .s-count{font-family:var(--mono);font-size:11.5px;color:var(--text3);white-space:nowrap;}
+  .s-car{color:var(--text3);transition:transform .18s;font-size:13px;}
+  .s-car.open{transform:rotate(90deg);}
+  .s-body{padding:0 18px 18px;}
+  .sdesc{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:var(--sans);font-size:12.5px;margin-bottom:12px;background:#fff;resize:vertical;}
+
+  /* drop zone between fields */
+  .dz{height:8px;border-radius:6px;margin:1px 0;transition:height .12s,background .12s,border-color .12s;}
+  .dz.on{height:30px;background:var(--teal-wash);border:2px dashed var(--teal);}
+
+  .fcard{border:1px solid var(--line);border-radius:11px;background:#fff;overflow:hidden;transition:box-shadow .12s,border-color .12s;}
+  .fcard:hover{box-shadow:0 5px 14px rgba(20,22,29,.07);}
+  .fcard.open{border-color:var(--marigold);box-shadow:0 8px 22px rgba(192,122,30,.13);}
+  .fh{display:flex;align-items:center;gap:9px;padding:9px 11px;}
+  .grip{cursor:grab;color:var(--text3);font-size:14px;user-select:none;}
+  .grip:active{cursor:grabbing;}
+  .tico{border-radius:7px;display:grid;place-items:center;font-family:var(--mono);flex-shrink:0;}
+  .flabel{font-weight:600;font-size:13px;flex:1;color:var(--ink);}
+  .req{font-family:var(--mono);font-size:8.5px;color:var(--coral);background:var(--coral-wash);padding:1px 5px;border-radius:5px;text-transform:uppercase;letter-spacing:.04em;}
+  .ficon-btn{border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:14px;line-height:1;padding:3px 6px;border-radius:7px;}
+  .ficon-btn:hover{background:#F2F2F0;color:var(--text);}
+  .ficon-btn.del:hover{color:var(--coral);background:var(--coral-wash);}
+  .fprev{padding:0 12px 11px;}
+  .fprev.build{pointer-events:none;opacity:.9;}
+  .fprev label{display:block;font-size:11.5px;color:var(--text2);margin-bottom:4px;font-weight:500;}
+  .fprev .hint{font-size:10.5px;color:var(--text3);margin-top:4px;}
+  .fprev input,.fprev select,.fprev textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-family:var(--sans);font-size:12.5px;background:#FCFCFB;color:var(--text);}
+  .fprev .choices{display:flex;flex-direction:column;gap:6px;}
+  .fprev .choices span{font-size:12.5px;color:var(--text);display:flex;align-items:center;gap:8px;}
+  .fprev .choices i{width:14px;height:14px;border:2px solid var(--marigold);border-radius:50%;flex-shrink:0;}
+  .fprev .choices i.sq{border-radius:4px;}
+
+  .cfg{border-top:1px dashed var(--line);background:#FAFAF8;padding:12px;}
+  .cfg .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);font-weight:700;margin:0 0 5px;}
+  .cfg .field{margin-bottom:11px;}
+  .cfg input[type=text]{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-family:var(--sans);font-size:12.5px;background:#fff;}
+  .cfg .opt{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+  .toggle{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);cursor:pointer;}
+  .toggle input{accent-color:var(--marigold);width:15px;height:15px;}
+
+  /* contextual field-type picker (only shown when adding) */
+  .addrow{margin-top:12px;}
+  .picker{border:1px solid var(--marigold-soft);background:#FDFBF7;border-radius:12px;padding:12px;margin-top:10px;}
+  .picker .ph{display:flex;align-items:center;margin-bottom:8px;}
+  .picker .ph .t{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--marigold-ink);font-weight:700;}
+  .pg{margin-bottom:8px;}
+  .pg .gn{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);font-weight:700;margin-bottom:5px;}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;}
+  .ptype{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:grab;font-size:12px;font-weight:600;color:var(--text);transition:box-shadow .12s,transform .1s,border-color .12s;}
+  .ptype:hover{box-shadow:0 4px 12px rgba(20,22,29,.1);transform:translateY(-1px);}
+  .ptype:active{cursor:grabbing;}
+
+  .formcard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px;margin-bottom:16px;}
+  .formcard h3{font-family:var(--disp);font-size:18px;margin:0 0 4px;color:var(--ink);}
+  .formcard .fd{font-size:12.5px;color:var(--text3);margin-bottom:16px;}
+  .formcard .fld{margin-bottom:14px;}
+  .formcard label{display:block;font-size:12.5px;color:var(--text);font-weight:500;margin-bottom:5px;}
+  .formcard input,.formcard select,.formcard textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:var(--sans);font-size:13px;}
+  .formcard .choices{display:flex;flex-direction:column;gap:7px;}
+  .formcard .choices label{display:flex;align-items:center;gap:8px;font-weight:400;margin:0;}
+
+  .foot{margin-top:36px;font-size:12px;color:var(--text3);border-top:1px dashed var(--sand-border);padding-top:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.6-4.5h14.8L21 9"/><path d="M3 9a2.4 2.4 0 0 0 4.5 0 2.4 2.4 0 0 0 4.5 0 2.4 2.4 0 0 0 4.5 0A2.4 2.4 0 0 0 21 9"/><path d="M5 10.5V19h14v-8.5"/><path d="M9.5 19v-4.5h5V19"/></svg></div>
+    <div>
+      <h1>Amazon USA — sections</h1>
+      <div class="sub">A project's sections. Open one to add or reorder fields; field types appear only when you're adding.</div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <span class="ttl">Sections</span>
+    <div class="seg"><button id="mb" onclick="B.mode('build')">Build</button><button id="mp" onclick="B.mode('preview')">Preview</button></div>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="foot">Field groups use the KOS category colours — teal (text), violet (choice), blue (value), marigold (media). Sections &amp; the "add" affordances use the Amazon marigold; primary actions and drop targets use brand teal.</div>
+</div>
+
+<script>
+  const GROUPS = {
+    text:  { color:"var(--teal)",     soft:"var(--teal-wash)",     name:"Text" },
+    choice:{ color:"var(--purple)",   soft:"var(--purple-soft)",   name:"Choice" },
+    value: { color:"var(--blue)",     soft:"var(--blue-soft)",     name:"Value" },
+    media: { color:"var(--marigold)", soft:"var(--marigold-soft)", name:"Media" },
+  };
+  const TYPES = {
+    text:     { label:"Short text",  g:"Ab", grp:"text" },
+    paragraph:{ label:"Paragraph",   g:"¶",  grp:"text" },
+    dropdown: { label:"Dropdown",    g:"▾",  grp:"choice", opts:true },
+    radio:    { label:"Radio group", g:"◉",  grp:"choice", opts:true },
+    checkbox: { label:"Checkboxes",  g:"☑",  grp:"choice", opts:true },
+    number:   { label:"Number",      g:"#",  grp:"value" },
+    date:     { label:"Date",        g:"▦",  grp:"value" },
+    file:     { label:"File upload", g:"⤒",  grp:"media" },
+  };
+  const ORDER = ["text","choice","value","media"];
+  let uid = 100; const nid = () => ++uid;
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const mk = (type) => ({ id:nid(), type, label:TYPES[type].label, placeholder:"", help:"", required:false, options: TYPES[type].opts ? ["Option 1","Option 2","Option 3"] : null, open:false });
+
+  const state = {
+    mode:"build",
+    sections:[
+      { id:1, name:"Product", desc:"Core catalogue details for the product.", collapsed:false, picker:false, fields:[
+        Object.assign(mk("text"),{label:"Product name",required:true}),
+        Object.assign(mk("text"),{label:"SKU",placeholder:"e.g. NMO-16"}),
+        Object.assign(mk("dropdown"),{label:"Category",options:["Home & Garden","Pest control","Lawn care"]}),
+        Object.assign(mk("paragraph"),{label:"Description",help:"Shown on the listing detail page."}),
+      ]},
+      { id:2, name:"Listings & catalog", desc:"Live listing on the marketplace.", collapsed:true, picker:false, fields:[
+        Object.assign(mk("text"),{label:"ASIN"}),
+        Object.assign(mk("radio"),{label:"Listing status",options:["Draft","Live","Suppressed"]}),
+        Object.assign(mk("number"),{label:"Price (USD)"}),
+      ]},
+    ],
+  };
+  const sec = id => state.sections.find(s=>s.id===id);
+  let drag = null; // {kind,sid,type?,id?}
+
+  const tico = (type, sz) => { const grp=GROUPS[TYPES[type].grp]; return `<span class="tico" style="width:${sz}px;height:${sz}px;font-size:${sz>24?12:11}px;background:${grp.soft};color:${grp.color}">${TYPES[type].g}</span>`; };
+
+  function previewHTML(f){
+    const L = `<label>${esc(f.label)||"Untitled"}${f.required?' <span style="color:var(--coral)">*</span>':''}</label>`;
+    const ph = esc(f.placeholder);
+    let ctl;
+    if(f.type==="paragraph") ctl=`<textarea rows="2" placeholder="${ph}"></textarea>`;
+    else if(f.type==="dropdown") ctl=`<select>${(f.options||[]).map(o=>`<option>${esc(o)}</option>`).join("")}</select>`;
+    else if(f.type==="radio") ctl=`<div class="choices">${(f.options||[]).map(o=>`<span><i></i>${esc(o)}</span>`).join("")}</div>`;
+    else if(f.type==="checkbox") ctl=`<div class="choices">${(f.options||[]).map(o=>`<span><i class="sq"></i>${esc(o)}</span>`).join("")}</div>`;
+    else if(f.type==="date") ctl=`<input type="date">`;
+    else if(f.type==="number") ctl=`<input type="number" placeholder="${ph||"0"}">`;
+    else if(f.type==="file") ctl=`<input type="text" placeholder="Attach a file…" readonly>`;
+    else ctl=`<input type="text" placeholder="${ph}">`;
+    return L + ctl + (f.help?`<div class="hint">${esc(f.help)}</div>`:"");
+  }
+
+  function configHTML(sid, f){
+    let h = `<div class="cfg">
+      <div class="field"><div class="lbl">Label</div><input type="text" value="${esc(f.label)}" oninput="B.set(${sid},${f.id},'label',this.value)"></div>`;
+    if(!["radio","checkbox","dropdown","date","file"].includes(f.type))
+      h += `<div class="field"><div class="lbl">Placeholder</div><input type="text" value="${esc(f.placeholder)}" oninput="B.set(${sid},${f.id},'placeholder',this.value)"></div>`;
+    if(TYPES[f.type].opts){
+      h += `<div class="field"><div class="lbl">Options</div>`;
+      (f.options||[]).forEach((o,i)=>{ h += `<div class="opt"><span class="grip">⠿</span><input type="text" value="${esc(o)}" oninput="B.setOpt(${sid},${f.id},${i},this.value)"><button class="btn" onclick="B.delOpt(${sid},${f.id},${i})">✕</button></div>`; });
+      h += `<button class="btn" style="border-style:dashed" onclick="B.addOpt(${sid},${f.id})">+ Add option</button></div>`;
+    }
+    h += `<div class="field"><div class="lbl">Help text</div><input type="text" value="${esc(f.help)}" placeholder="Optional hint under the field" oninput="B.set(${sid},${f.id},'help',this.value)"></div>`;
+    h += `<label class="toggle"><input type="checkbox" ${f.required?'checked':''} onchange="B.set(${sid},${f.id},'required',this.checked)"> Required field</label></div>`;
+    return h;
+  }
+
+  function fieldCard(sid, f){
+    return `<div class="fcard ${f.open?'open':''}" draggable="${!f.open}" ondragstart="B.startMove(event,${sid},${f.id})" ondragend="B.endDrag()">
+      <div class="fh">
+        <span class="grip" title="Drag to reorder">⠿</span>
+        ${tico(f.type,22)}
+        <span class="flabel">${esc(f.label)||"Untitled"}</span>
+        ${f.required?'<span class="req">Required</span>':''}
+        <button class="ficon-btn" title="${f.open?'Done':'Edit'}" onclick="B.toggle(${sid},${f.id})">${f.open?'✓':'✎'}</button>
+        <button class="ficon-btn" title="Duplicate" onclick="B.dup(${sid},${f.id})">⧉</button>
+        <button class="ficon-btn del" title="Delete" onclick="B.del(${sid},${f.id})">✕</button>
+      </div>
+      <div class="fprev build">${previewHTML(f)}</div>
+      ${f.open?configHTML(sid,f):''}
+    </div>`;
+  }
+
+  const dz = (sid, i) => `<div class="dz" ondragover="event.preventDefault();this.classList.add('on')" ondragleave="this.classList.remove('on')" ondrop="B.drop(event,${sid},${i})"></div>`;
+
+  function pickerHTML(sid){
+    let chips = "";
+    for(const grp of ORDER){
+      chips += `<div class="pg"><div class="gn">${GROUPS[grp].name}</div><div class="chips">`;
+      for(const type of Object.keys(TYPES)) if(TYPES[type].grp===grp)
+        chips += `<span class="ptype" draggable="true" ondragstart="B.startNew(event,${sid},'${type}')" ondragend="B.endDrag()" onclick="B.addType(${sid},'${type}')">${tico(type,20)}${TYPES[type].label}</span>`;
+      chips += `</div></div>`;
+    }
+    return `<div class="picker"><div class="ph"><span class="t">Add a field — click, or drag into place</span><button class="btn" style="margin-left:auto" onclick="B.picker(${sid},false)">Done</button></div>${chips}</div>`;
+  }
+
+  function sectionCard(s, idx){
+    if(s.collapsed){
+      return `<div class="section">
+        <div class="s-head" onclick="B.collapse(${s.id},false)">
+          <span class="s-num">${idx+1}</span>
+          <span class="s-name" style="cursor:pointer">${esc(s.name)}</span>
+          <span class="s-count">${s.fields.length} field${s.fields.length===1?'':'s'}</span>
+          <span class="s-car">▸</span>
+        </div>
+      </div>`;
+    }
+    const fieldsHTML = s.fields.length
+      ? dz(s.id,0) + s.fields.map((f,i)=>fieldCard(s.id,f)+dz(s.id,i+1)).join("")
+      : `<div class="mut" style="padding:6px 2px 10px">No fields yet — add the first one below.</div>`;
+    return `<div class="section">
+      <div class="s-head">
+        <span class="s-num">${idx+1}</span>
+        <input class="s-name" value="${esc(s.name)}" oninput="B.rename(${s.id},this.value)">
+        <span class="s-count">${s.fields.length} field${s.fields.length===1?'':'s'}</span>
+        <button class="ficon-btn del" title="Delete section" onclick="B.delSection(${s.id})">✕</button>
+        <span class="s-car open" style="cursor:pointer" onclick="B.collapse(${s.id},true)">▸</span>
+      </div>
+      <div class="s-body">
+        <textarea class="sdesc" rows="1" placeholder="Short description of this section…" oninput="B.redesc(${s.id},this.value)">${esc(s.desc)}</textarea>
+        ${fieldsHTML}
+        <div class="addrow">
+          ${s.picker ? pickerHTML(s.id) : `<button class="btn add" onclick="B.picker(${s.id},true)">+ Add field</button>`}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function render(){
+    document.getElementById("mb").className = state.mode==="build"?"on":"";
+    document.getElementById("mp").className = state.mode==="preview"?"on":"";
+    let html;
+    if(state.mode==="preview"){
+      html = state.sections.map(s=>`<div class="formcard"><h3>${esc(s.name)}</h3>${s.desc?`<div class="fd">${esc(s.desc)}</div>`:''}${s.fields.map(f=>`<div class="fld">${previewHTML(f)}</div>`).join("")||'<div class="mut">No fields.</div>'}<button class="btn primary" style="margin-top:6px">Save record</button></div>`).join("");
+    } else {
+      html = state.sections.map((s,i)=>sectionCard(s,i)).join("") + `<button class="newsec" onclick="B.newSection()">+ New section</button>`;
+    }
+    document.getElementById("list").innerHTML = html;
+  }
+
+  window.B = {
+    mode(m){ state.mode=m; render(); },
+    newSection(){ const id=nid(); state.sections.push({id,name:"New section",desc:"",collapsed:false,picker:true,fields:[]}); render(); },
+    collapse(id,v){ sec(id).collapsed=v; render(); },
+    rename(id,v){ sec(id).name=v; },
+    redesc(id,v){ sec(id).desc=v; },
+    delSection(id){ if(confirm("Delete this section and its fields?")){ state.sections=state.sections.filter(s=>s.id!==id); render(); } },
+    picker(id,v){ sec(id).picker=v; render(); },
+    addType(sid,type){ sec(sid).fields.push(mk(type)); render(); },
+    startNew(e,sid,type){ drag={kind:"new",sid,type}; try{e.dataTransfer.setData("text/plain","1");e.dataTransfer.effectAllowed="copy";}catch(_){} },
+    startMove(e,sid,id){ drag={kind:"move",sid,id}; try{e.dataTransfer.setData("text/plain","1");e.dataTransfer.effectAllowed="move";}catch(_){} },
+    endDrag(){ drag=null; },
+    drop(e,sid,index){ e.preventDefault(); const s=sec(sid); const d=drag; drag=null; if(!d||d.sid!==sid) { render(); return; }
+      if(d.kind==="new"){ s.fields.splice(index,0,mk(d.type)); }
+      else { const from=s.fields.findIndex(f=>f.id===d.id); if(from<0){render();return;} const [f]=s.fields.splice(from,1); s.fields.splice(from<index?index-1:index,0,f); }
+      render();
+    },
+    toggle(sid,id){ const f=sec(sid).fields.find(x=>x.id===id); f.open=!f.open; render(); },
+    dup(sid,id){ const s=sec(sid); const i=s.fields.findIndex(x=>x.id===id); const c=JSON.parse(JSON.stringify(s.fields[i])); c.id=nid(); c.open=false; s.fields.splice(i+1,0,c); render(); },
+    del(sid,id){ const s=sec(sid); s.fields=s.fields.filter(x=>x.id!==id); render(); },
+    set(sid,id,k,v){ sec(sid).fields.find(x=>x.id===id)[k]=v; if(k==="label"||k==="required") render(); },
+    setOpt(sid,id,i,v){ sec(sid).fields.find(x=>x.id===id).options[i]=v; },
+    addOpt(sid,id){ sec(sid).fields.find(x=>x.id===id).options.push("New option"); render(); },
+    delOpt(sid,id,i){ sec(sid).fields.find(x=>x.id===id).options.splice(i,1); render(); },
+  };
+  render();
+</script>
+</body>
+</html>

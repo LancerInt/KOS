@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Amazon USA — Section &amp; field builder (3 options)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#16181D; --text:#1B1E25; --text2:#5A6373; --text3:#8A93A3;
+    --paper:#FBFAF6; --surface:#FFFFFF; --line:#E5E7EB;
+    --teal:#0F7A8B; --teal-ink:#0B5D6B; --teal-wash:#E6F3F5;
+    --coral:#E05A3C; --coral-wash:#FCEAE4;
+    --accent:#C07A1E; --accent-ink:#8A551A; --accent-soft:#F7ECDA;
+    --sand:#EAE1D2; --sand-border:#DDD2BF;
+    --sans:"IBM Plex Sans",system-ui,sans-serif; --disp:"Manrope",sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--text);font-family:var(--sans);letter-spacing:.01em;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 90px;}
+  h1{font-family:var(--disp);font-weight:800;font-size:24px;letter-spacing:-.02em;margin:0;color:var(--ink);}
+  .sub{font-size:13px;color:var(--text3);margin-top:3px;}
+  .switch{display:inline-flex;gap:4px;padding:4px;border-radius:12px;background:#EEF0F3;border:1px solid var(--line);margin:20px 0 8px;flex-wrap:wrap;}
+  .switch button{border:none;background:transparent;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text2);padding:7px 13px;border-radius:9px;cursor:pointer;}
+  .switch button.on{background:#fff;color:var(--accent-ink);box-shadow:0 1px 3px rgba(20,22,29,.14);}
+  .opt-desc{font-size:12.5px;color:var(--text2);margin:6px 0 20px;max-width:720px;}
+
+  .btn{border:1px solid var(--line);background:#fff;color:var(--text2);font-family:var(--sans);font-weight:600;font-size:12px;padding:5px 11px;border-radius:8px;cursor:pointer;}
+  .btn:hover{border-color:#C5CAD2;}
+  .btn.primary{background:var(--teal);border-color:var(--teal);color:#fff;}
+  .btn.primary:hover{background:var(--teal-ink);}
+  .btn.acc{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .mut{color:var(--text3);font-size:11.5px;}
+
+  /* palette chip (field types) */
+  .ptype{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:grab;font-size:12.5px;font-weight:600;color:var(--text);transition:border-color .12s,box-shadow .12s,transform .12s;}
+  .ptype:hover{border-color:var(--accent);box-shadow:0 4px 12px rgba(20,22,29,.08);transform:translateY(-1px);}
+  .ptype .g{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-ink);font-family:var(--mono);font-size:12px;flex-shrink:0;}
+  .ptype.chip{padding:5px 9px;border-radius:20px;cursor:pointer;}
+  .ptype.chip .g{width:18px;height:18px;font-size:10px;}
+
+  /* field card */
+  .fcard{border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:9px;overflow:hidden;}
+  .fcard .fh{display:flex;align-items:center;gap:9px;padding:9px 11px;}
+  .fh .g{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-ink);font-family:var(--mono);font-size:11px;flex-shrink:0;}
+  .fh .handle{cursor:grab;color:var(--text3);}
+  .fh .flabel{font-weight:600;font-size:13px;flex:1;}
+  .fh .req{font-family:var(--mono);font-size:9px;color:var(--coral);background:var(--coral-wash);padding:1px 5px;border-radius:5px;}
+  .fh .x{border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:15px;line-height:1;padding:2px 5px;border-radius:6px;}
+  .fh .x:hover{background:#F2F2F2;color:var(--coral);}
+  .preview{padding:0 12px 11px;}
+  .preview label{display:block;font-size:11.5px;color:var(--text2);margin-bottom:4px;}
+  .preview input,.preview select,.preview textarea{width:100%;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-family:var(--sans);font-size:12.5px;background:#FCFCFB;}
+  .preview .radios{display:flex;flex-direction:column;gap:5px;}
+  .preview .radios span{font-size:12.5px;color:var(--text);display:flex;align-items:center;gap:7px;}
+  .preview .radios i{width:13px;height:13px;border:2px solid var(--accent);border-radius:50%;display:inline-block;}
+  .cfg{border-top:1px dashed var(--line);background:#FAFAF8;padding:11px 12px;}
+  .cfg .row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .cfg input[type=text]{flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-family:var(--sans);font-size:12.5px;}
+  .cfg .opt{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+  .cfg .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);font-weight:700;margin:2px 0 6px;}
+  .toggle{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text2);cursor:pointer;}
+  .toggle input{accent-color:var(--accent);}
+
+  .drop{border:2px dashed var(--sand-border);border-radius:12px;padding:16px;text-align:center;color:var(--text3);font-size:12.5px;background:#FDFCFA;transition:.12s;}
+  .drop.over{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);}
+
+  .sec-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .sec-head input.nm{font-family:var(--disp);font-weight:700;font-size:17px;border:none;background:transparent;color:var(--ink);flex:1;padding:2px 0;}
+  .sec-head input.nm:focus{outline:none;border-bottom:2px solid var(--accent);}
+  .sec-desc-in{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-family:var(--sans);font-size:12.5px;margin-bottom:14px;background:#fff;}
+
+  /* layout helpers */
+  .cols{display:grid;grid-template-columns:230px 1fr;gap:18px;align-items:start;}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;}
+  .side-title{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);font-weight:700;margin-bottom:10px;}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;}
+
+  /* accordion (opt 2) */
+  .acc{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px;background:#fff;}
+  .acc-h{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;}
+  .acc-h:hover{background:#FAFAF8;}
+  .acc-h .car{color:var(--text3);transition:transform .16s;}
+  .acc-h.open .car{transform:rotate(90deg);}
+  .acc-h .nm{font-family:var(--disp);font-weight:700;font-size:15px;flex:1;}
+  .acc-h .cnt{font-family:var(--mono);font-size:11px;color:var(--text3);}
+  .acc-b{padding:0 14px 14px;}
+  .addmenu{position:relative;display:inline-block;}
+  .menu{position:absolute;top:110%;left:0;z-index:5;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(20,22,29,.16);padding:6px;min-width:180px;}
+  .menu button{display:flex;align-items:center;gap:9px;width:100%;border:none;background:transparent;padding:7px 8px;border-radius:7px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text);}
+  .menu button:hover{background:var(--accent-soft);}
+
+  /* library (opt 3) */
+  .lib-row{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:8px;cursor:pointer;font-size:12.5px;}
+  .lib-row:hover{background:#FAFAF8;}
+  .lib-row.sel{background:var(--accent-soft);}
+  .lib-row .sw{width:32px;height:18px;border-radius:20px;background:#D8DCE2;position:relative;flex-shrink:0;transition:background .14s;}
+  .lib-row .sw.on{background:var(--accent);}
+  .lib-row .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .14s;}
+  .lib-row .sw.on::after{left:16px;}
+  .lib-row .nm{flex:1;font-weight:600;}
+  .lib-row.off .nm{color:var(--text3);font-weight:500;}
+  .foot{margin-top:40px;font-size:12px;color:var(--text3);border-top:1px dashed var(--sand-border);padding-top:14px;}
+  @media(max-width:720px){.cols{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Amazon USA — section &amp; field builder</h1>
+  <div class="sub">Three ways to (a) choose which sections a project has, and (b) build a section from field types — name, description, dropdown, radio, and more. Sample data · nothing saved.</div>
+
+  <div class="switch" id="switch"></div>
+  <div class="opt-desc" id="desc"></div>
+  <div id="view"></div>
+
+  <div class="foot">Field types available in all three: Short text, Paragraph, Dropdown, Radio group, Checkbox, Date, Number, File upload. Palette / type colour is the Amazon USA marigold; actions use the app teal.</div>
+</div>
+
+<script>
+  const TYPES = {
+    text:{label:"Short text", g:"Ab"},
+    paragraph:{label:"Paragraph", g:"¶"},
+    dropdown:{label:"Dropdown", g:"▾", opts:true},
+    radio:{label:"Radio group", g:"◉", opts:true},
+    checkbox:{label:"Checkbox", g:"☑"},
+    date:{label:"Date", g:"▦"},
+    number:{label:"Number", g:"#"},
+    file:{label:"File upload", g:"⤒"},
+  };
+  const TYPE_KEYS = Object.keys(TYPES);
+  let uid = 100;
+  const nid = () => ++uid;
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+  const f = (type, label, opts, required) => ({ id:nid(), type, label, options: opts, required: !!required, open:false });
+
+  // The project's sections — built-ins can be toggled in/out; custom ones added.
+  let sections = [
+    { id:1, name:"Product", desc:"Core catalogue details for the product.", builtin:true, included:true, fields:[
+      f("text","Product name",undefined,true), f("text","SKU"), f("dropdown","Category",["Home & Garden","Pest control","Lawn care"]), f("paragraph","Description"),
+    ]},
+    { id:2, name:"Listings & catalog", desc:"Live listing on the marketplace.", builtin:true, included:true, fields:[
+      f("text","ASIN"), f("radio","Listing status",["Draft","Live","Suppressed"]), f("number","Price (USD)"),
+    ]},
+    { id:3, name:"Label design", desc:"Artwork versions and approvals.", builtin:true, included:true, fields:[
+      f("text","Version"), f("dropdown","Design status",["Draft","In review","Approved"]), f("file","Artwork file"),
+    ]},
+    { id:4, name:"Advertising (PPC)", desc:"Sponsored campaigns.", builtin:true, included:false, fields:[ f("text","Campaign"), f("number","Daily budget") ]},
+    { id:5, name:"Inventory & FBA", desc:"Stock and fulfilment.", builtin:true, included:false, fields:[ f("number","Available units"), f("date","Restock date") ]},
+    { id:6, name:"Reviews & ratings", desc:"Customer feedback.", builtin:true, included:false, fields:[ f("number","Star rating"), f("paragraph","Latest review") ]},
+    { id:7, name:"Returns & cases", desc:"Returns and A-to-z cases.", builtin:true, included:false, fields:[ f("text","Case ID"), f("dropdown","Status",["Open","Resolved"]) ]},
+  ];
+  let sel = 1;                 // selected section (opt 1 & 3)
+  const open = new Set([1]);   // expanded accordions (opt 2)
+  let menuFor = null;          // which section's add-field menu is open (opt 2)
+  const included = () => sections.filter(s => s.included);
+  const byId = id => sections.find(s => s.id === id);
+
+  /* ---- mutations ---- */
+  const addField = (sid, type) => { const s = byId(sid); if(!s) return; s.fields.push(f(type, TYPES[type].label, TYPES[type].opts ? ["Option 1","Option 2"] : undefined)); menuFor=null; render(); };
+  const delField = (sid, fid) => { const s = byId(sid); s.fields = s.fields.filter(x=>x.id!==fid); render(); };
+  const toggleField = (sid, fid) => { const fl = byId(sid).fields.find(x=>x.id===fid); fl.open=!fl.open; render(); };
+  const setLabel = (sid, fid, v) => { byId(sid).fields.find(x=>x.id===fid).label = v; };
+  const setReq = (sid, fid, v) => { byId(sid).fields.find(x=>x.id===fid).required = v; render(); };
+  const setOpt = (sid, fid, i, v) => { byId(sid).fields.find(x=>x.id===fid).options[i] = v; };
+  const addOpt = (sid, fid) => { byId(sid).fields.find(x=>x.id===fid).options.push("New option"); render(); };
+  const delOpt = (sid, fid, i) => { const fl = byId(sid).fields.find(x=>x.id===fid); fl.options.splice(i,1); render(); };
+  const addSection = () => { const id=nid(); sections.push({id,name:"New section",desc:"",builtin:false,included:true,fields:[]}); sel=id; open.add(id); render(); };
+  const delSection = (id) => { sections = sections.filter(s=>s.id!==id); if(sel===id) sel=(included()[0]||{}).id; render(); };
+  const setName = (id,v)=>{ byId(id).name=v; };
+  const setDesc = (id,v)=>{ byId(id).desc=v; };
+  const toggleInc = (id)=>{ const s=byId(id); s.included=!s.included; if(s.included) sel=id; else if(sel===id) sel=(included()[0]||{}).id; render(); };
+  window._d = { addField, delField, toggleField, setLabel, setReq, setOpt, addOpt, delOpt, addSection, delSection, setName, setDesc, toggleInc };
+  // Inline handlers can only see window properties, not module-scope `let`s —
+  // so section selection goes through a window function.
+  window.selectSection = (id) => { sel = id; render(); };
+
+  /* ---- shared renderers ---- */
+  function previewHTML(fl){
+    const L = `<label>${esc(fl.label)}${fl.required?' *':''}</label>`;
+    if(fl.type==="paragraph") return L+`<textarea rows="2" placeholder="…"></textarea>`;
+    if(fl.type==="dropdown") return L+`<select>${(fl.options||[]).map(o=>`<option>${esc(o)}</option>`).join("")}</select>`;
+    if(fl.type==="radio") return L+`<div class="radios">${(fl.options||[]).map(o=>`<span><i></i>${esc(o)}</span>`).join("")}</div>`;
+    if(fl.type==="checkbox") return `<div class="radios"><span><i style="border-radius:3px"></i>${esc(fl.label)}</span></div>`;
+    if(fl.type==="date") return L+`<input type="date">`;
+    if(fl.type==="number") return L+`<input type="number" placeholder="0">`;
+    if(fl.type==="file") return L+`<input type="text" placeholder="Attach a file…" readonly>`;
+    return L+`<input type="text" placeholder="…">`;
+  }
+  function configHTML(sid, fl){
+    let h = `<div class="cfg">
+      <div class="lbl">Field label</div>
+      <div class="row"><input type="text" value="${esc(fl.label)}" oninput="_d.setLabel(${sid},${fl.id},this.value)"></div>`;
+    if(TYPES[fl.type].opts){
+      h += `<div class="lbl">Options</div>`;
+      (fl.options||[]).forEach((o,i)=>{ h += `<div class="opt"><input type="text" style="flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12.5px" value="${esc(o)}" oninput="_d.setOpt(${sid},${fl.id},${i},this.value)"><button class="btn" onclick="_d.delOpt(${sid},${fl.id},${i})">✕</button></div>`; });
+      h += `<button class="btn" onclick="_d.addOpt(${sid},${fl.id})">+ Add option</button>`;
+    }
+    h += `<div class="row" style="margin-top:10px"><label class="toggle"><input type="checkbox" ${fl.required?'checked':''} onchange="_d.setReq(${sid},${fl.id},this.checked)"> Required</label></div></div>`;
+    return h;
+  }
+  function fieldCard(sid, fl, handle){
+    const t = TYPES[fl.type];
+    return `<div class="fcard">
+      <div class="fh">
+        ${handle?'<span class="handle">⋮⋮</span>':''}
+        <span class="g">${t.g}</span>
+        <span class="flabel">${esc(fl.label)}</span>
+        ${fl.required?'<span class="req">required</span>':''}
+        <button class="btn" onclick="_d.toggleField(${sid},${fl.id})">${fl.open?'Done':'Edit'}</button>
+        <button class="x" title="Remove" onclick="_d.delField(${sid},${fl.id})">✕</button>
+      </div>
+      <div class="preview">${previewHTML(fl)}</div>
+      ${fl.open?configHTML(sid,fl):''}
+    </div>`;
+  }
+  function paletteChip(type, chip){
+    const t=TYPES[type];
+    return `<div class="ptype ${chip?'chip':''}" draggable="true" ondragstart="event.dataTransfer.setData('t','${type}')" onclick="${chip?`_d.addField(${sel},'${type}')`:''}"><span class="g">${t.g}</span>${t.label}</div>`;
+  }
+
+  /* ============ OPT 1 · DRAG & DROP ============ */
+  function renderDnD(){
+    const secs = included();
+    if(!secs.find(s=>s.id===sel)) sel = (secs[0]||{}).id;
+    const s = byId(sel);
+    const tabs = secs.map(x=>`<button class="btn ${x.id===sel?'acc':''}" onclick="selectSection(${x.id})">${esc(x.name)}</button>`).join("")
+      + `<button class="btn" onclick="_d.addSection()">+ Section</button>`;
+    let right = `<div class="panel"><div class="mut">Pick a section above.</div></div>`;
+    if(s){
+      right = `<div class="panel">
+        <div class="sec-head"><input class="nm" value="${esc(s.name)}" oninput="_d.setName(${s.id},this.value)">
+          ${s.builtin?'<span class="mut">built-in</span>':`<button class="btn" onclick="_d.delSection(${s.id})">Delete section</button>`}</div>
+        <input class="sec-desc-in" placeholder="Short description of this section…" value="${esc(s.desc)}" oninput="_d.setDesc(${s.id},this.value)">
+        <div id="drop" class="drop" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')"
+          ondrop="event.preventDefault();this.classList.remove('over');_d.addField(${s.id}, event.dataTransfer.getData('t'))">
+          Drag a field type here to add it${s.fields.length?'':' — this section is empty'}
+        </div>
+        <div style="margin-top:12px">${s.fields.map(fl=>fieldCard(s.id,fl,true)).join("")}</div>
+      </div>`;
+    }
+    document.getElementById("view").innerHTML = `
+      <div style="margin-bottom:14px;display:flex;gap:7px;flex-wrap:wrap">${tabs}</div>
+      <div class="cols">
+        <div class="panel"><div class="side-title">Field types — drag onto the section</div>
+          <div style="display:flex;flex-direction:column;gap:8px">${TYPE_KEYS.map(t=>paletteChip(t,false)).join("")}</div>
+        </div>
+        ${right}
+      </div>`;
+  }
+
+  /* ============ OPT 2 · CLICK ACCORDION ============ */
+  function renderAccordion(){
+    const secs = included();
+    let html = `<div style="margin-bottom:12px"><button class="btn primary" onclick="_d.addSection()">+ New section</button></div>`;
+    for(const s of secs){
+      const isOpen = open.has(s.id);
+      html += `<div class="acc">
+        <div class="acc-h ${isOpen?'open':''}" onclick="toggleAcc(${s.id})">
+          <span class="car">▸</span><span class="nm">${esc(s.name)}</span><span class="cnt">${s.fields.length} field${s.fields.length===1?'':'s'}</span>
+        </div>`;
+      if(isOpen){
+        html += `<div class="acc-b">
+          <input class="sec-desc-in" placeholder="Short description…" value="${esc(s.desc)}" oninput="_d.setDesc(${s.id},this.value)">
+          ${s.fields.map(fl=>fieldCard(s.id,fl,false)).join("")}
+          <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+            <div class="addmenu">
+              <button class="btn primary" onclick="openMenu(${s.id})">+ Add field</button>
+              ${menuFor===s.id?`<div class="menu">${TYPE_KEYS.map(t=>`<button onclick="_d.addField(${s.id},'${t}')"><span class="g" style="width:20px;height:20px;border-radius:5px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-ink);font-family:var(--mono);font-size:10px">${TYPES[t].g}</span>${TYPES[t].label}</button>`).join("")}</div>`:''}
+            </div>
+            ${s.builtin?'<span class="mut">built-in section</span>':`<button class="btn" onclick="_d.delSection(${s.id})">Delete section</button>`}
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    document.getElementById("view").innerHTML = html;
+  }
+  window.toggleAcc = id => { if(open.has(id)) open.delete(id); else open.add(id); menuFor=null; render(); };
+  window.openMenu = id => { menuFor = menuFor===id?null:id; render(); };
+
+  /* ============ OPT 3 · LIBRARY + BUILDER ============ */
+  function renderLibrary(){
+    const s = byId(sel) && byId(sel).included ? byId(sel) : included()[0];
+    const rows = sections.map(x=>`
+      <div class="lib-row ${x.included?'':'off'} ${s&&x.id===s.id?'sel':''}" onclick="selectSection(${x.id})">
+        <div class="sw ${x.included?'on':''}" onclick="event.stopPropagation();_d.toggleInc(${x.id})"></div>
+        <span class="nm">${esc(x.name)}</span>${x.builtin?'':'<span class="mut">custom</span>'}
+      </div>`).join("");
+    let right = `<div class="panel"><div class="mut">Turn a section on, or select one to build its fields.</div></div>`;
+    if(s){
+      right = `<div class="panel">
+        <div class="sec-head"><input class="nm" value="${esc(s.name)}" oninput="_d.setName(${s.id},this.value)">
+          ${s.builtin?'<span class="mut">built-in</span>':`<button class="btn" onclick="_d.delSection(${s.id})">Delete</button>`}</div>
+        <input class="sec-desc-in" placeholder="Short description…" value="${esc(s.desc)}" oninput="_d.setDesc(${s.id},this.value)">
+        <div class="side-title">Add a field</div>
+        <div class="chips" style="margin-bottom:14px">${TYPE_KEYS.map(t=>paletteChip(t,true)).join("")}</div>
+        ${s.fields.length?s.fields.map(fl=>fieldCard(s.id,fl,false)).join(""):'<div class="drop">No fields yet — click a type above to add one.</div>'}
+      </div>`;
+    }
+    document.getElementById("view").innerHTML = `
+      <div class="cols">
+        <div class="panel">
+          <div class="side-title">Sections in this project</div>
+          ${rows}
+          <button class="btn primary" style="margin-top:10px;width:100%" onclick="_d.addSection()">+ New custom section</button>
+        </div>
+        ${right}
+      </div>`;
+  }
+
+  /* ---- shell ---- */
+  const OPTIONS = [
+    { key:"dnd", label:"1 · Drag &amp; drop", desc:"A left palette of field types you drag onto the section canvas. Fields render live and expand to configure (label, options, required). Section tabs across the top; add a section inline.", render:renderDnD },
+    { key:"acc", label:"2 · Click accordion", desc:"Sections as expandable/collapsible panels. Inside each, a “+ Add field” menu inserts a type with one click. Lightest to use — no dragging. Add or delete sections from the list.", render:renderAccordion },
+    { key:"lib", label:"3 · Section library", desc:"Left: every built-in Amazon USA section as an on/off toggle (a project only carries what it needs) plus custom sections. Right: click field-type chips to build the selected section.", render:renderLibrary },
+  ];
+  let current = "dnd";
+  function render(){ OPTIONS.find(o=>o.key===current).render(); paint(); }
+  function paint(){
+    document.getElementById("switch").innerHTML = OPTIONS.map(o=>`<button class="${o.key===current?'on':''}" onclick="setTab('${o.key}')">${o.label}</button>`).join("");
+    document.getElementById("desc").innerHTML = OPTIONS.find(o=>o.key===current).desc;
+  }
+  // Named setTab (not setOpt) to avoid shadowing the module-level `const setOpt`
+  // field-option setter in inline handler scope.
+  window.setTab = k => { current=k; menuFor=null; render(); };
+  render();
+</script>
+</body>
+</html>
