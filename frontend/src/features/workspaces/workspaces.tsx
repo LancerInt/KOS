@@ -1,4 +1,5 @@
 import type { SvgIconComponent } from "@mui/icons-material";
+import type { FieldDef } from "./fields";
 import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
 import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
@@ -23,10 +24,16 @@ export interface WorkspaceCategory {
   name: string;
   blurb: string;
   fields: string[];
+  /** Typed field schema. When present it overrides `fields` for the builder and
+   *  record form; merged in at runtime from the section's saved schema. */
+  fieldDefs?: FieldDef[];
   /** Allow attaching a file (document / poster / PPT) when adding a record. */
   allowFiles?: boolean;
-  /** Set for user-created sections — the WorkspaceSection id, so it can be deleted. */
+  /** Set once a section has a WorkspaceSection row (custom, or a built-in whose
+   *  fields were customised) — the id used to save the schema or delete it. */
   sectionId?: number;
+  /** True for user-created sections (deletable); false for built-in ones. */
+  isCustom?: boolean;
 }
 
 export interface Workspace {

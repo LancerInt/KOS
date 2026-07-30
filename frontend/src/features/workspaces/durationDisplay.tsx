@@ -14,11 +14,11 @@ interface Meta { label: (d: Duration) => string; fg: string; bg: string; Icon: S
 
 const META: Record<Exclude<DurationStatus, "none">, Meta> = {
   active: {
-    label: (d) => `Day ${d.days_elapsed ?? 0} of ${d.days_total ?? 0}`,
+    label: (d) => (d.left_label ? `${d.left_label} left` : "In progress"),
     fg: tokens.kriyaInk, bg: tokens.kriyaWash, Icon: ScheduleRoundedIcon,
   },
   ending_soon: {
-    label: (d) => (d.days_left === 0 ? "Ends today" : `Ends in ${d.days_left}d`),
+    label: (d) => (d.left_label ? `${d.left_label} left` : "Ending soon"),
     fg: "#B4671E", bg: "#FBEFE7", Icon: ScheduleRoundedIcon,
   },
   due: {
@@ -47,10 +47,8 @@ export function DurationChip({ duration }: { duration: Duration }) {
 /** A thin progress bar showing elapsed vs total duration. */
 export function DurationBar({ duration }: { duration: Duration }) {
   if (!duration || duration.status === "none") return null;
-  const total = duration.days_total ?? 0;
-  const elapsed = duration.days_elapsed ?? 0;
   const pct = duration.status === "completed" || duration.status === "due" ? 100
-    : total > 0 ? Math.round((elapsed / total) * 100) : 0;
+    : duration.pct ?? 0;
   const color = duration.status === "completed" ? "#2FA36B"
     : duration.status === "due" ? tokens.attn
     : duration.status === "ending_soon" ? "#E0A83D"
@@ -63,27 +61,33 @@ export function DurationBar({ duration }: { duration: Duration }) {
 }
 
 export function durationText(d: Duration, completedAt?: string | null): string {
-  const fmt = (s: string) => new Date(s).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  const end = d.end_date ? fmt(d.end_date) : "";
-  if (d.status === "completed") return completedAt ? `Completed ${fmt(completedAt)}` : "Completed";
+  const fmtDateTime = (s: string) => new Date(s).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  const end = d.end_label ?? (d.end_at ? fmtDateTime(d.end_at) : "");
+  if (d.status === "completed") return completedAt ? `Completed ${fmtDateTime(completedAt)}` : "Completed";
   if (d.status === "due") return `Ended ${end} · awaiting completion`;
-  return `${d.days_elapsed}/${d.days_total} days · ${d.days_left} day${d.days_left === 1 ? "" : "s"} left · ends ${end}`;
+  return `${d.left_label ?? ""} left · ends ${end}`;
+}
+
+/** ISO datetime → the value a <input type="datetime-local"> expects (local, no tz). */
+function toLocalInput(iso?: string | null): string {
+  const d = iso ? new Date(iso) : new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /**
  * A self-contained duration control: shows status + progress + Mark complete
  * when a duration is set, or a "Set duration" prompt when it isn't (and the
- * user may set one). Manages its own set/edit dialog.
+ * user may set one). Durations are to the hour. Manages its own set/edit dialog.
  */
 export function DurationPanel({
-  duration, startDate, completedAt, canEdit, allowSet, onSet, onToggleComplete,
+  duration, completedAt, canEdit, allowSet, onSet, onToggleComplete,
 }: {
   duration: Duration;
-  startDate?: string | null;
   completedAt?: string | null;
   canEdit: boolean;
   allowSet: boolean;
-  onSet: (start: string, days: number) => Promise<unknown> | void;
+  onSet: (startAt: string, endAt: string) => Promise<unknown> | void;
   onToggleComplete: () => Promise<unknown> | void;
 }) {
   const [open, setOpen] = useState(false);
@@ -93,18 +97,16 @@ export function DurationPanel({
   const hasDur = duration.status !== "none";
   if (!hasDur && !(canEdit && allowSet)) return null;
 
-  const daysBetween = (a: string, b: string) =>
-    Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
+  const valid = !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
   const openDialog = () => {
-    setStart(startDate || new Date().toISOString().slice(0, 10));
-    setEnd(duration.end_date || "");
+    setStart(toLocalInput(duration.start_at));
+    setEnd(duration.end_at ? toLocalInput(duration.end_at) : "");
     setOpen(true);
   };
   const save = async () => {
-    const d = start && end ? daysBetween(start, end) : 0;
-    if (!start || !end || d < 1) return;
+    if (!valid) return;
     setBusy(true);
-    try { await onSet(start, d); setOpen(false); } finally { setBusy(false); }
+    try { await onSet(new Date(start).toISOString(), new Date(end).toISOString()); setOpen(false); } finally { setBusy(false); }
   };
   const toggle = async () => { setBusy(true); try { await onToggleComplete(); } finally { setBusy(false); } };
 
@@ -142,18 +144,16 @@ export function DurationPanel({
         <DialogTitle sx={{ fontFamily: '"Manrope Variable"', fontSize: 19 }}>Set duration</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 0.5 }}>
-            <Stack direction="row" spacing={1}>
-              <TextField size="small" type="date" label="Start date" InputLabelProps={{ shrink: true }}
-                value={start} onChange={(e) => setStart(e.target.value)} sx={{ flex: 1 }} />
-              <TextField size="small" type="date" label="End date" InputLabelProps={{ shrink: true }}
-                value={end} onChange={(e) => setEnd(e.target.value)} sx={{ flex: 1 }} />
-            </Stack>
-            <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>You'll get reminders as the end date nears, and if it's overdue.</Typography>
+            <TextField size="small" type="datetime-local" label="Starts" InputLabelProps={{ shrink: true }}
+              value={start} onChange={(e) => setStart(e.target.value)} fullWidth />
+            <TextField size="small" type="datetime-local" label="Ends" InputLabelProps={{ shrink: true }}
+              value={end} onChange={(e) => setEnd(e.target.value)} fullWidth />
+            <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>Set the date and time. You'll get reminders as the end nears, and if it's overdue.</Typography>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={save} disabled={!start || !end || daysBetween(start, end) < 1 || busy}>Save</Button>
+          <Button variant="contained" onClick={save} disabled={!valid || busy}>Save</Button>
         </DialogActions>
       </Dialog>
     </Paper>

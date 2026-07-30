@@ -2,8 +2,6 @@ import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Avatar, Box, InputAdornment, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
-import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
-import AssessmentRoundedIcon from "@mui/icons-material/AssessmentRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
 import FactCheckRoundedIcon from "@mui/icons-material/FactCheckRounded";
@@ -45,8 +43,7 @@ interface NavGroup {
 const NAV: NavGroup[] = [
   {
     items: [
-      { to: "/", label: "My Work", icon: <HomeRoundedIcon fontSize="small" /> },
-      { to: "/dashboard", label: "Dashboard", icon: <InsightsRoundedIcon fontSize="small" />, capability: "view_reports" },
+      { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
       { to: "/meetings", label: "Meetings & Notes", icon: <EventNoteRoundedIcon fontSize="small" /> },
       { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
     ],
@@ -62,7 +59,6 @@ const NAV: NavGroup[] = [
   {
     title: "Platform",
     items: [
-      { to: "/reports", label: "Reports", icon: <AssessmentRoundedIcon fontSize="small" />, capability: "view_reports" },
       { to: "/hr", label: "HR Tools", icon: <BadgeRoundedIcon fontSize="small" />, capability: "view_reports" },
       { to: "/audit", label: "Audit", icon: <FactCheckRoundedIcon fontSize="small" />, capability: "administer" },
       { to: "/integrations", label: "Integrations", icon: <HubRoundedIcon fontSize="small" />, capability: "administer" },

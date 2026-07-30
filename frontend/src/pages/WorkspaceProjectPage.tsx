@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, Paper, Stack, TextField, Typography } from "@mui/material";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, Paper, Stack, TextField, Typography } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { getWorkspace, type WorkspaceCategory } from "../features/workspaces/workspaces";
 import { getProject, updateProject, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
-import { listRecords, createRecord, deleteRecord, completeRecord, type WorkspaceRecord } from "../features/workspaces/recordsApi";
-import { listSections, createSection, deleteSection, type WorkspaceSection } from "../features/workspaces/sectionsApi";
+import { listRecords, type WorkspaceRecord } from "../features/workspaces/recordsApi";
+import { listSections, createSection, updateSection, deleteSection } from "../features/workspaces/sectionsApi";
+import { stringsToFields, toFieldDefs, type FieldDef } from "../features/workspaces/fields";
+import { SectionDrawer } from "../features/workspaces/SectionDrawer";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
-import { DurationChip, DurationPanel, durationText } from "../features/workspaces/durationDisplay";
-import { tokens, monoFont } from "../theme";
+import { DurationPanel } from "../features/workspaces/durationDisplay";
+import { tokens } from "../theme";
 
 // Warm sand section tiles (dark ink text), on the near-white page.
 const SECTION_BG = "#EAE1D2";
@@ -29,9 +28,10 @@ export default function WorkspaceProjectPage() {
   const { mine, loading: accessLoading } = useMyAccess();
 
   const [project, setProject] = useState<WorkspaceProject | null>(null);
-  const [selected, setSelected] = useState<WorkspaceCategory | null>(null);
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [selectedTab, setSelectedTab] = useState<"fields" | "records">("records");
   const [records, setRecords] = useState<WorkspaceRecord[]>([]);
-  const [sections, setSections] = useState<WorkspaceSection[]>([]);
+  const [sections, setSections] = useState<{ id: number; name: string; blurb: string; fields: FieldDef[] }[]>([]);
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newBlurb, setNewBlurb] = useState("");
@@ -42,17 +42,15 @@ export default function WorkspaceProjectPage() {
     if (!pid) { setRecords([]); return; }
     listRecords(pid).then(setRecords).catch(() => setRecords([]));
   };
-  const loadSections = () => {
-    if (!pid) { setSections([]); return; }
-    listSections(pid).then(setSections).catch(() => setSections([]));
-  };
+  const refreshSections = () =>
+    listSections(pid).then((rows) => setSections(rows.map((s) => ({ id: s.id, name: s.name, blurb: s.blurb, fields: toFieldDefs(s.fields) }))));
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    setSelected(null);
+    setSelectedName(null);
     if (pid) getProject(pid).then(setProject).catch(() => setProject(null));
     load();
-    loadSections();
+    refreshSections().catch(() => setSections([]));
   }, [projectId]);
 
   const countByCategory = useMemo(() => {
@@ -60,6 +58,34 @@ export default function WorkspaceProjectPage() {
     for (const r of records) m[r.category] = (m[r.category] ?? 0) + 1;
     return m;
   }, [records]);
+
+  // Merge built-in categories (from config) with the project's section rows.
+  // A row that shares a built-in's name customises that built-in's fields;
+  // any remaining rows are the user's own custom sections.
+  const allCats: WorkspaceCategory[] = useMemo(() => {
+    const builtins = ws?.categories ?? [];
+    const builtinNames = new Set(builtins.map((c) => c.name.toLowerCase()));
+    const rowByName = new Map(sections.map((s) => [s.name.toLowerCase(), s]));
+    const merged: WorkspaceCategory[] = builtins.map((c) => {
+      const row = rowByName.get(c.name.toLowerCase());
+      const fieldDefs = row && row.fields.length ? row.fields : stringsToFields(c.fields);
+      return { ...c, fieldDefs, sectionId: row?.id, isCustom: false };
+    });
+    const custom: WorkspaceCategory[] = sections
+      .filter((s) => !builtinNames.has(s.name.toLowerCase()))
+      .map((s) => ({
+        name: s.name,
+        blurb: s.blurb || "Custom section.",
+        fields: ["Description"],
+        fieldDefs: s.fields.length ? s.fields : stringsToFields(["Description"]),
+        sectionId: s.id,
+        isCustom: true,
+      }));
+    return [...merged, ...custom];
+  }, [ws, sections]);
+
+  const selected = selectedName ? allCats.find((c) => c.name === selectedName) ?? null : null;
+  const selectedRecords = selected ? records.filter((r) => r.category === selected.name) : [];
 
   if (!ws) {
     return (
@@ -71,15 +97,23 @@ export default function WorkspaceProjectPage() {
   }
 
   const { Icon } = ws;
-  // Built-in categories from config + the user's own sections (Description box each).
-  const customCats: WorkspaceCategory[] = sections.map((s) => ({
-    name: s.name, blurb: s.blurb || "Custom section.", fields: ["Description"], sectionId: s.id,
-  }));
-  const allCats: WorkspaceCategory[] = [...(ws.categories ?? []), ...customCats];
-  const selectedRecords = selected ? records.filter((r) => r.category === selected.name) : [];
   const level = accessLevel(mine, ws.key);
   const canEdit = level === "edit";
   const isEnt = ws.key === "entomology";
+
+  const openSection = (name: string, tab: "fields" | "records" = "records") => {
+    setSelectedTab(tab);
+    setSelectedName(name);
+  };
+
+  const saveFields = async (cat: WorkspaceCategory, fields: FieldDef[]) => {
+    if (cat.sectionId) {
+      await updateSection(cat.sectionId, { fields });
+    } else {
+      await createSection(pid, cat.name, cat.blurb, fields);
+    }
+    await refreshSections();
+  };
 
   const saveSection = async () => {
     const name = newName.trim();
@@ -87,11 +121,12 @@ export default function WorkspaceProjectPage() {
     setCreating(true);
     setNewErr("");
     try {
-      await createSection(pid, name, newBlurb.trim());
+      const created = await createSection(pid, name, newBlurb.trim(), stringsToFields(["Description"]));
       setNewName("");
       setNewBlurb("");
       setNewOpen(false);
-      loadSections();
+      await refreshSections();
+      openSection(created.name, "fields");
     } catch (e) {
       const detail = (e as { response?: { data?: { name?: string[] } } }).response?.data?.name?.[0];
       setNewErr(detail ?? "Could not create section.");
@@ -102,8 +137,8 @@ export default function WorkspaceProjectPage() {
 
   const removeSection = async (id: number) => {
     await deleteSection(id);
-    setSelected(null);
-    loadSections();
+    setSelectedName(null);
+    refreshSections();
     load();
   };
 
@@ -158,11 +193,10 @@ export default function WorkspaceProjectPage() {
         <Box sx={{ mt: 1.5 }}>
           <DurationPanel
             duration={project.duration}
-            startDate={project.start_date}
             completedAt={project.completed_at}
             canEdit={canEdit}
             allowSet={true}
-            onSet={(start, days) => updateProject(pid, { start_date: start, duration_days: days }).then(setProject)}
+            onSet={(startAt, endAt) => updateProject(pid, { start_at: startAt, end_at: endAt }).then(setProject)}
             onToggleComplete={() => completeProject(pid).then(setProject)}
           />
         </Box>
@@ -186,7 +220,7 @@ export default function WorkspaceProjectPage() {
           return (
             <SectionTag key={c.name} name={c.name}
               subtitle={count ? `${count} record${count === 1 ? "" : "s"}` : "No records yet"}
-              subtleSub={!count} onClick={() => setSelected(c)} />
+              subtleSub={!count} onClick={() => openSection(c.name)} />
           );
         })}
         {/* Add-a-section tile — editors only */}
@@ -202,20 +236,22 @@ export default function WorkspaceProjectPage() {
         )}
       </Box>
 
-      {/* Add / view records */}
-      <Drawer anchor="right" open={!!selected} onClose={() => setSelected(null)}
-        PaperProps={{ sx: { width: { xs: "100%", sm: 420 }, overflowY: "auto" } }}>
+      {/* Section drawer — Fields builder + generated Records form */}
+      <Drawer anchor="right" open={!!selected} onClose={() => setSelectedName(null)}
+        PaperProps={{ sx: { width: { xs: "100%", sm: 480 }, maxWidth: "96vw", overflow: "hidden" } }}>
         {selected && (
-          <CategoryPanel
+          <SectionDrawer
             key={selected.name}
-            project={pid}
             category={selected}
+            project={pid}
             records={selectedRecords}
             canEdit={canEdit}
             showDuration={isEnt}
-            onClose={() => setSelected(null)}
-            onChanged={load}
-            onDeleteSection={canEdit && selected.sectionId ? () => removeSection(selected.sectionId!) : undefined}
+            initialTab={selectedTab}
+            onClose={() => setSelectedName(null)}
+            onRecordsChanged={load}
+            onSaveFields={(fields) => saveFields(selected, fields)}
+            onDeleteSection={canEdit && selected.isCustom && selected.sectionId ? () => removeSection(selected.sectionId!) : undefined}
           />
         )}
       </Drawer>
@@ -229,6 +265,9 @@ export default function WorkspaceProjectPage() {
               onChange={(e) => setNewName(e.target.value)} />
             <TextField size="small" label="Description (optional)" value={newBlurb} fullWidth multiline minRows={2}
               onChange={(e) => setNewBlurb(e.target.value)} />
+            <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>
+              You'll set up its fields next.
+            </Typography>
             {newErr && <Typography sx={{ fontSize: 12.5, color: tokens.attn }}>{newErr}</Typography>}
           </Stack>
         </DialogContent>
@@ -254,195 +293,6 @@ function SectionTag({ name, subtitle, subtleSub, onClick }: {
         ...(onClick ? { "&:hover": { bgcolor: "#E3D9C6", boxShadow: "0 4px 12px rgba(20,22,29,.1)", transform: "translateY(-1px)" } } : {}) }}>
       <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 13.5, fontWeight: 700, lineHeight: 1.25 }}>{name}</Typography>
       <Typography sx={{ fontSize: 10.5, color: subtleSub ? "#A79E8C" : "#8A8270", mt: 0.25 }}>{subtitle}</Typography>
-    </Box>
-  );
-}
-
-function CategoryPanel({ project, category, records, canEdit, showDuration, onClose, onChanged, onDeleteSection }: {
-  project: number;
-  category: WorkspaceCategory;
-  records: WorkspaceRecord[];
-  canEdit: boolean;
-  showDuration: boolean;
-  onClose: () => void;
-  onChanged: () => void;
-  onDeleteSection?: () => void;
-}) {
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [file, setFile] = useState<File | null>(null);
-  const [durStart, setDurStart] = useState("");
-  const [durDays, setDurDays] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [saving, setSaving] = useState(false);
-  // The "primary" field is the meaningful one — it's the record's headline and
-  // the field required to save (a name or a description).
-  const primaryField = category.fields.find((f) => /name|title|description|subject/i.test(f)) ?? category.fields[0];
-  const primaryFilled = (form[primaryField] ?? "").trim().length > 0;
-  // With durations on, the real Start-date + Duration inputs replace any
-  // free-text "Duration" field on the category.
-  const textFields = category.fields.filter((f) => !(showDuration && /duration/i.test(f)));
-
-  const set = (f: string, v: string) => setForm((s) => ({ ...s, [f]: v }));
-  const startAdding = () => {
-    setForm({}); setFile(null);
-    setDurStart(showDuration ? new Date().toISOString().slice(0, 10) : "");
-    setDurDays("");
-    setAdding(true);
-  };
-  const resetForm = () => { setForm({}); setFile(null); setDurStart(""); setDurDays(""); setAdding(false); };
-
-  const save = async () => {
-    if (!primaryFilled) return;
-    setSaving(true);
-    try {
-      const data: Record<string, string> = {};
-      for (const f of textFields) {
-        const v = (form[f] ?? "").trim();
-        if (v) data[f] = v;
-      }
-      const schedule = showDuration && durStart && Number(durDays) > 0
-        ? { start_date: durStart, duration_days: Number(durDays) }
-        : undefined;
-      await createRecord(project, category.name, data, file, schedule);
-      resetForm();
-      onChanged();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async (id: number) => { await deleteRecord(id); onChanged(); };
-  const toggleComplete = async (id: number) => { await completeRecord(id); onChanged(); };
-
-  return (
-    <Box sx={{ p: 3 }}>
-      <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1} sx={{ mb: 2 }}>
-        <Box>
-          <Typography variant="h3" sx={{ fontSize: 19, lineHeight: 1.3 }}>{category.name}</Typography>
-          <Typography sx={{ fontSize: 13, color: tokens.text3, mt: 0.25 }}>{category.blurb}</Typography>
-        </Box>
-        <IconButton size="small" onClick={onClose}><CloseRoundedIcon sx={{ fontSize: 18 }} /></IconButton>
-      </Stack>
-
-      {canEdit && (!adding ? (
-        <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={startAdding}
-          sx={{ alignSelf: "flex-start", mb: 2 }}>
-          Add {category.name.toLowerCase()}
-        </Button>
-      ) : (
-        <Paper sx={{ p: 2, borderRadius: "6px", mb: 2, bgcolor: tokens.paper }}>
-          <Stack spacing={1.25}>
-            {textFields.map((f) => {
-              const multiline = /description|notes|remarks|details|comment/i.test(f);
-              return (
-                <TextField key={f} size="small" label={f} value={form[f] ?? ""} onChange={(e) => set(f, e.target.value)}
-                  required={f === primaryField} autoFocus={f === primaryField} fullWidth
-                  multiline={multiline} minRows={multiline ? 3 : undefined} />
-              );
-            })}
-            {showDuration && (
-              <>
-                <Stack direction="row" spacing={1}>
-                  <TextField size="small" type="date" label="Start date" InputLabelProps={{ shrink: true }}
-                    value={durStart} onChange={(e) => setDurStart(e.target.value)} sx={{ flex: 1 }} />
-                  <TextField size="small" type="number" label="Duration (days)" InputLabelProps={{ shrink: true }}
-                    value={durDays} onChange={(e) => setDurDays(e.target.value)} sx={{ width: 140 }} inputProps={{ min: 1 }} />
-                </Stack>
-                <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>
-                  Optional — you'll be notified when this duration is complete.
-                </Typography>
-              </>
-            )}
-            {category.allowFiles && (
-              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-                <Button component="label" variant="outlined" size="small" startIcon={<AttachFileRoundedIcon sx={{ fontSize: 16 }} />}>
-                  {file ? "Change file" : "Attach file"}
-                  <input type="file" hidden accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                </Button>
-                {file && (
-                  <Typography sx={{ fontSize: 12, color: tokens.text2, display: "inline-flex", alignItems: "center", gap: 0.5, minWidth: 0 }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170 }}>{file.name}</span>
-                    <IconButton size="small" onClick={() => setFile(null)}><CloseRoundedIcon sx={{ fontSize: 14 }} /></IconButton>
-                  </Typography>
-                )}
-              </Stack>
-            )}
-          </Stack>
-          <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
-            <Button variant="contained" size="small" onClick={save} disabled={saving || !primaryFilled}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-            <Button size="small" onClick={resetForm}>Cancel</Button>
-          </Stack>
-        </Paper>
-      ))}
-
-      <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 1 }}>
-        {records.length} record{records.length === 1 ? "" : "s"}
-      </Typography>
-
-      {records.length === 0 ? (
-        <Typography sx={{ fontSize: 13, color: tokens.text3 }}>Nothing here yet. Add the first one.</Typography>
-      ) : (
-        <Stack spacing={1}>
-          {records.map((r) => {
-            const headline = r.data[primaryField] || "Untitled";
-            const rest = textFields.filter((f) => f !== primaryField).map((f) => r.data[f]).filter(Boolean).slice(0, 3).join(" · ");
-            const hasDur = r.duration && r.duration.status !== "none";
-            return (
-              <Paper key={r.id} sx={{ p: 1.25, borderRadius: "6px" }}>
-                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
-                  <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography sx={{ fontSize: 13.5, fontWeight: 600 }} noWrap>{headline}</Typography>
-                    {rest && <Typography sx={{ fontSize: 11.5, color: tokens.text2 }} noWrap>{rest}</Typography>}
-                    {r.attachment && (
-                      <Typography component="a" href={r.attachment} target="_blank" rel="noopener"
-                        sx={{ fontSize: 11.5, color: tokens.kriyaInk, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 0.5, mt: 0.25 }}>
-                        <AttachFileRoundedIcon sx={{ fontSize: 13 }} />
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{r.attachment_name || "Attachment"}</span>
-                      </Typography>
-                    )}
-                    {hasDur && (
-                      <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 0.6 }}>
-                        <DurationChip duration={r.duration} />
-                        <Typography sx={{ fontSize: 11, color: tokens.text3 }}>{durationText(r.duration, r.completed_at)}</Typography>
-                        {canEdit && (
-                          <Box component="button" onClick={() => toggleComplete(r.id)}
-                            sx={{ border: "none", background: "transparent", p: 0, cursor: "pointer", fontSize: 11, fontWeight: 600,
-                              color: r.duration.status === "completed" ? tokens.text3 : tokens.kriyaInk }}>
-                            {r.duration.status === "completed" ? "Reopen" : "Mark complete"}
-                          </Box>
-                        )}
-                      </Stack>
-                    )}
-                    <Typography sx={{ fontSize: 10.5, color: tokens.text3, fontFamily: monoFont, mt: 0.25 }}>
-                      {r.created_by_name || "—"} · {r.created_at.slice(0, 10)}
-                    </Typography>
-                  </Box>
-                  {canEdit && (
-                    <IconButton size="small" onClick={() => remove(r.id)}>
-                      <DeleteOutlineRoundedIcon sx={{ fontSize: 16, color: tokens.text3 }} />
-                    </IconButton>
-                  )}
-                </Stack>
-              </Paper>
-            );
-          })}
-        </Stack>
-      )}
-
-      {onDeleteSection && (
-        <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${tokens.line}` }}>
-          <Button size="small" color="error" startIcon={<DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />}
-            onClick={onDeleteSection}>
-            Delete this section
-          </Button>
-          <Typography sx={{ fontSize: 11, color: tokens.text3, mt: 0.5 }}>
-            Removes the section and its records.
-          </Typography>
-        </Box>
-      )}
     </Box>
   );
 }

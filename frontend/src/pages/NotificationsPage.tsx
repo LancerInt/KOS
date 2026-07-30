@@ -1,12 +1,58 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, Button, Chip, CircularProgress, Paper, Stack, Switch, TextField, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, Switch, TextField, Typography } from "@mui/material";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
+import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
+import type { SvgIconComponent } from "@mui/icons-material";
 
 import {
   acknowledge, getPreferences, listNotifications, markAllRead, markRead,
   updatePreferences, type Notification, type Preferences,
 } from "../features/notifications/notificationsApi";
+import { getWorkspace } from "../features/workspaces/workspaces";
+import { workspaceAccent } from "../features/workspaces/accent";
 import { tokens, monoFont } from "../theme";
+
+interface EventMeta { Icon: SvgIconComponent; fg: string; bg: string; label: string; }
+const EVENT_META: Record<string, EventMeta> = {
+  overdue_ack: { Icon: WarningAmberRoundedIcon, fg: tokens.attn, bg: tokens.attnWash, label: "Needs acknowledgement" },
+  duration_complete: { Icon: NotificationsActiveRoundedIcon, fg: "#9A6A16", bg: "#FBF2DF", label: "Duration complete" },
+  due_soon: { Icon: AccessTimeRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Due soon" },
+  completed: { Icon: CheckCircleRoundedIcon, fg: "#1E7A50", bg: "#E7F4EC", label: "Completed" },
+};
+function eventMeta(ev: string): EventMeta {
+  return EVENT_META[ev] ?? { Icon: NotificationsActiveRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: (ev || "update").replace(/_/g, " ") };
+}
+
+function workspaceKeyOf(n: Notification): string | null {
+  const m = /^\/workspaces\/([^/]+)/.exec(n.url || "");
+  return m ? m[1] : null;
+}
+
+function timeAgo(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
+function WsChip({ n }: { n: Notification }) {
+  const key = workspaceKeyOf(n);
+  const ws = key ? getWorkspace(key) : undefined;
+  if (!ws || !key) return null;
+  const acc = workspaceAccent(key);
+  return (
+    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontFamily: monoFont, fontSize: 10, fontWeight: 600, px: 0.75, py: 0.15, borderRadius: "5px", bgcolor: acc.soft, color: acc.ink }}>
+      <Box sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: acc.base }} />
+      {ws.label}
+    </Box>
+  );
+}
 
 export default function NotificationsPage() {
   const navigate = useNavigate();
@@ -15,82 +61,156 @@ export default function NotificationsPage() {
   const [ackDraft, setAckDraft] = useState<Record<number, string>>({});
 
   const load = () => listNotifications().then(setItems).catch(() => setItems([]));
-  useEffect(() => { load(); getPreferences().then(setPrefs); }, []);
+  useEffect(() => { load(); getPreferences().then(setPrefs).catch(() => {}); }, []);
 
-  const savePref = (patch: Partial<Preferences>) => {
-    updatePreferences(patch).then(setPrefs);
-  };
+  const savePref = (patch: Partial<Preferences>) => { updatePreferences(patch).then(setPrefs).catch(() => {}); };
 
   const doAck = (id: number) => {
     const msg = (ackDraft[id] || "").trim();
     if (!msg) return;
-    acknowledge(id, msg).then(() => { setAckDraft((d) => ({ ...d, [id]: "" })); load(); });
+    acknowledge(id, msg).then(() => { setAckDraft((d) => ({ ...d, [id]: "" })); load(); }).catch(() => {});
   };
+
+  const openTarget = (n: Notification): string | null => {
+    const key = workspaceKeyOf(n);
+    if (key) return `/workspaces/${key}`;
+    return n.url && n.url !== "/" ? n.url : null;
+  };
+
+  const actions = useMemo(() => (items ?? []).filter((n) => n.needs_acknowledgement), [items]);
+  const updates = useMemo(() => (items ?? []).filter((n) => !n.needs_acknowledgement), [items]);
+  const unread = updates.filter((n) => !n.is_read).length;
 
   return (
     <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
-      {/* Content stays a readable width, but the track matches Dashboard/My Work so
-          the "Notifications" heading lines up near the sidebar, not floating centre. */}
       <Box sx={{ maxWidth: 760 }}>
-      <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mb: 2.5 }}>
-        <Typography variant="h1" sx={{ fontSize: 28 }}>Notifications</Typography>
-        <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>
-      </Stack>
+        <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mb: 2.5 }} gap={2} flexWrap="wrap">
+          <Box>
+            <Typography variant="h1" sx={{ fontSize: 28 }}>Notifications</Typography>
+            <Typography sx={{ mt: 0.4, fontSize: 13.5, color: tokens.text2 }}>
+              {items
+                ? <><b style={{ color: actions.length ? tokens.attn : tokens.text }}>{actions.length}</b> need action · <b style={{ color: tokens.text }}>{unread}</b> unread update{unread === 1 ? "" : "s"}</>
+                : "Loading…"}
+            </Typography>
+          </Box>
+          {updates.some((n) => !n.is_read) && <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>}
+        </Stack>
 
-      {/* preferences */}
-      {prefs && (
-        <Paper sx={{ p: 2, borderRadius: "6px", mb: 3 }}>
-          <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 1 }}>Preferences</Typography>
-          <Stack direction="row" spacing={3} flexWrap="wrap">
-            <PrefRow label="Email notifications" checked={prefs.email_enabled} onChange={(v) => savePref({ email_enabled: v })} />
-            <PrefRow label="Daily digest" checked={prefs.daily_digest} onChange={(v) => savePref({ daily_digest: v })} />
-          </Stack>
-        </Paper>
-      )}
+        {!items && <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>}
 
-      {!items && <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>}
-      {items && items.length === 0 && (
-        <Paper sx={{ p: 5, textAlign: "center", borderRadius: "6px" }}>
-          <Typography sx={{ fontWeight: 600, mb: 0.5 }}>All caught up</Typography>
-          <Typography color="text.secondary" sx={{ fontSize: 14 }}>No notifications right now.</Typography>
-        </Paper>
-      )}
+        {items && items.length === 0 && (
+          <Paper sx={{ p: 5, textAlign: "center", borderRadius: "10px" }}>
+            <Typography sx={{ fontWeight: 600, mb: 0.5 }}>All caught up</Typography>
+            <Typography color="text.secondary" sx={{ fontSize: 14 }}>No notifications right now.</Typography>
+          </Paper>
+        )}
 
-      <Stack spacing={1.25}>
-        {items?.map((n) => (
-          <Paper key={n.id} sx={{ p: 2, borderRadius: "6px", borderLeft: n.is_read ? undefined : `3px solid ${tokens.kriya}` }}>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              {n.needs_acknowledgement && <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: tokens.attn }} />}
-              <Typography sx={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{n.title}</Typography>
-              <Typography sx={{ fontSize: 11, color: tokens.text3, fontFamily: monoFont }}>{n.created_at.slice(0, 16).replace("T", " ")}</Typography>
+        {/* ---------- NEEDS YOUR ACTION ---------- */}
+        {items && items.length > 0 && (
+          <>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.25 }}>
+              <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 15, fontWeight: 700 }}>Needs your action</Typography>
+              <Box component="span" sx={{ fontFamily: monoFont, fontSize: 11, px: 0.9, py: 0.15, borderRadius: "20px", bgcolor: actions.length ? tokens.attnWash : "#EEF0F3", color: actions.length ? tokens.attn : tokens.text2 }}>{actions.length}</Box>
             </Stack>
-            {n.body && <Typography sx={{ fontSize: 13, color: tokens.text2, mt: 0.5 }}>{n.body}</Typography>}
 
-            {n.needs_acknowledgement ? (
-              <Box sx={{ mt: 1.25, bgcolor: tokens.attnWash, border: "1px solid #F2C9BC", borderRadius: "6px", p: 1.5 }}>
-                <Typography sx={{ fontSize: 12.5, color: "#9A5847", mb: 1 }}>
-                  Acknowledgement required — expected completion date, reason for delay, help needed.
-                </Typography>
-                <TextField fullWidth size="small" multiline minRows={2} placeholder="Your status message…"
-                  value={ackDraft[n.id] ?? ""} onChange={(e) => setAckDraft((d) => ({ ...d, [n.id]: e.target.value }))} />
-                <Button size="small" variant="contained" color="error" sx={{ mt: 1 }} onClick={() => doAck(n.id)} disabled={!(ackDraft[n.id] || "").trim()}>
-                  Acknowledge
-                </Button>
-              </Box>
+            {actions.length === 0 ? (
+              <Paper sx={{ p: 2.5, textAlign: "center", borderRadius: "11px", borderStyle: "dashed", mb: 3.5 }}>
+                <Typography sx={{ fontSize: 13, color: tokens.text3 }}>Nothing needs a response right now.</Typography>
+              </Paper>
             ) : (
-              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                {(n.url && n.url !== "/") ? (
-                  <Button size="small" onClick={() => navigate(n.url)}>Open</Button>
-                ) : n.project ? (
-                  <Button size="small" onClick={() => navigate(`/projects/${n.project}`)}>Open</Button>
-                ) : null}
-                {!n.is_read && <Button size="small" color="inherit" onClick={() => markRead(n.id).then(load)}>Mark read</Button>}
-                {n.acknowledged_at && <Chip label="acknowledged" size="small" sx={{ height: 20, fontSize: 10.5, bgcolor: "#E7F5EE", color: "#1F7A4D" }} />}
+              <Stack spacing={1.25} sx={{ mb: 3.5 }}>
+                {actions.map((n) => {
+                  const m = eventMeta(n.event);
+                  const target = openTarget(n);
+                  return (
+                    <Paper key={n.id} sx={{ p: 2, borderRadius: "13px", border: "1px solid #F2C9BC", borderLeft: `4px solid ${tokens.attn}`,
+                      background: "linear-gradient(180deg,#FDF1EC,#fff)" }}>
+                      <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                        <Box sx={{ width: 34, height: 34, borderRadius: "9px", flexShrink: 0, display: "grid", placeItems: "center", bgcolor: m.bg, color: m.fg }}>
+                          <m.Icon sx={{ fontSize: 18 }} />
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography sx={{ fontSize: 15, fontWeight: 700, color: tokens.ink, lineHeight: 1.3 }}>{n.title}</Typography>
+                          {n.body && <Typography sx={{ fontSize: 12.5, color: tokens.text2, mt: 0.5 }}>{n.body}</Typography>}
+                          <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }} useFlexGap>
+                            <WsChip n={n} />
+                            <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3 }}>{timeAgo(n.created_at)}</Typography>
+                            {target && (
+                              <Button size="small" onClick={() => navigate(target)} startIcon={<LaunchRoundedIcon sx={{ fontSize: 14 }} />} sx={{ minWidth: 0, py: 0, fontSize: 11.5 }}>
+                                Open workspace
+                              </Button>
+                            )}
+                          </Stack>
+                        </Box>
+                      </Stack>
+
+                      <Box sx={{ mt: 1.25, bgcolor: "#fff", border: "1px solid #F2C9BC", borderRadius: "9px", p: 1.5 }}>
+                        <Typography sx={{ fontSize: 12, color: "#9A5847", mb: 1 }}>
+                          Expected completion date, reason for delay, help needed.
+                        </Typography>
+                        <TextField fullWidth size="small" multiline minRows={2} placeholder="Your status message…"
+                          value={ackDraft[n.id] ?? ""} onChange={(e) => setAckDraft((d) => ({ ...d, [n.id]: e.target.value }))} />
+                        <Button size="small" variant="contained" color="error" sx={{ mt: 1 }} onClick={() => doAck(n.id)} disabled={!(ackDraft[n.id] || "").trim()}>
+                          Acknowledge
+                        </Button>
+                      </Box>
+                    </Paper>
+                  );
+                })}
               </Stack>
             )}
+
+            {/* ---------- RECENT UPDATES ---------- */}
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+              <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 15, fontWeight: 700 }}>Recent updates</Typography>
+              <Box component="span" sx={{ fontFamily: monoFont, fontSize: 11, px: 0.9, py: 0.15, borderRadius: "20px", bgcolor: "#EEF0F3", color: tokens.text2 }}>{updates.length}</Box>
+            </Stack>
+
+            {updates.length === 0 ? (
+              <Typography sx={{ fontSize: 13, color: tokens.text3, py: 1.5 }}>No other updates.</Typography>
+            ) : (
+              <Paper sx={{ borderRadius: "11px", overflow: "hidden" }}>
+                {updates.map((n, i) => {
+                  const m = eventMeta(n.event);
+                  const target = openTarget(n);
+                  return (
+                    <Stack key={n.id} direction="row" alignItems="center" spacing={1.25}
+                      onClick={() => { if (!n.is_read) markRead(n.id).then(load); }}
+                      sx={{ px: 1.75, py: 1.25, cursor: "pointer", borderTop: i === 0 ? "none" : `1px solid ${tokens.line}`,
+                        bgcolor: n.is_read ? "transparent" : "#FCFBF8", "&:hover": { bgcolor: "#F6F5F1" } }}>
+                      <Box sx={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, bgcolor: n.is_read ? "transparent" : m.fg, border: n.is_read ? `1px solid ${tokens.line}` : "none" }} />
+                      <Box sx={{ width: 26, height: 26, borderRadius: "7px", flexShrink: 0, display: "grid", placeItems: "center", bgcolor: m.bg, color: m.fg }}>
+                        <m.Icon sx={{ fontSize: 15 }} />
+                      </Box>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 13, fontWeight: n.is_read ? 500 : 700, color: tokens.text }} noWrap>{n.title}</Typography>
+                      </Box>
+                      <WsChip n={n} />
+                      {n.acknowledged_at && <Chip label="acknowledged" size="small" sx={{ height: 19, fontSize: 10, bgcolor: "#E7F4EC", color: "#1E7A50" }} />}
+                      <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3, flexShrink: 0 }}>{timeAgo(n.created_at)}</Typography>
+                      {target && (
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); navigate(target); }} sx={{ flexShrink: 0 }}>
+                          <LaunchRoundedIcon sx={{ fontSize: 15, color: tokens.text3 }} />
+                        </IconButton>
+                      )}
+                    </Stack>
+                  );
+                })}
+              </Paper>
+            )}
+          </>
+        )}
+
+        {/* ---------- preferences ---------- */}
+        {prefs && (
+          <Paper sx={{ p: 2, borderRadius: "10px", mt: 3.5 }}>
+            <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 1 }}>Preferences</Typography>
+            <Stack direction="row" spacing={3} flexWrap="wrap">
+              <PrefRow label="Email notifications" checked={prefs.email_enabled} onChange={(v) => savePref({ email_enabled: v })} />
+              <PrefRow label="Daily digest" checked={prefs.daily_digest} onChange={(v) => savePref({ daily_digest: v })} />
+            </Stack>
           </Paper>
-        ))}
-      </Stack>
+        )}
       </Box>
     </Box>
   );

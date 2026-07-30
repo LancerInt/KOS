@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KOS — Notifications, three interactive options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#16181D; --text:#1B1E25; --text2:#5A6373; --text3:#8A93A3;
+    --paper:#FBFAF6; --surface:#FFFFFF; --line:#E5E7EB;
+    --teal:#0F7A8B; --teal-ink:#0B5D6B; --teal-wash:#E6F3F5;
+    --coral:#E05A3C; --coral-ink:#B23A22; --coral-wash:#FCEAE4;
+    --amber:#E0A83D; --amber-ink:#9A6A16; --amber-wash:#FBF2DF;
+    --green:#2FA36B; --green-ink:#1E7A50; --green-wash:#E7F4EC;
+    --sans:"IBM Plex Sans",system-ui,sans-serif; --disp:"Manrope",sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--text);font-family:var(--sans);letter-spacing:.01em;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:760px;margin:0 auto;padding:34px 24px 90px;}
+  h1{font-family:var(--disp);font-weight:800;font-size:25px;letter-spacing:-.02em;margin:0;color:var(--ink);}
+  .sub{font-size:13px;color:var(--text3);margin-top:3px;}
+
+  /* switcher */
+  .switch{display:inline-flex;gap:4px;padding:4px;border-radius:12px;background:#EEF0F3;border:1px solid var(--line);margin:20px 0 8px;}
+  .switch button{border:none;background:transparent;font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--text2);
+    padding:7px 15px;border-radius:9px;cursor:pointer;}
+  .switch button.on{background:#fff;color:var(--teal-ink);box-shadow:0 1px 3px rgba(20,22,29,.14);}
+  .opt-desc{font-size:12.5px;color:var(--text2);margin:6px 0 20px;}
+
+  /* toolbar */
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .tabs{display:flex;gap:2px;background:#EEF0F3;border-radius:9px;padding:3px;}
+  .tabs button{border:none;background:transparent;font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--text2);
+    padding:5px 11px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:6px;}
+  .tabs button.on{background:#fff;color:var(--teal-ink);box-shadow:0 1px 2px rgba(20,22,29,.12);}
+  .tabs .n{font-family:var(--mono);font-size:10.5px;background:#E2E5EA;color:var(--text2);border-radius:20px;padding:0 6px;min-width:18px;text-align:center;}
+  .tabs button.on .n{background:var(--teal-wash);color:var(--teal-ink);}
+  .tabs .n.hot{background:var(--coral-wash);color:var(--coral);}
+  .link{margin-left:auto;border:none;background:transparent;color:var(--teal);font-weight:600;font-size:12.5px;cursor:pointer;}
+  .link:hover{color:var(--teal-ink);}
+
+  .group-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);font-weight:700;margin:16px 2px 8px;}
+
+  /* shared atoms */
+  .ico{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex-shrink:0;}
+  .ico svg{width:18px;height:18px;}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;font-weight:600;padding:1px 7px;border-radius:5px;}
+  .chip i{width:5px;height:5px;border-radius:50%;}
+  .time{font-family:var(--mono);font-size:10.5px;color:var(--text3);}
+  .btn{border:1px solid var(--line);background:#fff;color:var(--text2);font-family:var(--sans);font-weight:600;font-size:11.5px;
+    padding:4px 10px;border-radius:7px;cursor:pointer;}
+  .btn:hover{border-color:#C5CAD2;}
+  .btn.primary{background:var(--coral);border-color:var(--coral);color:#fff;}
+  .btn.primary:hover{filter:brightness(1.05);}
+  .ack-box{margin-top:10px;background:var(--coral-wash);border:1px solid #F2C9BC;border-radius:9px;padding:11px;}
+  .ack-box .lbl{font-size:12px;color:var(--coral-ink);margin-bottom:7px;}
+  .ack-box textarea{width:100%;border:1px solid #EAD3CB;border-radius:7px;padding:8px;font-family:var(--sans);font-size:12.5px;resize:vertical;min-height:46px;background:#fff;}
+  .ack-done{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--green-ink);background:var(--green-wash);padding:4px 9px;border-radius:7px;}
+
+  /* ========== OPT 1 · INBOX ========== */
+  .inbox .row{display:flex;gap:12px;padding:13px 14px;border:1px solid var(--line);border-radius:11px;background:#fff;margin-bottom:8px;position:relative;
+    transition:box-shadow .14s,transform .14s;}
+  .inbox .row:hover{box-shadow:0 8px 22px rgba(20,22,29,.08);}
+  .inbox .row.unread{border-left:3px solid var(--dotc,var(--teal));}
+  .inbox .body{flex:1;min-width:0;}
+  .inbox .title{font-size:14px;font-weight:600;color:var(--text);line-height:1.3;}
+  .inbox .row.unread .title{font-weight:700;}
+  .inbox .desc{font-size:12.5px;color:var(--text2);margin-top:3px;line-height:1.4;}
+  .inbox .meta{display:flex;align-items:center;gap:10px;margin-top:9px;flex-wrap:wrap;}
+  .inbox .acts{display:flex;gap:6px;margin-left:auto;opacity:0;transition:opacity .14s;}
+  .inbox .row:hover .acts{opacity:1;}
+  .inbox .unread-dot{position:absolute;top:15px;right:14px;width:8px;height:8px;border-radius:50%;background:var(--dotc,var(--teal));}
+
+  /* ========== OPT 2 · FEED ========== */
+  .feed{position:relative;padding-left:8px;}
+  .feed::before{content:"";position:absolute;left:24px;top:8px;bottom:8px;width:2px;background:var(--line);}
+  .feed .node{position:relative;display:flex;gap:16px;padding-bottom:16px;}
+  .feed .dot{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;z-index:1;border:3px solid var(--paper);}
+  .feed .dot svg{width:16px;height:16px;}
+  .feed .card{flex:1;min-width:0;background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px;transition:box-shadow .14s;}
+  .feed .card:hover{box-shadow:0 8px 22px rgba(20,22,29,.08);}
+  .feed .card.unread{background:linear-gradient(90deg,var(--wash,#fff),#fff 40%);border-left:3px solid var(--dotc,var(--teal));}
+  .feed .card.act{border-color:#F2C9BC;background:var(--coral-wash);}
+  .feed .top{display:flex;align-items:center;gap:8px;}
+  .feed .title{font-size:13.5px;font-weight:700;color:var(--ink);flex:1;}
+  .feed .desc{font-size:12.5px;color:var(--text2);margin-top:4px;line-height:1.4;}
+  .feed .meta{display:flex;align-items:center;gap:10px;margin-top:9px;}
+  .feed .acts{margin-left:auto;display:flex;gap:6px;}
+
+  /* ========== OPT 3 · TRIAGE ========== */
+  .triage .banner{display:flex;align-items:center;gap:9px;margin:2px 0 10px;}
+  .triage .banner h3{font-family:var(--disp);font-size:15px;margin:0;color:var(--ink);}
+  .triage .banner .count{font-family:var(--mono);font-size:11px;background:var(--coral-wash);color:var(--coral);padding:2px 8px;border-radius:20px;}
+  .triage .action-card{border:1px solid #F2C9BC;background:linear-gradient(180deg,#FDF1EC,#fff);border-radius:13px;padding:15px;margin-bottom:10px;
+    border-left:4px solid var(--coral);}
+  .triage .action-card .head{display:flex;gap:12px;align-items:flex-start;}
+  .triage .action-card .title{font-size:15px;font-weight:700;color:var(--ink);flex:1;line-height:1.3;}
+  .triage .action-card .desc{font-size:12.5px;color:var(--text2);margin-top:4px;}
+  .triage .updates{margin-top:20px;}
+  .triage .u-row{display:flex;align-items:center;gap:11px;padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .triage .u-row:hover{background:#fff;}
+  .triage .u-row .u-title{font-size:13px;color:var(--text);flex:1;}
+  .triage .u-row.unread .u-title{font-weight:700;}
+  .triage .u-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+  .triage .empty{font-size:13px;color:var(--text3);padding:14px;text-align:center;background:#fff;border:1px dashed var(--line);border-radius:11px;}
+
+  .foot{margin-top:44px;font-size:12px;color:var(--text3);border-top:1px dashed #DDD2BF;padding-top:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Notifications — three interactive options</h1>
+  <div class="sub">Standalone preview · sample data · not wired to KOS. Try: mark read, acknowledge, filter, mark all read.</div>
+
+  <div class="switch" id="switch"></div>
+  <div class="opt-desc" id="optdesc"></div>
+
+  <div id="view"></div>
+
+  <div class="foot">All three read from the same live sample state — actions persist as you switch options. Palette &amp; type match KOS "Ink &amp; Flow".</div>
+</div>
+
+<script>
+  /* ---------- icons ---------- */
+  const I = {
+    alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  };
+  const EVENT = {
+    overdue_ack:      { icon: I.alert, c: "var(--coral)",    w: "var(--coral-wash)", label: "Needs acknowledgement" },
+    duration_complete:{ icon: I.bell,  c: "var(--amber-ink)",w: "var(--amber-wash)", label: "Duration complete" },
+    due_soon:         { icon: I.clock, c: "var(--teal-ink)", w: "var(--teal-wash)",  label: "Due soon" },
+    completed:        { icon: I.check, c: "var(--green-ink)",w: "var(--green-wash)", label: "Completed" },
+  };
+  const WS = {
+    amazon:{ label:"Amazon USA", c:"#C07A1E", soft:"#F7ECDA" },
+    ento:{ label:"Entomology", c:"#5B8C3E", soft:"#EBF1E2" },
+    cibrc:{ label:"CIBRC", c:"#3F6CB5", soft:"#E9EEF7" },
+    epa:{ label:"EPA Reg", c:"#2E8B6B", soft:"#E3F1EC" },
+  };
+
+  let DATA = [
+    { id:1, event:"overdue_ack", ws:"amazon", title:"Q3 Catalog Refresh is overdue", body:"Ended 24 Jul. Please acknowledge with an expected completion date and any blockers.", time:"2h", group:"today", read:false, ack:false, msg:"" },
+    { id:2, event:"duration_complete", ws:"amazon", title:"Neem Oil 16oz — duration complete", body:"The scheduled duration ended today. Mark it complete or extend the timeline.", time:"5h", group:"today", read:false },
+    { id:3, event:"due_soon", ws:"amazon", title:"BioShield Concentrate — due tomorrow", body:"1 day left before the end date on 31 Jul.", time:"9h", group:"today", read:false },
+    { id:4, event:"overdue_ack", ws:"epa", title:"EPA registration renewal is overdue", body:"Ended 27 Jul. Acknowledgement required within 24h or it escalates to Management.", time:"1d", group:"earlier", read:false, ack:false, msg:"" },
+    { id:5, event:"due_soon", ws:"ento", title:"Laboratory Bioassay — 1 week to go", body:"7 days left before the end date on 18 Aug.", time:"2d", group:"earlier", read:true },
+    { id:6, event:"due_soon", ws:"cibrc", title:"Consent Leaflet — ends in 3 days", body:"Ending soon on 02 Aug.", time:"3d", group:"earlier", read:true },
+    { id:7, event:"completed", ws:"ento", title:"Field Bioefficacy Trial marked complete", body:"Aarthi S closed the project on 20 Jul.", time:"3d", group:"earlier", read:true },
+  ];
+  const drafts = {};
+
+  const isAction = n => n.event === "overdue_ack" && !n.ack;
+  const unreadCount = () => DATA.filter(n => !n.read).length;
+  const actionCount = () => DATA.filter(isAction).length;
+
+  const wsChip = ws => `<span class="chip" style="background:${WS[ws].soft};color:${WS[ws].c}"><i style="background:${WS[ws].c}"></i>${WS[ws].label}</span>`;
+  const evIco = (ev, cls="ico") => { const e=EVENT[ev]; return `<div class="${cls}" style="background:${e.w};color:${e.c}">${e.icon}</div>`; };
+
+  /* ---------- actions ---------- */
+  function markRead(id){ const n=DATA.find(x=>x.id===id); if(n){n.read=true; render();} }
+  function markAll(){ DATA.forEach(n=>n.read=true); render(); }
+  function saveDraft(id,v){ drafts[id]=v; }
+  function acknowledge(id){ const n=DATA.find(x=>x.id===id); if(!n) return; n.ack=true; n.read=true; n.msg=(drafts[id]||"").trim()||"Acknowledged."; render(); }
+
+  const ackComposer = n => `
+    <div class="ack-box">
+      <div class="lbl">Acknowledgement required — expected completion date, reason for delay, help needed.</div>
+      <textarea placeholder="Your status message…" oninput="saveDraft(${n.id},this.value)">${drafts[n.id]||""}</textarea>
+      <div style="margin-top:8px"><button class="btn primary" onclick="acknowledge(${n.id})">Acknowledge</button></div>
+    </div>`;
+  const ackDone = n => `<div class="ack-done">✓ Acknowledged — "${n.msg}"</div>`;
+
+  /* ============ OPT 1 · INBOX ============ */
+  let filter = "all";
+  function renderInbox(){
+    const view = document.getElementById("view");
+    const items = DATA.filter(n => filter==="all" ? true : filter==="unread" ? !n.read : isAction(n));
+    const groups = [["today","Today"],["earlier","Earlier"]];
+    const tab = (k,label,n,hot)=>`<button class="${filter===k?'on':''}" onclick="filter='${k}';render()">${label}<span class="n ${hot?'hot':''}">${n}</span></button>`;
+    let html = `<div class="toolbar"><div class="tabs">
+      ${tab("all","All",DATA.length,false)} ${tab("unread","Unread",unreadCount(),false)} ${tab("action","Needs action",actionCount(),true)}
+      </div><button class="link" onclick="markAll()">Mark all read</button></div><div class="inbox">`;
+    for(const [g,label] of groups){
+      const gi = items.filter(n=>n.group===g);
+      if(!gi.length) continue;
+      html += `<div class="group-label">${label}</div>`;
+      for(const n of gi){ const e=EVENT[n.event];
+        html += `<div class="row ${n.read?'':'unread'}" style="--dotc:${e.c}">
+          ${evIco(n.event)}
+          <div class="body">
+            <div class="title">${n.title}</div>
+            <div class="desc">${n.body}</div>
+            <div class="meta">${wsChip(n.ws)}<span class="chip" style="background:${e.w};color:${e.c}">${e.label}</span><span class="time">${n.time} ago</span>
+              <div class="acts"><button class="btn" onclick="markRead(${n.id})">${n.read?'Read':'Mark read'}</button><button class="btn">Open</button></div>
+            </div>
+            ${isAction(n)?ackComposer(n):(n.event==='overdue_ack'&&n.ack?ackDone(n):'')}
+          </div>
+          ${n.read?'':'<span class="unread-dot"></span>'}
+        </div>`;
+      }
+    }
+    html += `</div>`;
+    if(!items.length) html += `<div class="triage"><div class="empty">Nothing here — you're all caught up.</div></div>`;
+    view.innerHTML = html;
+  }
+
+  /* ============ OPT 2 · FEED ============ */
+  function renderFeed(){
+    const view = document.getElementById("view");
+    let html = `<div class="toolbar"><div style="font-size:12.5px;color:var(--text2)"><b style="font-family:var(--disp)">${unreadCount()}</b> unread · <b style="font-family:var(--disp);color:var(--coral)">${actionCount()}</b> need action</div><button class="link" onclick="markAll()">Mark all read</button></div><div class="feed">`;
+    for(const n of DATA){ const e=EVENT[n.event]; const act=isAction(n);
+      html += `<div class="node">
+        <div class="dot" style="background:${e.w};color:${e.c}">${e.icon}</div>
+        <div class="card ${n.read?'':'unread'} ${act?'act':''}" style="--dotc:${e.c};--wash:${e.w}">
+          <div class="top"><span class="title">${n.title}</span><span class="time">${n.time} ago</span></div>
+          <div class="desc">${n.body}</div>
+          <div class="meta">${wsChip(n.ws)}<span class="chip" style="background:${e.w};color:${e.c}">${e.label}</span>
+            <div class="acts">${n.read?'':`<button class="btn" onclick="markRead(${n.id})">Mark read</button>`}<button class="btn">Open</button></div>
+          </div>
+          ${act?ackComposer(n):(n.event==='overdue_ack'&&n.ack?ackDone(n):'')}
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+    view.innerHTML = html;
+  }
+
+  /* ============ OPT 3 · TRIAGE ============ */
+  function renderTriage(){
+    const view = document.getElementById("view");
+    const actions = DATA.filter(isAction);
+    const updates = DATA.filter(n => !isAction(n));
+    let html = ``;
+    html += `<div class="triage">`;
+    html += `<div class="banner"><h3>Needs your action</h3><span class="count">${actions.length}</span></div>`;
+    if(!actions.length){ html += `<div class="empty">Nothing needs a response right now.</div>`; }
+    for(const n of actions){ const e=EVENT[n.event];
+      html += `<div class="action-card">
+        <div class="head">${evIco(n.event)}
+          <div style="flex:1">
+            <div class="title">${n.title}</div>
+            <div class="desc">${n.body}</div>
+            <div class="meta" style="display:flex;gap:10px;align-items:center;margin-top:8px">${wsChip(n.ws)}<span class="time">${n.time} ago</span></div>
+          </div>
+        </div>
+        ${ackComposer(n)}
+      </div>`;
+    }
+    html += `<div class="updates"><div class="banner"><h3>Recent updates</h3><span class="count" style="background:#EEF0F3;color:var(--text2)">${updates.length}</span>`;
+    html += `<button class="link" style="margin-left:auto" onclick="markAll()">Mark all read</button></div>`;
+    for(const n of updates){ const e=EVENT[n.event];
+      html += `<div class="u-row ${n.read?'':'unread'}" onclick="markRead(${n.id})">
+        <span class="u-dot" style="background:${n.read?'transparent':e.c};border:1px solid ${n.read?'var(--line)':e.c}"></span>
+        ${evIco(n.event)}
+        <span class="u-title">${n.title}</span>
+        ${wsChip(n.ws)}
+        <span class="time">${n.time}</span>
+      </div>`;
+    }
+    html += `</div></div>`;
+    view.innerHTML = html;
+  }
+
+  /* ---------- shell ---------- */
+  const OPTIONS = [
+    { key:"inbox", label:"1 · Inbox", desc:"Email-client style — filter tabs (All / Unread / Needs action), grouped by time, inline acknowledge, mark all read. Familiar and dense.", render:renderInbox },
+    { key:"feed", label:"2 · Feed", desc:"A chronological activity timeline with a spine and event nodes. Unread cards are tinted; action items glow coral with an inline composer.", render:renderFeed },
+    { key:"triage", label:"3 · Triage", desc:"Action-first — everything that needs a response is lifted into prominent cards at the top; quieter updates sit in a compact list below.", render:renderTriage },
+  ];
+  let current = "inbox";
+  function render(){ OPTIONS.find(o=>o.key===current).render(); paintSwitch(); }
+  function paintSwitch(){
+    document.getElementById("switch").innerHTML = OPTIONS.map(o=>`<button class="${o.key===current?'on':''}" onclick="setOpt('${o.key}')">${o.label}</button>`).join("");
+    document.getElementById("optdesc").textContent = OPTIONS.find(o=>o.key===current).desc;
+  }
+  window.setOpt = k => { current=k; render(); };
+  window.filter = filter;
+  render();
+</script>
+</body>
+</html>

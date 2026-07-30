@@ -4,10 +4,16 @@ export type DurationStatus = "none" | "active" | "ending_soon" | "due" | "comple
 
 export interface Duration {
   status: DurationStatus;
-  end_date?: string;
+  start_at?: string;      // precise start datetime (ISO)
+  end_date?: string;      // local date (back-compat)
+  end_at?: string;        // precise end datetime (ISO)
+  end_label?: string;     // "30 Aug, 15:00"
   days_total?: number;
   days_elapsed?: number;
   days_left?: number;
+  hours_left?: number;
+  pct?: number;           // elapsed %
+  left_label?: string;    // "2d 5h", "5h", "45m", "Ended"
 }
 
 export interface WorkspaceProject {
@@ -19,8 +25,8 @@ export interface WorkspaceProject {
   created_at: string;
   section_count: number;
   record_count: number;
-  start_date: string | null;
-  duration_days: number | null;
+  start_at: string | null;
+  end_at: string | null;
   completed_at: string | null;
   duration: Duration;
 }
@@ -28,18 +34,23 @@ export interface WorkspaceProject {
 export const listProjects = (workspace: string) =>
   api.get<WorkspaceProject[]>("/workspace-projects/", { params: { workspace } }).then((r) => r.data);
 
+/** Every project the current user may view, across all workspaces (access-scoped
+ *  server-side). Backs the My Work / Dashboard overviews. */
+export const listAllProjects = () =>
+  api.get<WorkspaceProject[]>("/workspace-projects/").then((r) => r.data);
+
 export const getProject = (id: number) =>
   api.get<WorkspaceProject>(`/workspace-projects/${id}/`).then((r) => r.data);
 
 export const createProject = (
   workspace: string,
   name: string,
-  extra?: { start_date?: string; duration_days?: number },
+  extra?: { start_at?: string; end_at?: string },
 ) => api.post<WorkspaceProject>("/workspace-projects/", { workspace, name, ...(extra ?? {}) }).then((r) => r.data);
 
 export const updateProject = (
   id: number,
-  patch: { start_date?: string | null; duration_days?: number | null },
+  patch: { start_at?: string | null; end_at?: string | null },
 ) => api.patch<WorkspaceProject>(`/workspace-projects/${id}/`, patch).then((r) => r.data);
 
 /** Toggle completed state (closes / reopens the duration loop). */

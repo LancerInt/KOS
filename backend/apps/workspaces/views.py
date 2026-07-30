@@ -178,6 +178,10 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
         _require_edit(self.request.user, ws)
         serializer.save(created_by=self.request.user, workspace=ws)
 
+    def perform_update(self, serializer):
+        _require_edit(self.request.user, serializer.instance.workspace)
+        serializer.save()
+
     def perform_destroy(self, instance):
         # Removing a section also removes any records captured under it.
         _require_edit(self.request.user, instance.workspace)
