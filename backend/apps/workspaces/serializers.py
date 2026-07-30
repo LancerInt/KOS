@@ -121,18 +121,39 @@ class WorkspaceRecordSerializer(serializers.ModelSerializer):
 class WorkspaceSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkspaceSection
-        fields = ("id", "project", "workspace", "name", "blurb", "created_by", "created_at")
+        fields = ("id", "project", "workspace", "name", "blurb", "fields", "created_by", "created_at")
         read_only_fields = ("workspace", "created_by", "created_at")
 
+    def validate_fields(self, value):
+        # Over multipart the schema could arrive as a JSON string; parse it.
+        if isinstance(value, str):
+            try:
+                value = json.loads(value or "[]")
+            except ValueError:
+                raise serializers.ValidationError("fields must be valid JSON.")
+        if not isinstance(value, list):
+            raise serializers.ValidationError("fields must be a list of field definitions.")
+        clean = []
+        for f in value:
+            if isinstance(f, dict) and f.get("type") and f.get("label") is not None:
+                clean.append(f)
+        return clean
+
     def validate(self, attrs):
-        project = attrs.get("project") or (self.instance.project if self.instance else None)
-        name = (attrs.get("name") or "").strip()
+        instance = self.instance
+        project = attrs.get("project") or (instance.project if instance else None)
+        # On a partial update (e.g. saving only the field schema) name isn't in
+        # the payload — fall back to the existing name instead of erroring.
+        provided_name = "name" in attrs
+        name = (attrs.get("name") if provided_name else (instance.name if instance else "")) or ""
+        name = name.strip()
         if not name:
             raise serializers.ValidationError({"name": "A section name is required."})
         qs = WorkspaceSection.objects.filter(project=project, name__iexact=name)
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
+        if instance:
+            qs = qs.exclude(pk=instance.pk)
         if qs.exists():
             raise serializers.ValidationError({"name": "A section with this name already exists."})
-        attrs["name"] = name
+        if provided_name:
+            attrs["name"] = name
         return attrs

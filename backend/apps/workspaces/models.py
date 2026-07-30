@@ -193,6 +193,11 @@ class WorkspaceSection(models.Model):
     workspace = models.CharField(max_length=64)    # mirrors project.workspace
     name = models.CharField(max_length=120)
     blurb = models.CharField(max_length=300, blank=True)
+    # Typed field schema for this section — a list of field definitions
+    # ({id, type, label, placeholder, help, required, options}). Empty = use the
+    # workspace's built-in default fields. Built-in sections also get a row here
+    # once their fields are customised (the row "adopts" the built-in section).
+    fields = models.JSONField(default=list, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="workspace_sections",
