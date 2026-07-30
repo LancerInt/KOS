@@ -1,0 +1,153 @@
+# KOS on Render — Blueprint (https://render.com/docs/blueprint-spec)
+#
+# Creates four services:
+#   kos-db        Postgres 16
+#   kos-redis     Key Value (Redis) — Django's cache, and the Celery broker
+#   kos-backend   Django REST API under gunicorn
+#   kos-frontend  the React SPA, built by Vite and served as a static site
+#
+# Deliberately **no Celery worker and no beat scheduler**: Render has no free
+# tier for background workers. Two consequences worth knowing before you rely
+# on this deployment:
+#
+#   * Nothing scheduled runs. No overdue reminders, no escalation ladder, no
+#     nightly stand-ups or executive summaries, no webhook retries.
+#   * Anything the API hands to a task runs inline in the web process instead,
+#     via CELERY_TASK_ALWAYS_EAGER below. Without that flag `apply_async`
+#     would succeed — Redis happily accepts the message — and nothing would
+#     ever consume the queue, so a stand-up would sit unwritten forever.
+#
+# To add the workers later: create two `type: worker` services with the same
+# rootDir, envVars and buildCommand as kos-backend, running
+# `celery -A config worker -l info` and
+# `celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler`,
+# then set CELERY_TASK_ALWAYS_EAGER to False and kos-redis's maxmemoryPolicy to
+# noeviction so queued messages cannot be evicted.
+#
+# Uploaded media (documents, avatars) lands on the instance's ephemeral disk and
+# is LOST on every redeploy. Attach a Render disk or move MEDIA to S3 before
+# anyone stores anything they need to keep.
+
+databases:
+  - name: kos-db
+    databaseName: kos
+    user: kos
+    plan: free
+    region: singapore
+    postgresMajorVersion: "16"
+
+services:
+  # --- cache + Celery broker ------------------------------------------------ #
+  - type: redis
+    name: kos-redis
+    plan: free
+    region: singapore
+    ipAllowList: []            # reachable only from other Render services
+    # Pure cache while no worker exists, so evicting under pressure beats
+    # erroring. Switch to noeviction when a Celery worker is added.
+    maxmemoryPolicy: allkeys-lru
+
+  # --- Django API ----------------------------------------------------------- #
+  - type: web
+    name: kos-backend
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --no-input
+    # Migrations run at start, not in build: the free plan has no pre-deploy
+    # hook, and start is the point at which the database is certainly reachable.
+    # migrate is idempotent, so repeating it on each cold start is harmless.
+    startCommand: >-
+      python manage.py migrate --no-input &&
+      gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /api/health/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DEBUG
+        value: "False"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kos-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: kos-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: kos-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: kos-redis
+          property: connectionString
+      # No worker is deployed — see the note at the top of this file.
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "True"
+      # Render terminates TLS and forwards X-Forwarded-Proto, which settings.py
+      # already trusts via SECURE_PROXY_SSL_HEADER.
+      - key: SECURE_SSL_REDIRECT
+        value: "True"
+      # ALLOWED_HOSTS and CSRF_TRUSTED_ORIGINS pick up the API's own hostname
+      # from RENDER_EXTERNAL_HOSTNAME, which Render sets automatically.
+      #
+      # These two are the SPA's origin, and are the one thing here that Render
+      # cannot fill in for you. If Render suffixed the static site's name
+      # (kos-frontend-a1b2.onrender.com), correct both in the dashboard.
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://kos-frontend.onrender.com
+      - key: FRONTEND_BASE_URL
+        value: https://kos-frontend.onrender.com
+      # --- supplied in the Render dashboard, never committed ---------------- #
+      # Leaving the AI key blank is safe: the provider falls back to the offline
+      # stub and every screen keeps working with placeholder text.
+      - key: AI_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false
+      # Leave EMAIL_HOST blank to print mail to the log instead of sending it.
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+
+  # --- React SPA ------------------------------------------------------------ #
+  - type: web
+    name: kos-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Baked into the bundle at build time, so changing it needs a rebuild.
+      # Correct this if Render suffixed the API's name.
+      - key: VITE_API_BASE_URL
+        value: https://kos-backend.onrender.com/api
+    routes:
+      # SPA fallback — every unknown path serves the app shell so client-side
+      # routes survive a hard refresh.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache

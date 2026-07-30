@@ -29,6 +29,17 @@ if env_file.exists():
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-secret-change-me")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
+# Platforms that assign the hostname at deploy time announce it in the
+# environment. Trusting it means the host list needs no hand-editing, and a
+# provider-suffixed service name cannot lock you out of your own deployment.
+# Render sets RENDER_EXTERNAL_HOSTNAME; the admin needs it in both lists,
+# because CSRF_COOKIE_SECURE alone would otherwise reject the login POST.
+RENDER_EXTERNAL_HOSTNAME = env("RENDER_EXTERNAL_HOSTNAME", default="")
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS = [*ALLOWED_HOSTS, RENDER_EXTERNAL_HOSTNAME]
+    CSRF_TRUSTED_ORIGINS = [*CSRF_TRUSTED_ORIGINS, f"https://{RENDER_EXTERNAL_HOSTNAME}"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -132,6 +143,17 @@ CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default=REDIS_URL)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TIMEZONE = "Asia/Kolkata"
+
+# Run tasks inline in the calling process instead of dispatching them.
+#
+# Set this wherever the deployment has no Celery worker. The failure it prevents
+# is quiet: with a reachable broker and no consumer, ``apply_async`` succeeds,
+# the caller is told the job is queued, and the work never happens. Running
+# inline is slower but honest — the request returns when the work is done.
+# Eager exceptions stay unpropagated so a failing task cannot 500 the request
+# that triggered it; callers already handle "not ready yet".
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+CELERY_TASK_EAGER_PROPAGATES = False
 
 # Scheduled jobs (installed into the DB scheduler on beat startup).
 # All reminder/digest scans run once a day; webhook delivery retries run often;
