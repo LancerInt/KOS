@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.audit.models import AuditAction
+from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import record
 
 from . import mfa
@@ -71,6 +71,34 @@ class LoginView(APIView):
                 "mfa_setup_required": user.is_privileged and not user.mfa_enabled,
             }
         )
+
+
+class LastLoginsView(APIView):
+    """Who last signed in — one row per user with their most recent login time
+    and source IP, newest first. Admin-only. This is the only login/audit view
+    kept in the UI (surfaced from Roles & Access)."""
+
+    permission_classes = [IsAdministrator]
+
+    def get(self, request: Request) -> Response:
+        latest = (
+            AuditLog.objects.filter(action=AuditAction.LOGIN, actor__isnull=False)
+            .order_by("actor_id", "-created_at")
+            .distinct("actor_id")
+            .select_related("actor")
+        )
+        rows = [
+            {
+                "id": e.actor_id,
+                "name": e.actor.get_full_name() or e.actor.username,
+                "username": e.actor.username,
+                "last_login": e.created_at,
+                "source_ip": e.source_ip,
+            }
+            for e in latest
+        ]
+        rows.sort(key=lambda r: r["last_login"], reverse=True)
+        return Response(rows)
 
 
 class LogoutView(APIView):

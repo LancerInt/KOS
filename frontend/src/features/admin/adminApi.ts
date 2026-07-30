@@ -84,3 +84,14 @@ export const listMiniProjects = () =>
 
 export const addMembership = (user: number, project: number, project_role: ProjectRole) =>
   api.post("/memberships/", { user, project, project_role }).then((r) => r.data);
+
+export interface LastLogin {
+  id: number;
+  name: string;
+  username: string;
+  last_login: string;
+  source_ip: string | null;
+}
+
+export const listLastLogins = () =>
+  api.get<LastLogin[]>("/auth/last-logins/").then((r) => r.data);

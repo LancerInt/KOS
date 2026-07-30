@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, Paper, Stack, TextField, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, Paper, Snackbar, Stack, TextField, Typography } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { getWorkspace, type WorkspaceCategory } from "../features/workspaces/workspaces";
 import { getProject, updateProject, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import { listRecords, type WorkspaceRecord } from "../features/workspaces/recordsApi";
-import { listSections, createSection, updateSection, deleteSection } from "../features/workspaces/sectionsApi";
+import { listSections, createSection, updateSection } from "../features/workspaces/sectionsApi";
 import { stringsToFields, toFieldDefs, type FieldDef } from "../features/workspaces/fields";
 import { SectionDrawer } from "../features/workspaces/SectionDrawer";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
@@ -31,19 +33,20 @@ export default function WorkspaceProjectPage() {
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<"fields" | "records">("records");
   const [records, setRecords] = useState<WorkspaceRecord[]>([]);
-  const [sections, setSections] = useState<{ id: number; name: string; blurb: string; fields: FieldDef[] }[]>([]);
+  const [sections, setSections] = useState<{ id: number; name: string; blurb: string; fields: FieldDef[]; hidden: boolean }[]>([]);
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newBlurb, setNewBlurb] = useState("");
   const [newErr, setNewErr] = useState("");
   const [creating, setCreating] = useState(false);
+  const [snack, setSnack] = useState<{ msg: string; undo: () => void } | null>(null);
 
   const load = () => {
     if (!pid) { setRecords([]); return; }
     listRecords(pid).then(setRecords).catch(() => setRecords([]));
   };
   const refreshSections = () =>
-    listSections(pid).then((rows) => setSections(rows.map((s) => ({ id: s.id, name: s.name, blurb: s.blurb, fields: toFieldDefs(s.fields) }))));
+    listSections(pid).then((rows) => setSections(rows.map((s) => ({ id: s.id, name: s.name, blurb: s.blurb, fields: toFieldDefs(s.fields), hidden: !!s.hidden }))));
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -60,19 +63,19 @@ export default function WorkspaceProjectPage() {
   }, [records]);
 
   // Merge built-in categories (from config) with the project's section rows.
-  // A row that shares a built-in's name customises that built-in's fields;
-  // any remaining rows are the user's own custom sections.
-  const allCats: WorkspaceCategory[] = useMemo(() => {
+  // A row that shares a built-in's name customises that built-in's fields (and,
+  // when hidden, drops it from this project); remaining rows are custom sections.
+  const { cats: allCats, hiddenSections } = useMemo(() => {
     const builtins = ws?.categories ?? [];
     const builtinNames = new Set(builtins.map((c) => c.name.toLowerCase()));
     const rowByName = new Map(sections.map((s) => [s.name.toLowerCase(), s]));
     const merged: WorkspaceCategory[] = builtins.map((c) => {
       const row = rowByName.get(c.name.toLowerCase());
       const fieldDefs = row && row.fields.length ? row.fields : stringsToFields(c.fields);
-      return { ...c, fieldDefs, sectionId: row?.id, isCustom: false };
+      return { ...c, fieldDefs, sectionId: row?.id, isCustom: false, hidden: !!row?.hidden };
     });
     const custom: WorkspaceCategory[] = sections
-      .filter((s) => !builtinNames.has(s.name.toLowerCase()))
+      .filter((s) => !builtinNames.has(s.name.toLowerCase()) && !s.hidden)
       .map((s) => ({
         name: s.name,
         blurb: s.blurb || "Custom section.",
@@ -81,7 +84,9 @@ export default function WorkspaceProjectPage() {
         sectionId: s.id,
         isCustom: true,
       }));
-    return [...merged, ...custom];
+    // Every hidden row (built-in or custom) can be restored via a chip.
+    const hidden = sections.filter((s) => s.hidden).map((s) => ({ name: s.name, sectionId: s.id }));
+    return { cats: [...merged.filter((m) => !m.hidden), ...custom], hiddenSections: hidden };
   }, [ws, sections]);
 
   const selected = selectedName ? allCats.find((c) => c.name === selectedName) ?? null : null;
@@ -135,9 +140,21 @@ export default function WorkspaceProjectPage() {
     }
   };
 
-  const removeSection = async (id: number) => {
-    await deleteSection(id);
+  // Delete works on every section and is reversible: the section is hidden for
+  // this project (its records are kept), so it can be undone or restored intact.
+  const deleteSectionCat = async (cat: WorkspaceCategory) => {
+    // A built-in section not yet in the DB is adopted as a hidden row first.
+    const id = cat.sectionId ?? (await createSection(pid, cat.name, cat.blurb, cat.fieldDefs ?? [], true)).id;
+    if (cat.sectionId) await updateSection(id, { hidden: true });
     setSelectedName(null);
+    await refreshSections();
+    load();
+    setSnack({ msg: `"${cat.name}" deleted`, undo: () => restoreSection(id) });
+  };
+
+  const restoreSection = async (id: number) => {
+    await updateSection(id, { hidden: false });
+    setSnack(null);
     refreshSections();
     load();
   };
@@ -220,7 +237,8 @@ export default function WorkspaceProjectPage() {
           return (
             <SectionTag key={c.name} name={c.name}
               subtitle={count ? `${count} record${count === 1 ? "" : "s"}` : "No records yet"}
-              subtleSub={!count} onClick={() => openSection(c.name)} />
+              subtleSub={!count} onClick={() => openSection(c.name)}
+              onDelete={canEdit ? () => deleteSectionCat(c) : undefined} />
           );
         })}
         {/* Add-a-section tile — editors only */}
@@ -235,6 +253,22 @@ export default function WorkspaceProjectPage() {
           </Box>
         )}
       </Box>
+
+      {/* Restore sections that were deleted (hidden) for this project */}
+      {canEdit && hiddenSections.length > 0 && (
+        <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.75 }}>
+          <Typography sx={{ fontSize: 11, color: tokens.text3, mr: 0.25 }}>Hidden:</Typography>
+          {hiddenSections.map((h) => (
+            <Box key={h.name} onClick={() => restoreSection(h.sectionId)}
+              sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, px: 1, py: 0.375, borderRadius: "999px",
+                border: `1px dashed ${tokens.line}`, color: tokens.text2, cursor: "pointer", fontSize: 11.5,
+                "&:hover": { borderColor: tokens.kriya, color: tokens.kriyaInk, bgcolor: "rgba(15,122,139,.06)" } }}>
+              <ReplayRoundedIcon sx={{ fontSize: 13 }} />
+              {h.name}
+            </Box>
+          ))}
+        </Box>
+      )}
 
       {/* Section drawer — Fields builder + generated Records form */}
       <Drawer anchor="right" open={!!selected} onClose={() => setSelectedName(null)}
@@ -251,7 +285,7 @@ export default function WorkspaceProjectPage() {
             onClose={() => setSelectedName(null)}
             onRecordsChanged={load}
             onSaveFields={(fields) => saveFields(selected, fields)}
-            onDeleteSection={canEdit && selected.isCustom && selected.sectionId ? () => removeSection(selected.sectionId!) : undefined}
+            onDeleteSection={canEdit ? () => deleteSectionCat(selected) : undefined}
           />
         )}
       </Drawer>
@@ -278,19 +312,38 @@ export default function WorkspaceProjectPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Undo a section delete */}
+      <Snackbar open={!!snack} autoHideDuration={6000} onClose={() => setSnack(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        message={snack?.msg}
+        action={
+          <Button size="small" onClick={() => snack?.undo()} sx={{ color: tokens.kriyaGlow, fontWeight: 700 }}>
+            Undo
+          </Button>
+        } />
     </Box>
   );
 }
 
-function SectionTag({ name, subtitle, subtleSub, onClick }: {
-  name: string; subtitle: string; subtleSub?: boolean; onClick?: () => void;
+function SectionTag({ name, subtitle, subtleSub, onClick, onDelete }: {
+  name: string; subtitle: string; subtleSub?: boolean; onClick?: () => void; onDelete?: () => void;
 }) {
   return (
     <Box onClick={onClick}
-      sx={{ bgcolor: SECTION_BG, color: SECTION_TEXT, border: `1px solid ${SECTION_BORDER}`, borderRadius: "3px", minHeight: 78, px: 1.25, py: 1.25,
+      sx={{ position: "relative", bgcolor: SECTION_BG, color: SECTION_TEXT, border: `1px solid ${SECTION_BORDER}`, borderRadius: "3px", minHeight: 78, px: 1.25, py: 1.25,
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center",
         cursor: onClick ? "pointer" : "default", transition: "background-color .16s, box-shadow .16s, transform .16s",
-        ...(onClick ? { "&:hover": { bgcolor: "#E3D9C6", boxShadow: "0 4px 12px rgba(20,22,29,.1)", transform: "translateY(-1px)" } } : {}) }}>
+        ...(onClick ? { "&:hover": { bgcolor: "#E3D9C6", boxShadow: "0 4px 12px rgba(20,22,29,.1)", transform: "translateY(-1px)" } } : {}),
+        "&:hover .sec-del": { opacity: 1 } }}>
+      {onDelete && (
+        <IconButton className="sec-del" size="small" title="Delete section"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          sx={{ position: "absolute", top: 4, right: 4, opacity: 0, transition: "opacity .14s, color .14s, background-color .14s",
+            color: "#8A8270", bgcolor: "rgba(255,255,255,.7)", "&:hover": { color: tokens.attn, bgcolor: tokens.attnWash } }}>
+          <DeleteOutlineRoundedIcon sx={{ fontSize: 15 }} />
+        </IconButton>
+      )}
       <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 13.5, fontWeight: 700, lineHeight: 1.25 }}>{name}</Typography>
       <Typography sx={{ fontSize: 10.5, color: subtleSub ? "#A79E8C" : "#8A8270", mt: 0.25 }}>{subtitle}</Typography>
     </Box>

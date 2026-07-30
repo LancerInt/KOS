@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     DepartmentViewSet,
+    LastLoginsView,
     LoginView,
     LogoutView,
     MeView,
@@ -27,5 +28,6 @@ urlpatterns = [
     path("auth/me/", MeView.as_view(), name="me"),
     path("auth/mfa/setup/", MfaSetupView.as_view(), name="mfa-setup"),
     path("auth/mfa/verify/", MfaVerifyView.as_view(), name="mfa-verify"),
+    path("auth/last-logins/", LastLoginsView.as_view(), name="last-logins"),
     *router.urls,
 ]

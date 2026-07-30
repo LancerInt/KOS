@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Box, Button, Checkbox, FormControlLabel, IconButton, MenuItem, Paper, Radio,
-  RadioGroup, Select, Stack, Switch, TextField, Typography,
+  RadioGroup, Select, Snackbar, Stack, Switch, TextField, Typography,
 } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
@@ -86,7 +86,7 @@ export function SectionDrawer({
               Delete this section
             </Button>
             <Typography sx={{ fontSize: 11, color: tokens.text3, mt: 0.5 }}>
-              Removes the section, its fields and its records.
+              Hides it from this project — records are kept, and you can restore it or Undo.
             </Typography>
           </Box>
         )}
@@ -107,6 +107,7 @@ function FieldBuilder({ initial, onSave }: { initial: FieldDef[]; onSave: (f: Fi
   const [overZone, setOverZone] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(true);
+  const [undoField, setUndoField] = useState<{ field: FieldDef; index: number } | null>(null);
 
   const mutate = (next: FieldDef[]) => { setFields(next); setSaved(false); };
   const patch = (id: string, p: Partial<FieldDef>) =>
@@ -119,7 +120,21 @@ function FieldBuilder({ initial, onSave }: { initial: FieldDef[]; onSave: (f: Fi
     const copy = { ...structuredClone(fields[i]), id: newField(fields[i].type).id };
     mutate([...fields.slice(0, i + 1), copy, ...fields.slice(i + 1)]);
   };
-  const del = (id: string) => { mutate(fields.filter((f) => f.id !== id)); if (openId === id) setOpenId(null); };
+  const del = (id: string) => {
+    const index = fields.findIndex((f) => f.id === id);
+    if (index < 0) return;
+    const field = fields[index];
+    mutate(fields.filter((f) => f.id !== id));
+    if (openId === id) setOpenId(null);
+    setUndoField({ field, index });
+  };
+  const undoDelete = () => {
+    if (!undoField) return;
+    const next = [...fields];
+    next.splice(Math.min(undoField.index, next.length), 0, undoField.field);
+    mutate(next);
+    setUndoField(null);
+  };
 
   const drop = (index: number) => {
     const d = drag; setDrag(null); setOverZone(null);
@@ -195,6 +210,10 @@ function FieldBuilder({ initial, onSave }: { initial: FieldDef[]; onSave: (f: Fi
         </Button>
         {!saved && <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>Unsaved changes</Typography>}
       </Stack>
+
+      <Snackbar open={!!undoField} autoHideDuration={5000} onClose={() => setUndoField(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }} message="Field deleted"
+        action={<Button size="small" onClick={undoDelete} sx={{ color: tokens.kriyaGlow, fontWeight: 700 }}>Undo</Button>} />
     </Box>
   );
 }
@@ -227,11 +246,13 @@ function FieldCard({ field, open, onToggle, onPatch, onDup, onDel, onDragStart, 
         {field.required && (
           <Box sx={{ fontFamily: monoFont, fontSize: 8.5, color: tokens.attn, bgcolor: tokens.attnWash, px: 0.6, py: "1px", borderRadius: "5px", textTransform: "uppercase" }}>Req</Box>
         )}
-        <IconButton size="small" onClick={onToggle} title={open ? "Done" : "Edit"}>
+        <IconButton size="small" onClick={onToggle} title={open ? "Done editing" : "Edit field"}>
           {open ? <CheckRoundedIcon sx={{ fontSize: 15 }} /> : <EditRoundedIcon sx={{ fontSize: 15 }} />}
         </IconButton>
-        <IconButton size="small" onClick={onDup} title="Duplicate"><ContentCopyRoundedIcon sx={{ fontSize: 14 }} /></IconButton>
-        <IconButton size="small" onClick={onDel} title="Delete"><CloseRoundedIcon sx={{ fontSize: 15, color: tokens.text3 }} /></IconButton>
+        <IconButton size="small" onClick={onDel} title="Delete field"
+          sx={{ color: tokens.text3, "&:hover": { color: tokens.attn, bgcolor: tokens.attnWash } }}>
+          <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+        </IconButton>
       </Stack>
 
       {/* preview */}
@@ -239,7 +260,7 @@ function FieldCard({ field, open, onToggle, onPatch, onDup, onDel, onDragStart, 
         <FieldPreview field={field} />
       </Box>
 
-      {open && <FieldConfig field={field} onPatch={onPatch} />}
+      {open && <FieldConfig field={field} onPatch={onPatch} onDup={onDup} onDel={onDel} />}
     </Box>
   );
 }
@@ -279,7 +300,9 @@ function FieldPreview({ field }: { field: FieldDef }) {
   );
 }
 
-function FieldConfig({ field, onPatch }: { field: FieldDef; onPatch: (p: Partial<FieldDef>) => void }) {
+function FieldConfig({ field, onPatch, onDup, onDel }: {
+  field: FieldDef; onPatch: (p: Partial<FieldDef>) => void; onDup: () => void; onDel: () => void;
+}) {
   const hasOptions = !!FIELD_TYPES[field.type].hasOptions;
   const hasPlaceholder = !["radio", "checkbox", "dropdown", "date", "file"].includes(field.type);
   const setOpt = (i: number, v: string) => onPatch({ options: (field.options ?? []).map((o, j) => (j === i ? v : o)) });
@@ -322,6 +345,16 @@ function FieldConfig({ field, onPatch }: { field: FieldDef; onPatch: (p: Partial
       <FormControlLabel
         control={<Switch size="small" checked={!!field.required} onChange={(e) => onPatch({ required: e.target.checked })} />}
         label={<span style={{ fontSize: 12.5, color: tokens.text2 }}>Required field</span>} />
+
+      <Stack direction="row" alignItems="center" justifyContent="space-between"
+        sx={{ mt: 1.25, pt: 1.25, borderTop: `1px dashed ${tokens.line}` }}>
+        <Button size="small" onClick={onDup} startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 15 }} />} sx={{ color: tokens.text2 }}>
+          Duplicate
+        </Button>
+        <Button size="small" color="error" onClick={onDel} startIcon={<DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />}>
+          Delete field
+        </Button>
+      </Stack>
     </Box>
   );
 }
