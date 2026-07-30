@@ -7,7 +7,6 @@ import { restoreSession } from "./features/auth/authSlice";
 import ProtectedRoute from "./features/auth/ProtectedRoute";
 import AppShell from "./app/AppShell";
 import LoginPage from "./pages/LoginPage";
-import MyWorkPage from "./pages/MyWorkPage";
 import RolesPage from "./pages/RolesPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
@@ -18,7 +17,6 @@ import RegistersPage from "./pages/RegistersPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import SOPsPage from "./pages/SOPsPage";
 import DashboardPage from "./pages/DashboardPage";
-import ReportsPage from "./pages/ReportsPage";
 import SearchPage from "./pages/SearchPage";
 import AutomationPage from "./pages/AutomationPage";
 import AuditPage from "./pages/AuditPage";
@@ -55,9 +53,9 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<AppShell />}>
-            <Route path="/" element={<MyWorkPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/dashboard" element={<Navigate to="/" replace />} />
+            <Route path="/reports" element={<Navigate to="/" replace />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />

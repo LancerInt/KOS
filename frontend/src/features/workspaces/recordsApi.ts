@@ -9,8 +9,8 @@ export interface WorkspaceRecord {
   data: Record<string, string>;
   attachment: string | null;
   attachment_name: string;
-  start_date: string | null;
-  duration_days: number | null;
+  start_at: string | null;
+  end_at: string | null;
   completed_at: string | null;
   duration: Duration;
   created_by: number | null;
@@ -29,7 +29,7 @@ export const createRecord = (
   category: string,
   data: Record<string, string>,
   file?: File | null,
-  schedule?: { start_date?: string; duration_days?: number },
+  schedule?: { start_at?: string; end_at?: string },
 ) => {
   if (file) {
     const fd = new FormData();
@@ -37,8 +37,8 @@ export const createRecord = (
     fd.append("category", category);
     fd.append("data", JSON.stringify(data));
     fd.append("attachment", file);
-    if (schedule?.start_date) fd.append("start_date", schedule.start_date);
-    if (schedule?.duration_days) fd.append("duration_days", String(schedule.duration_days));
+    if (schedule?.start_at) fd.append("start_at", schedule.start_at);
+    if (schedule?.end_at) fd.append("end_at", schedule.end_at);
     return api.post<WorkspaceRecord>("/workspace-records/", fd).then((r) => r.data);
   }
   return api

@@ -158,11 +158,10 @@ export default function WorkspaceProjectPage() {
         <Box sx={{ mt: 1.5 }}>
           <DurationPanel
             duration={project.duration}
-            startDate={project.start_date}
             completedAt={project.completed_at}
             canEdit={canEdit}
             allowSet={true}
-            onSet={(start, days) => updateProject(pid, { start_date: start, duration_days: days }).then(setProject)}
+            onSet={(startAt, endAt) => updateProject(pid, { start_at: startAt, end_at: endAt }).then(setProject)}
             onToggleComplete={() => completeProject(pid).then(setProject)}
           />
         </Box>
@@ -271,25 +270,30 @@ function CategoryPanel({ project, category, records, canEdit, showDuration, onCl
   const [form, setForm] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [durStart, setDurStart] = useState("");
-  const [durDays, setDurDays] = useState("");
+  const [durEnd, setDurEnd] = useState("");
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   // The "primary" field is the meaningful one — it's the record's headline and
   // the field required to save (a name or a description).
   const primaryField = category.fields.find((f) => /name|title|description|subject/i.test(f)) ?? category.fields[0];
   const primaryFilled = (form[primaryField] ?? "").trim().length > 0;
-  // With durations on, the real Start-date + Duration inputs replace any
+  // With durations on, the real Start + End datetime inputs replace any
   // free-text "Duration" field on the category.
   const textFields = category.fields.filter((f) => !(showDuration && /duration/i.test(f)));
+  const durValid = !!durStart && !!durEnd && new Date(durEnd).getTime() > new Date(durStart).getTime();
 
+  const localNow = () => {
+    const d = new Date(); const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
   const set = (f: string, v: string) => setForm((s) => ({ ...s, [f]: v }));
   const startAdding = () => {
     setForm({}); setFile(null);
-    setDurStart(showDuration ? new Date().toISOString().slice(0, 10) : "");
-    setDurDays("");
+    setDurStart(showDuration ? localNow() : "");
+    setDurEnd("");
     setAdding(true);
   };
-  const resetForm = () => { setForm({}); setFile(null); setDurStart(""); setDurDays(""); setAdding(false); };
+  const resetForm = () => { setForm({}); setFile(null); setDurStart(""); setDurEnd(""); setAdding(false); };
 
   const save = async () => {
     if (!primaryFilled) return;
@@ -300,8 +304,8 @@ function CategoryPanel({ project, category, records, canEdit, showDuration, onCl
         const v = (form[f] ?? "").trim();
         if (v) data[f] = v;
       }
-      const schedule = showDuration && durStart && Number(durDays) > 0
-        ? { start_date: durStart, duration_days: Number(durDays) }
+      const schedule = showDuration && durValid
+        ? { start_at: new Date(durStart).toISOString(), end_at: new Date(durEnd).toISOString() }
         : undefined;
       await createRecord(project, category.name, data, file, schedule);
       resetForm();
@@ -342,14 +346,12 @@ function CategoryPanel({ project, category, records, canEdit, showDuration, onCl
             })}
             {showDuration && (
               <>
-                <Stack direction="row" spacing={1}>
-                  <TextField size="small" type="date" label="Start date" InputLabelProps={{ shrink: true }}
-                    value={durStart} onChange={(e) => setDurStart(e.target.value)} sx={{ flex: 1 }} />
-                  <TextField size="small" type="number" label="Duration (days)" InputLabelProps={{ shrink: true }}
-                    value={durDays} onChange={(e) => setDurDays(e.target.value)} sx={{ width: 140 }} inputProps={{ min: 1 }} />
-                </Stack>
+                <TextField size="small" type="datetime-local" label="Starts" InputLabelProps={{ shrink: true }}
+                  value={durStart} onChange={(e) => setDurStart(e.target.value)} fullWidth />
+                <TextField size="small" type="datetime-local" label="Ends" InputLabelProps={{ shrink: true }}
+                  value={durEnd} onChange={(e) => setDurEnd(e.target.value)} fullWidth />
                 <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>
-                  Optional — you'll be notified when this duration is complete.
+                  Optional — set a date &amp; time; you'll be notified when this duration is complete.
                 </Typography>
               </>
             )}
