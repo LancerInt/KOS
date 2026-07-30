@@ -121,7 +121,7 @@ class WorkspaceRecordSerializer(serializers.ModelSerializer):
 class WorkspaceSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkspaceSection
-        fields = ("id", "project", "workspace", "name", "blurb", "fields", "created_by", "created_at")
+        fields = ("id", "project", "workspace", "name", "blurb", "fields", "hidden", "created_by", "created_at")
         read_only_fields = ("workspace", "created_by", "created_at")
 
     def validate_fields(self, value):

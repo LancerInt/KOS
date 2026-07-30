@@ -16,6 +16,8 @@ from rest_framework.response import Response
 
 from apps.accounts.models import Role
 from apps.accounts.permissions import IsAdministrator
+from apps.audit.models import AuditAction
+from apps.audit.services import record
 
 from .access import can_edit, effective_access
 from .models import (
@@ -38,6 +40,27 @@ def _scope_to_viewable(qs, user):
 def _require_edit(user, workspace):
     if not can_edit(user, workspace):
         raise PermissionDenied("You don't have edit access to this workspace.")
+
+
+# ---- Audit value builders -------------------------------------------------
+# Each carries the workspace key + a human name (+ parent context) so the audit
+# trail reads "which project / section / record, in which workspace".
+
+def _proj_val(project) -> dict:
+    return {"workspace": project.workspace, "name": project.name, "kind": "project"}
+
+
+def _sec_val(section) -> dict:
+    return {"workspace": section.workspace, "name": section.name, "kind": "section",
+            "context": section.project.name if section.project_id else ""}
+
+
+def _rec_val(rec) -> dict:
+    headline = ""
+    if isinstance(rec.data, dict):
+        headline = next((str(v) for v in rec.data.values() if v), "")
+    context = f"{rec.project.name} › {rec.category}" if rec.project_id else rec.category
+    return {"workspace": rec.workspace, "name": headline or rec.category, "kind": "record", "context": context}
 
 
 class WorkspacePermissionViewSet(viewsets.ModelViewSet):
@@ -95,15 +118,20 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         _require_edit(self.request.user, serializer.validated_data.get("workspace"))
-        serializer.save(created_by=self.request.user)
+        project = serializer.save(created_by=self.request.user)
+        record(action=AuditAction.CREATE, obj=project, new_value=_proj_val(project), request=self.request)
 
     def perform_update(self, serializer):
         _require_edit(self.request.user, serializer.instance.workspace)
-        serializer.save()
+        project = serializer.save()
+        record(action=AuditAction.UPDATE, obj=project, new_value=_proj_val(project), request=self.request)
 
     def perform_destroy(self, instance):
         _require_edit(self.request.user, instance.workspace)
+        val, oid = _proj_val(instance), str(instance.pk)
         instance.delete()
+        record(action=AuditAction.DELETE, object_type="WorkspaceProject", object_id=oid,
+               old_value=val, request=self.request)
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
@@ -117,6 +145,8 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         else:
             project.completed_at = timezone.now()
         project.save(update_fields=["completed_at", "duration_notified_at", "reminders_sent"])
+        record(action=AuditAction.STATUS_CHANGE, obj=project,
+               new_value={**_proj_val(project), "completed": bool(project.completed_at)}, request=request)
         return Response(self.get_serializer(project).data)
 
 
@@ -140,24 +170,30 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
         project = serializer.validated_data.get("project")
         ws = project.workspace if project else ""
         _require_edit(self.request.user, ws)
-        serializer.save(created_by=self.request.user, workspace=ws)
+        rec = serializer.save(created_by=self.request.user, workspace=ws)
+        record(action=AuditAction.CREATE, obj=rec, new_value=_rec_val(rec), request=self.request)
 
     def perform_destroy(self, instance):
         _require_edit(self.request.user, instance.workspace)
+        val, oid = _rec_val(instance), str(instance.pk)
         instance.delete()
+        record(action=AuditAction.DELETE, object_type="WorkspaceRecord", object_id=oid,
+               old_value=val, request=self.request)
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         """Toggle a record's completed state (closes / reopens its duration)."""
-        record = self.get_object()
-        _require_edit(request.user, record.workspace)
-        if record.completed_at:
-            record.completed_at = None
-            record.duration_notified_at = None
+        rec = self.get_object()
+        _require_edit(request.user, rec.workspace)
+        if rec.completed_at:
+            rec.completed_at = None
+            rec.duration_notified_at = None
         else:
-            record.completed_at = timezone.now()
-        record.save(update_fields=["completed_at", "duration_notified_at"])
-        return Response(self.get_serializer(record).data)
+            rec.completed_at = timezone.now()
+        rec.save(update_fields=["completed_at", "duration_notified_at"])
+        record(action=AuditAction.STATUS_CHANGE, obj=rec,
+               new_value={**_rec_val(rec), "completed": bool(rec.completed_at)}, request=request)
+        return Response(self.get_serializer(rec).data)
 
 
 class WorkspaceSectionViewSet(viewsets.ModelViewSet):
@@ -176,14 +212,32 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
         project = serializer.validated_data.get("project")
         ws = project.workspace if project else ""
         _require_edit(self.request.user, ws)
-        serializer.save(created_by=self.request.user, workspace=ws)
+        section = serializer.save(created_by=self.request.user, workspace=ws)
+        # A section created already-hidden is a built-in being removed (deleted).
+        if section.hidden:
+            record(action=AuditAction.DELETE, obj=section, old_value=_sec_val(section), request=self.request)
+        else:
+            record(action=AuditAction.CREATE, obj=section, new_value=_sec_val(section), request=self.request)
 
     def perform_update(self, serializer):
+        # Hiding a section only removes it from this project's grid; its records
+        # are kept so a delete can be undone / the section restored intact.
         _require_edit(self.request.user, serializer.instance.workspace)
-        serializer.save()
+        was_hidden = serializer.instance.hidden
+        section = serializer.save()
+        if section.hidden and not was_hidden:
+            record(action=AuditAction.DELETE, obj=section, old_value=_sec_val(section), request=self.request)
+        elif was_hidden and not section.hidden:
+            record(action=AuditAction.UPDATE, obj=section,
+                   new_value={**_sec_val(section), "restored": True}, request=self.request)
+        else:
+            record(action=AuditAction.UPDATE, obj=section, new_value=_sec_val(section), request=self.request)
 
     def perform_destroy(self, instance):
         # Removing a section also removes any records captured under it.
         _require_edit(self.request.user, instance.workspace)
+        val, oid = _sec_val(instance), str(instance.pk)
         WorkspaceRecord.objects.filter(project=instance.project, category=instance.name).delete()
         instance.delete()
+        record(action=AuditAction.DELETE, object_type="WorkspaceSection", object_id=oid,
+               old_value=val, request=self.request)

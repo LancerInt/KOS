@@ -198,6 +198,9 @@ class WorkspaceSection(models.Model):
     # workspace's built-in default fields. Built-in sections also get a row here
     # once their fields are customised (the row "adopts" the built-in section).
     fields = models.JSONField(default=list, blank=True)
+    # Per-project removal of a built-in section: a hidden row keeps that section
+    # off this project's grid (custom sections are hard-deleted instead).
+    hidden = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="workspace_sections",
