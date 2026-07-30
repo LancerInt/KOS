@@ -58,9 +58,24 @@ services:
     # Migrations run at start, not in build: the free plan has no pre-deploy
     # hook, and start is the point at which the database is certainly reachable.
     # migrate is idempotent, so repeating it on each cold start is harmless.
+    #
+    # It retries because a freshly created database can still be provisioning
+    # when the first instance boots. Without the retries that race exits the
+    # start command, and the service restart-loops with a migrate error that
+    # would have succeeded seconds later. The && before gunicorn is deliberate:
+    # if all three attempts fail, the server must NOT start, because a listening
+    # process on an unmigrated database passes its health check and then errors
+    # on every real request.
+    #
+    # One threaded worker rather than two sync workers: the free instance has
+    # 512 MB, and a second full Django process (20+ installed apps, DRF, Celery)
+    # risks the OOM killer. Threads give concurrency at a fraction of the cost.
     startCommand: >-
-      python manage.py migrate --no-input &&
-      gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+      (python manage.py migrate --no-input
+      || (sleep 15 && python manage.py migrate --no-input)
+      || (sleep 30 && python manage.py migrate --no-input))
+      && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+      --worker-class gthread --workers 1 --threads 4 --timeout 120
     healthCheckPath: /api/health/
     envVars:
       - key: PYTHON_VERSION

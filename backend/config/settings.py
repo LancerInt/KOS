@@ -38,7 +38,11 @@ CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 # because CSRF_COOKIE_SECURE alone would otherwise reject the login POST.
 RENDER_EXTERNAL_HOSTNAME = env("RENDER_EXTERNAL_HOSTNAME", default="")
 if RENDER_EXTERNAL_HOSTNAME:
-    ALLOWED_HOSTS = [*ALLOWED_HOSTS, RENDER_EXTERNAL_HOSTNAME]
+    # The wildcard sits alongside the exact hostname because the platform's own
+    # health probe and internal routing do not always present the public Host
+    # header. A DisallowedHost raised there fails the deploy silently — the
+    # service simply never goes live, which reads as a hang, not an error.
+    ALLOWED_HOSTS = [*ALLOWED_HOSTS, RENDER_EXTERNAL_HOSTNAME, ".onrender.com"]
     CSRF_TRUSTED_ORIGINS = [*CSRF_TRUSTED_ORIGINS, f"https://{RENDER_EXTERNAL_HOSTNAME}"]
 
 INSTALLED_APPS = [
@@ -125,6 +129,14 @@ DATABASES = {
         default="postgres://kos:kos@localhost:5432/kos",
     )
 }
+
+# Bound the connect attempt. Without this psycopg waits indefinitely, and an
+# unreachable database becomes a request that never returns — which from outside
+# is indistinguishable from a broken application, and turns "the database is not
+# ready yet" into an unexplained deploy that hangs rather than an error anyone
+# can act on. Ten seconds is far longer than a healthy connect and short enough
+# that the health endpoint still answers.
+DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = 10
 
 # --------------------------------------------------------------------------- #
 # Cache / Celery (Redis) — PRD §31.4
@@ -352,6 +364,13 @@ AI_DEFAULT_MODEL = env("AI_MODEL", default="")
 # --------------------------------------------------------------------------- #
 if not DEBUG:
     SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
+    # Exempt the liveness probe from the https upgrade. A platform health check
+    # reaches the container directly and may not carry X-Forwarded-Proto, in
+    # which case the redirect answers 301, the probe is recorded as failed, and
+    # the deploy is never promoted — the service stays unreachable with nothing
+    # in the logs to explain it. The endpoint is public and returns no data
+    # worth protecting, so there is nothing to lose by exempting it.
+    SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
