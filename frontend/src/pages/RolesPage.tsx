@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import PersonAddAlt1RoundedIcon from "@mui/icons-material/PersonAddAlt1Rounded";
@@ -104,6 +105,9 @@ export default function RolesPage() {
         <Typography variant="h1" sx={{ fontSize: 28 }}>Roles &amp; Access</Typography>
         {!forbidden && (
           <Stack direction="row" spacing={1}>
+            <Button variant="outlined" size="small" startIcon={<LoginRoundedIcon sx={{ fontSize: 17 }} />} onClick={() => navigate("/admin/last-logins")}>
+              Last logins
+            </Button>
             <Button variant="outlined" size="small" startIcon={<TuneRoundedIcon sx={{ fontSize: 17 }} />} onClick={() => navigate("/admin/permissions")}>
               Permissions
             </Button>

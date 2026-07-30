@@ -32,8 +32,11 @@ export interface WorkspaceCategory {
   /** Set once a section has a WorkspaceSection row (custom, or a built-in whose
    *  fields were customised) — the id used to save the schema or delete it. */
   sectionId?: number;
-  /** True for user-created sections (deletable); false for built-in ones. */
+  /** True for user-created sections (hard-deleted); false for built-in ones
+   *  (delete = hidden per project). */
   isCustom?: boolean;
+  /** Built-in section hidden for this project via a hidden section row. */
+  hidden?: boolean;
 }
 
 export interface Workspace {

@@ -19,7 +19,6 @@ import SOPsPage from "./pages/SOPsPage";
 import DashboardPage from "./pages/DashboardPage";
 import SearchPage from "./pages/SearchPage";
 import AutomationPage from "./pages/AutomationPage";
-import AuditPage from "./pages/AuditPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import CrmPage from "./pages/CrmPage";
 import RegulatoryPage from "./pages/RegulatoryPage";
@@ -28,7 +27,7 @@ import WorkspaceProjectPage from "./pages/WorkspaceProjectPage";
 import WorkspacePermissionsPage from "./pages/WorkspacePermissionsPage";
 import AiSettingsPage from "./pages/AiSettingsPage";
 import MeetingNotesPage from "./pages/MeetingNotesPage";
-import HrToolsPage from "./pages/HrToolsPage";
+import LastLoginsPage from "./pages/LastLoginsPage";
 
 export default function App() {
   const dispatch = useAppDispatch();
@@ -71,11 +70,10 @@ export default function App() {
             <Route path="/regulatory" element={<RegulatoryPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/meetings" element={<MeetingNotesPage />} />
-            <Route path="/hr" element={<HrToolsPage />} />
             <Route path="/admin/roles" element={<RolesPage />} />
             <Route path="/admin/permissions" element={<WorkspacePermissionsPage />} />
+            <Route path="/admin/last-logins" element={<LastLoginsPage />} />
             <Route path="/admin/ai" element={<AiSettingsPage />} />
-            <Route path="/audit" element={<AuditPage />} />
             <Route path="/integrations" element={<IntegrationsPage />} />
           </Route>
         </Route>

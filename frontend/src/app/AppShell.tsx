@@ -4,7 +4,6 @@ import { Avatar, Box, InputAdornment, Stack, TextField, Tooltip, Typography } fr
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
-import FactCheckRoundedIcon from "@mui/icons-material/FactCheckRounded";
 import HubRoundedIcon from "@mui/icons-material/HubRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
@@ -12,7 +11,6 @@ import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
-import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
 
 import { useAppDispatch, useAppSelector } from "../hooks";
 import { logout } from "../features/auth/authSlice";
@@ -59,8 +57,6 @@ const NAV: NavGroup[] = [
   {
     title: "Platform",
     items: [
-      { to: "/hr", label: "HR Tools", icon: <BadgeRoundedIcon fontSize="small" />, capability: "view_reports" },
-      { to: "/audit", label: "Audit", icon: <FactCheckRoundedIcon fontSize="small" />, capability: "administer" },
       { to: "/integrations", label: "Integrations", icon: <HubRoundedIcon fontSize="small" />, capability: "administer" },
       { to: "/admin/ai", label: "AI Automation", icon: <AutoAwesomeRoundedIcon fontSize="small" />, capability: "administer" },
       { to: "/admin/roles", label: "Roles & Access", icon: <AdminPanelSettingsRoundedIcon fontSize="small" />, capability: "administer" },

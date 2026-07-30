@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 
+from django.db.models import Q
 from django.http import HttpResponse
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -62,7 +63,19 @@ class AuditLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
         if getattr(self, "swagger_fake_view", False):
             return AuditLog.objects.none()
         _require_admin(self.request.user)
-        return _apply_filters(super().get_queryset(), self.request.query_params)
+        qs = _apply_filters(super().get_queryset(), self.request.query_params)
+        # Logins are noisy — in the activity list keep only each person's most
+        # recent login (their "last login"), not the whole login history. The
+        # per-object history view (below) is unaffected and stays complete.
+        if self.action == "list":
+            latest_login_ids = list(
+                AuditLog.objects.filter(action=AuditAction.LOGIN)
+                .order_by("actor_id", "-created_at")
+                .distinct("actor_id")
+                .values_list("id", flat=True)
+            )
+            qs = qs.exclude(Q(action=AuditAction.LOGIN) & ~Q(id__in=latest_login_ids))
+        return qs
 
     @action(detail=False, methods=["get"])
     def actions(self, request):
