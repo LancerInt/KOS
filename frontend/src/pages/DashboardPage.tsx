@@ -34,7 +34,7 @@ import { useAppSelector } from "../hooks";
 import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
 import { useAiPageContext } from "../features/ai/AiContext";
 import DailyStandupWidget from "../features/ai/DailyStandupWidget";
-import { dashboard as dashboardAi, generateReport, generateEmail } from "../features/ai/aiApi";
+import { generateEmail } from "../features/ai/aiApi";
 import { tokens, monoFont, categoryColors } from "../theme";
 
 type Filter = "all" | DurationStatus;
@@ -226,9 +226,7 @@ export default function DashboardPage() {
       {/* AI actions */}
       <Box sx={{ mb: 2 }}>
         <AiActionBar>
-          <AiActionButton label="What should I focus on?" title="Today's recommendations" run={() => dashboardAi.recommendations()} />
-          <AiActionButton label="AI insights" title="Insights on my projects" run={() => dashboardAi.insights()} />
-          <AiActionButton label="Weekly report" title="Weekly report" run={() => generateReport("weekly")} />
+          <DailyStandupWidget />
           <AiActionButton
             label="Generate email" title="Draft an email"
             fields={[
@@ -316,9 +314,6 @@ export default function DashboardPage() {
               </Box>
 
               <Box sx={{ position: { md: "sticky" }, top: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                {/* The stand-up leads the rail: it is the one panel that says
-                    what to do next rather than what the numbers are. */}
-                <DailyStandupWidget />
                 <Panel title="By status">
                   <StatusRing counts={counts} active={filter} onPick={setFilter} />
                 </Panel>
