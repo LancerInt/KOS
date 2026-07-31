@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.mail import get_connection, send_mail
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -16,11 +17,16 @@ from apps.accounts.permissions import IsAdministrator
 from apps.audit.models import AuditAction
 from apps.audit.services import record
 
-from .models import EmailAccount, Notification
+from .models import EmailAccount, Notification, NotificationEvent
 from .serializers import (
     EmailAccountSerializer, NotificationPreferenceSerializer, NotificationSerializer,
 )
-from .services import get_prefs
+from .services import get_prefs, notify_many
+
+User = get_user_model()
+
+# Oversight teams that receive a copy of every acknowledgement.
+ACK_OVERSIGHT_ROLES = ["Management", "IT Team"]
 
 
 class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -73,6 +79,18 @@ class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         n.save(update_fields=["acknowledged_at", "acknowledgement_message", "is_read"])
         record(action=AuditAction.NOTIFICATION_ACK, obj=n.task or n,
                new_value={"message": message}, request=request)
+        # Route the acknowledgement to the oversight teams (Management + IT Team)
+        # so someone above actually sees the response — the acknowledger is skipped.
+        actor = request.user
+        actor_name = actor.get_full_name() or actor.username
+        oversight = User.objects.filter(roles__name__in=ACK_OVERSIGHT_ROLES).distinct()
+        notify_many(
+            oversight, exclude=[actor],
+            event=NotificationEvent.ACK_RECEIVED,
+            title=f"{actor_name} acknowledged: {n.title}",
+            body=message,
+            url=n.url,
+        )
         return Response(NotificationSerializer(n).data)
 
 

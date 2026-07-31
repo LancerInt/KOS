@@ -22,6 +22,7 @@ const EVENT_META: Record<string, EventMeta> = {
   duration_complete: { Icon: NotificationsActiveRoundedIcon, fg: "#9A6A16", bg: "#FBF2DF", label: "Duration complete" },
   due_soon: { Icon: AccessTimeRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Due soon" },
   completed: { Icon: CheckCircleRoundedIcon, fg: "#1E7A50", bg: "#E7F4EC", label: "Completed" },
+  ack_received: { Icon: CheckCircleRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Acknowledgement received" },
 };
 function eventMeta(ev: string): EventMeta {
   return EVENT_META[ev] ?? { Icon: NotificationsActiveRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: (ev || "update").replace(/_/g, " ") };
@@ -59,6 +60,12 @@ export default function NotificationsPage() {
   const [items, setItems] = useState<Notification[] | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [ackDraft, setAckDraft] = useState<Record<number, string>>({});
+  // Density — Compact by default so a long list doesn't run far down the page.
+  const [dense, setDense] = useState<boolean>(() => (localStorage.getItem("kos_notif_density") ?? "compact") === "compact");
+  const setDensity = (compact: boolean) => {
+    setDense(compact);
+    localStorage.setItem("kos_notif_density", compact ? "compact" : "comfortable");
+  };
 
   const load = () => listNotifications().then(setItems).catch(() => setItems([]));
   useEffect(() => { load(); getPreferences().then(setPrefs).catch(() => {}); }, []);
@@ -93,7 +100,11 @@ export default function NotificationsPage() {
                 : "Loading…"}
             </Typography>
           </Box>
-          {updates.some((n) => !n.is_read) && <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>}
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Segmented value={dense ? "compact" : "comfortable"} onChange={(v) => setDensity(v === "compact")}
+              options={[{ key: "comfortable", label: "Comfortable" }, { key: "compact", label: "Compact" }]} />
+            {updates.some((n) => !n.is_read) && <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>}
+          </Stack>
         </Stack>
 
         {!items && <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>}
@@ -118,21 +129,21 @@ export default function NotificationsPage() {
                 <Typography sx={{ fontSize: 13, color: tokens.text3 }}>Nothing needs a response right now.</Typography>
               </Paper>
             ) : (
-              <Stack spacing={1.25} sx={{ mb: 3.5 }}>
+              <Stack spacing={dense ? 0.75 : 1.25} sx={{ mb: dense ? 2.5 : 3.5 }}>
                 {actions.map((n) => {
                   const m = eventMeta(n.event);
                   const target = openTarget(n);
                   return (
-                    <Paper key={n.id} sx={{ p: 2, borderRadius: "13px", border: "1px solid #F2C9BC", borderLeft: `4px solid ${tokens.attn}`,
+                    <Paper key={n.id} sx={{ p: dense ? 1.4 : 2, borderRadius: dense ? "10px" : "13px", border: "1px solid #F2C9BC", borderLeft: `4px solid ${tokens.attn}`,
                       background: "linear-gradient(180deg,#FDF1EC,#fff)" }}>
-                      <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                        <Box sx={{ width: 34, height: 34, borderRadius: "9px", flexShrink: 0, display: "grid", placeItems: "center", bgcolor: m.bg, color: m.fg }}>
-                          <m.Icon sx={{ fontSize: 18 }} />
+                      <Stack direction="row" spacing={dense ? 1.1 : 1.5} alignItems="flex-start">
+                        <Box sx={{ width: dense ? 28 : 34, height: dense ? 28 : 34, borderRadius: "9px", flexShrink: 0, display: "grid", placeItems: "center", bgcolor: m.bg, color: m.fg }}>
+                          <m.Icon sx={{ fontSize: dense ? 16 : 18 }} />
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography sx={{ fontSize: 15, fontWeight: 700, color: tokens.ink, lineHeight: 1.3 }}>{n.title}</Typography>
-                          {n.body && <Typography sx={{ fontSize: 12.5, color: tokens.text2, mt: 0.5 }}>{n.body}</Typography>}
-                          <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }} useFlexGap>
+                          <Typography sx={{ fontSize: dense ? 13.5 : 15, fontWeight: 700, color: tokens.ink, lineHeight: 1.3 }}>{n.title}</Typography>
+                          {!dense && n.body && <Typography sx={{ fontSize: 12.5, color: tokens.text2, mt: 0.5 }}>{n.body}</Typography>}
+                          <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: dense ? 0.5 : 1, flexWrap: "wrap" }} useFlexGap>
                             <WsChip n={n} />
                             <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3 }}>{timeAgo(n.created_at)}</Typography>
                             {target && (
@@ -144,11 +155,13 @@ export default function NotificationsPage() {
                         </Box>
                       </Stack>
 
-                      <Box sx={{ mt: 1.25, bgcolor: "#fff", border: "1px solid #F2C9BC", borderRadius: "9px", p: 1.5 }}>
-                        <Typography sx={{ fontSize: 12, color: "#9A5847", mb: 1 }}>
-                          Expected completion date, reason for delay, help needed.
-                        </Typography>
-                        <TextField fullWidth size="small" multiline minRows={2} placeholder="Your status message…"
+                      <Box sx={{ mt: dense ? 1 : 1.25, bgcolor: "#fff", border: "1px solid #F2C9BC", borderRadius: "9px", p: dense ? 1 : 1.5 }}>
+                        {!dense && (
+                          <Typography sx={{ fontSize: 12, color: "#9A5847", mb: 1 }}>
+                            Expected completion date, reason for delay, help needed.
+                          </Typography>
+                        )}
+                        <TextField fullWidth size="small" multiline minRows={dense ? 1 : 2} placeholder="Your status message…"
                           value={ackDraft[n.id] ?? ""} onChange={(e) => setAckDraft((d) => ({ ...d, [n.id]: e.target.value }))} />
                         <Button size="small" variant="contained" color="error" sx={{ mt: 1 }} onClick={() => doAck(n.id)} disabled={!(ackDraft[n.id] || "").trim()}>
                           Acknowledge
@@ -174,13 +187,13 @@ export default function NotificationsPage() {
                   const m = eventMeta(n.event);
                   const target = openTarget(n);
                   return (
-                    <Stack key={n.id} direction="row" alignItems="center" spacing={1.25}
+                    <Stack key={n.id} direction="row" alignItems="center" spacing={dense ? 1 : 1.25}
                       onClick={() => { if (!n.is_read) markRead(n.id).then(load); }}
-                      sx={{ px: 1.75, py: 1.25, cursor: "pointer", borderTop: i === 0 ? "none" : `1px solid ${tokens.line}`,
+                      sx={{ px: dense ? 1.4 : 1.75, py: dense ? 0.6 : 1.25, cursor: "pointer", borderTop: i === 0 ? "none" : `1px solid ${tokens.line}`,
                         bgcolor: n.is_read ? "transparent" : "#FCFBF8", "&:hover": { bgcolor: "#F6F5F1" } }}>
                       <Box sx={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, bgcolor: n.is_read ? "transparent" : m.fg, border: n.is_read ? `1px solid ${tokens.line}` : "none" }} />
-                      <Box sx={{ width: 26, height: 26, borderRadius: "7px", flexShrink: 0, display: "grid", placeItems: "center", bgcolor: m.bg, color: m.fg }}>
-                        <m.Icon sx={{ fontSize: 15 }} />
+                      <Box sx={{ width: dense ? 22 : 26, height: dense ? 22 : 26, borderRadius: "7px", flexShrink: 0, display: "grid", placeItems: "center", bgcolor: m.bg, color: m.fg }}>
+                        <m.Icon sx={{ fontSize: dense ? 14 : 15 }} />
                       </Box>
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography sx={{ fontSize: 13, fontWeight: n.is_read ? 500 : 700, color: tokens.text }} noWrap>{n.title}</Typography>
@@ -213,6 +226,24 @@ export default function NotificationsPage() {
         )}
       </Box>
     </Box>
+  );
+}
+
+function Segmented({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { key: string; label: string }[] }) {
+  return (
+    <Stack direction="row" sx={{ p: 0.35, borderRadius: 2, bgcolor: "#EEF0F3", border: `1px solid ${tokens.line}` }}>
+      {options.map((o) => {
+        const active = o.key === value;
+        return (
+          <Box key={o.key} onClick={() => onChange(o.key)}
+            sx={{ px: 1.25, py: 0.4, borderRadius: 1.5, cursor: "pointer", fontSize: 12, fontWeight: 600,
+              color: active ? tokens.kriyaInk : tokens.text2, bgcolor: active ? "#fff" : "transparent",
+              boxShadow: active ? "0 1px 2px rgba(20,22,29,.12)" : "none", transition: "background-color .14s" }}>
+            {o.label}
+          </Box>
+        );
+      })}
+    </Stack>
   );
 }
 
