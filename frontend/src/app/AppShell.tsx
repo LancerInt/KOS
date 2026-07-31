@@ -11,12 +11,9 @@ import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
-<<<<<<< HEAD
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
-=======
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
->>>>>>> Swe
 
 import { useAppDispatch, useAppSelector } from "../hooks";
 import { logout } from "../features/auth/authSlice";
@@ -45,44 +42,12 @@ interface NavGroup {
 // mockup): a personal top block, the operational Workspaces, and the
 // cross-cutting Platform tools. Capability-gated items drop out per user, and a
 // section header is hidden whenever all of its items are filtered away.
-<<<<<<< HEAD
-const NAV: NavGroup[] = [
-  {
-    items: [
-      { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
-      {
-        to: "/executive-summary",
-        label: "Executive Summary",
-        icon: <InsightsRoundedIcon fontSize="small" />,
-        capability: "view_reports",
-      },
-      { to: "/meetings", label: "Meetings & Notes", icon: <EventNoteRoundedIcon fontSize="small" /> },
-      { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
-    ],
-  },
-  {
-    title: "Workspaces",
-    items: WORKSPACES.map((w) => ({
-      to: `/workspaces/${w.key}`,
-      label: w.label,
-      icon: <w.Icon fontSize="small" />,
-    })),
-  },
-  {
-    title: "Platform",
-    items: [
-      { to: "/integrations", label: "Integrations", icon: <HubRoundedIcon fontSize="small" />, capability: "administer" },
-      { to: "/admin/ai", label: "AI Automation", icon: <AutoAwesomeRoundedIcon fontSize="small" />, capability: "administer" },
-      { to: "/admin/roles", label: "Roles & Access", icon: <AdminPanelSettingsRoundedIcon fontSize="small" />, capability: "administer" },
-    ],
-  },
-];
-=======
 // The static groups. The Workspaces group is built at render time from
 // useWorkspaces() (built-ins + user-added), so new/restored ones appear live.
 const NAV_TOP: NavGroup = {
   items: [
     { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
+    { to: "/executive-summary", label: "Executive Summary", icon: <InsightsRoundedIcon fontSize="small" />, capability: "view_reports" },
     { to: "/meetings", label: "Meetings & Notes", icon: <EventNoteRoundedIcon fontSize="small" /> },
     { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
   ],
@@ -96,7 +61,6 @@ const NAV_PLATFORM: NavGroup = {
     { to: "/archive", label: "Archive", icon: <Inventory2RoundedIcon fontSize="small" />, capability: "administer" },
   ],
 };
->>>>>>> Swe
 
 // Sidebar palette — deep teal rail.
 const RAIL = {

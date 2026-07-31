@@ -465,7 +465,6 @@ def detect_duplicates(tasks, *, user=None) -> AIOutcome:
                  schema=schemas.DUPLICATES, user=user)
 
 
-<<<<<<< HEAD
 def daily_standup(standup_context: str, *, person: str = "", user=None, config=None) -> AIOutcome:
     """One person's morning stand-up.
 
@@ -495,7 +494,8 @@ def executive_summary(executive_context: str, *, period_label: str, user=None, c
         schema=schemas.EXECUTIVE_SUMMARY,
         user=user, config=config, max_tokens=2600,
     )
-=======
+
+
 # The icons + accents a new workspace can use (mirrors the frontend registry).
 WORKSPACE_ICON_NAMES = [
     "folder", "storefront", "shopping-cart", "gavel", "public", "campaign", "handshake",
@@ -537,7 +537,6 @@ def scaffold_workspace(prompt: str, *, workspace_label: str = "", user=None) -> 
     )
     return _json(AIAction.WORKSPACE_SCAFFOLD, body, system=prompts.EXTRACTION_SYSTEM,
                  schema=schemas.WORKSPACE_SCAFFOLD, user=user, max_tokens=2000)
->>>>>>> Swe
 
 
 def balance_workload(users, *, user=None) -> AIOutcome:
