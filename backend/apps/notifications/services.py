@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import get_connection, send_mail
 
-from .models import Notification, NotificationPreference
+from .models import EmailAccount, Notification, NotificationPreference
 
 
 def get_prefs(user) -> NotificationPreference:
@@ -20,15 +20,31 @@ def _url_for(task, project) -> str:
     return "/"
 
 
+def email_connection():
+    """(connection, from_email) for outbound mail. Uses the in-app EmailAccount
+    when configured (Integrations); otherwise the settings/.env backend."""
+    account = EmailAccount.load()
+    if account.is_ready:
+        conn = get_connection(
+            backend="django.core.mail.backends.smtp.EmailBackend",
+            host=account.host, port=account.port, username=account.username,
+            password=account.get_password(), use_tls=account.use_tls, fail_silently=True,
+        )
+        return conn, (account.from_email or account.username)
+    return None, settings.DEFAULT_FROM_EMAIL
+
+
 def _send_email(recipient, title, body, url) -> None:
     if not getattr(recipient, "email", ""):
         return
+    connection, from_email = email_connection()
     link = f"{settings.FRONTEND_BASE_URL}{url}" if url else settings.FRONTEND_BASE_URL
     send_mail(
         subject=f"[KOS] {title}",
         message=f"{body}\n\n{link}".strip(),
-        from_email=settings.DEFAULT_FROM_EMAIL,
+        from_email=from_email,
         recipient_list=[recipient.email],
+        connection=connection,
         fail_silently=True,
     )
 

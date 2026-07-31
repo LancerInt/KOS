@@ -83,3 +83,47 @@ class NotificationPreference(models.Model):
 
     def __str__(self) -> str:
         return f"Prefs for {self.user_id}"
+
+
+class EmailAccount(models.Model):
+    """The KOS outbound email account, managed in-app (Integrations) rather than
+    only in ``.env``. When enabled, notification and AI emails are sent through
+    it (from KOS to each user); otherwise the ``.env``/settings backend is used.
+    A singleton — always row pk=1."""
+
+    host = models.CharField(max_length=200, default="smtp.gmail.com")
+    port = models.PositiveIntegerField(default=587)
+    use_tls = models.BooleanField(default=True)
+    username = models.CharField(max_length=200, blank=True)     # sender / SMTP login (e.g. a Gmail address)
+    from_email = models.CharField(max_length=200, blank=True)   # From address; defaults to username
+    password_encrypted = models.TextField(blank=True)           # app password, encrypted at rest
+    is_enabled = models.BooleanField(default=False)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"EmailAccount({self.username or 'unset'})"
+
+    @classmethod
+    def load(cls) -> "EmailAccount":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def set_password(self, raw: str) -> None:
+        from .crypto import encrypt
+        self.password_encrypted = encrypt(raw)
+
+    def get_password(self) -> str:
+        from .crypto import decrypt
+        return decrypt(self.password_encrypted)
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.password_encrypted)
+
+    @property
+    def is_ready(self) -> bool:
+        return bool(self.is_enabled and self.username and self.password_encrypted)

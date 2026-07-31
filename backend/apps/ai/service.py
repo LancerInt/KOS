@@ -465,6 +465,49 @@ def detect_duplicates(tasks, *, user=None) -> AIOutcome:
                  schema=schemas.DUPLICATES, user=user)
 
 
+# The icons + accents a new workspace can use (mirrors the frontend registry).
+WORKSPACE_ICON_NAMES = [
+    "folder", "storefront", "shopping-cart", "gavel", "public", "campaign", "handshake",
+    "celebration", "local-shipping", "share", "language", "bug-report", "account-balance",
+    "science", "inventory", "support", "insights", "group", "work", "rocket",
+]
+WORKSPACE_ACCENTS = [
+    "#0F7A8B", "#C07A1E", "#2E8B6B", "#C0417A", "#7C5CD6",
+    "#2E7DE0", "#4A6572", "#B08A24", "#C15B8A", "#5B8C3E",
+]
+
+
+def suggest_workspace(prompt: str, *, user=None) -> AIOutcome:
+    """Turn a plain-language request into a new workspace's identity — label,
+    blurb, icon and accent. The ERP creates it after the user confirms."""
+    body = (
+        "Propose a workspace (a top-level area of a business's operations) for the request below. "
+        "Return a short label, a one-line blurb, an icon keyword and an accent colour.\n"
+        f"The icon must be exactly one of: {', '.join(WORKSPACE_ICON_NAMES)}.\n"
+        f"The accent must be exactly one of: {', '.join(WORKSPACE_ACCENTS)}.\n"
+        f"\n### Request\n{prompt}"
+    )
+    return _json(AIAction.WORKSPACE_SCAFFOLD, body, system=prompts.EXTRACTION_SYSTEM,
+                 schema=schemas.WORKSPACE_META, user=user, max_tokens=500)
+
+
+def scaffold_workspace(prompt: str, *, workspace_label: str = "", user=None) -> AIOutcome:
+    """Turn a plain-language request into a project structure — a project name and
+    sections, each a form of typed fields — for a workspace. Nothing is written;
+    the ERP creates it via the normal endpoints after the user confirms."""
+    body = (
+        "Design a practical project structure for the request below, for a business operations "
+        "workspace" + (f" called '{workspace_label}'" if workspace_label else "") + ". "
+        "Produce a project name and 2-6 sections; each section is a form with 3-8 typed fields. "
+        "Field types must be exactly one of: text, paragraph, dropdown, radio, checkbox, number, "
+        "date, file. Give dropdown/radio/checkbox 2-6 sensible options; use an empty options list "
+        "for every other type. Prefer clear, business-appropriate labels."
+        f"\n\n### Request\n{prompt}"
+    )
+    return _json(AIAction.WORKSPACE_SCAFFOLD, body, system=prompts.EXTRACTION_SYSTEM,
+                 schema=schemas.WORKSPACE_SCAFFOLD, user=user, max_tokens=2000)
+
+
 def balance_workload(users, *, user=None) -> AIOutcome:
     prompt = (
         "Assess how work is spread across this team. Identify who is overloaded, who has capacity, "

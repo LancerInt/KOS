@@ -141,6 +141,39 @@ class WorkspacePermission(models.Model):
         return f"{self.role_id}:{self.workspace}={self.access}"
 
 
+class WorkspaceMember(models.Model):
+    """Per-**user** access to a workspace (need-to-know). A Researcher/Executive
+    sees a workspace only if they have a row here; IT Team, Management and admins
+    see every workspace without one (they're supervisors — see ``access.py``).
+
+    A member holds full ``edit`` (see + add + edit + delete records) and may add
+    or remove other members of the same domain team from the workspace."""
+
+    VIEW = "view"
+    EDIT = "edit"
+    ACCESS_CHOICES = [(VIEW, "View"), (EDIT, "Edit")]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="workspace_memberships",
+    )
+    workspace = models.CharField(max_length=64)   # e.g. "amazon-usa"
+    access = models.CharField(max_length=8, choices=ACCESS_CHOICES, default=EDIT)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("workspace", "id")
+        constraints = [
+            models.UniqueConstraint(fields=["user", "workspace"], name="uniq_user_workspace_member"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}@{self.workspace}={self.access}"
+
+
 class WorkspaceRecord(models.Model):
     project = models.ForeignKey(
         WorkspaceProject, null=True, blank=True,
@@ -215,3 +248,52 @@ class WorkspaceSection(models.Model):
 
     def __str__(self) -> str:
         return f"{self.workspace}/{self.name}"
+
+
+class Workspace(models.Model):
+    """A user-added workspace. The 11 built-in workspaces live in the frontend
+    config; these are the ones an admin creates at runtime. A new workspace
+    starts empty — projects, sections and records are created inside it exactly
+    like any other workspace (everything else keys off the ``workspace`` string).
+
+    Deleting a workspace **archives** it (sets ``archived_at``); archived rows
+    are hard-purged (with all their projects/sections/records) after 30 days
+    unless restored first."""
+
+    ARCHIVE_TTL_DAYS = 30
+
+    key = models.SlugField(max_length=64, unique=True)   # e.g. "field-trials"
+    label = models.CharField(max_length=120)
+    blurb = models.CharField(max_length=300, blank=True)
+    icon = models.CharField(max_length=40, default="folder")   # name → frontend icon registry
+    accent = models.CharField(max_length=9, blank=True)         # hex "#RRGGBB"
+    # Domain team this workspace belongs to — "research" | "executive" | "" (a
+    # neutral/supervisor-only workspace). Decides which team's members may be
+    # added to it. Built-in workspaces carry this in ``BUILTIN_WORKSPACE_DOMAIN``.
+    domain = models.CharField(max_length=12, blank=True)
+    order = models.PositiveIntegerField(default=0)
+    archived_at = models.DateTimeField(null=True, blank=True)   # soft-delete → auto-purge after TTL
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="created_workspaces",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("order", "label")
+
+    def __str__(self) -> str:
+        return self.key
+
+    @property
+    def is_archived(self) -> bool:
+        return self.archived_at is not None
+
+    def purge_contents(self) -> None:
+        """Delete everything stored under this workspace key (linked by string,
+        so it isn't cascaded by the FK)."""
+        WorkspaceRecord.objects.filter(workspace=self.key).delete()
+        WorkspaceSection.objects.filter(workspace=self.key).delete()
+        WorkspaceProject.objects.filter(workspace=self.key).delete()
+        WorkspacePermission.objects.filter(workspace=self.key).delete()
+        WorkspaceMember.objects.filter(workspace=self.key).delete()

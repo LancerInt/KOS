@@ -1,3 +1,4 @@
+import { useEffect, useReducer } from "react";
 import type { SvgIconComponent } from "@mui/icons-material";
 import type { FieldDef } from "./fields";
 import StorefrontRoundedIcon from "@mui/icons-material/StorefrontRounded";
@@ -11,6 +12,17 @@ import ShareRoundedIcon from "@mui/icons-material/ShareRounded";
 import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
 import BugReportRoundedIcon from "@mui/icons-material/BugReportRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
+import FolderRoundedIcon from "@mui/icons-material/FolderRounded";
+import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
+import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
+import SupportAgentRoundedIcon from "@mui/icons-material/SupportAgentRounded";
+import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import WorkRoundedIcon from "@mui/icons-material/WorkRounded";
+import RocketLaunchRoundedIcon from "@mui/icons-material/RocketLaunchRounded";
+import ShoppingCartRoundedIcon from "@mui/icons-material/ShoppingCartRounded";
+import { listWorkspaces, type DynamicWorkspace } from "./workspacesApi";
+import { registerDynamicAccents } from "./accent";
 
 /**
  * The operational workspaces shown in the sidebar. These are navigation
@@ -48,6 +60,10 @@ export interface Workspace {
   /** When present, the workspace renders these as clickable cards with a field
    *  detail drawer, instead of the plain placeholder sections. */
   categories?: WorkspaceCategory[];
+  /** Hex accent for user-added workspaces (built-ins use accent.ts). */
+  accent?: string;
+  /** True for user-added (DB) workspaces — archivable; the 11 built-ins aren't. */
+  dynamic?: boolean;
 }
 
 export const WORKSPACES: Workspace[] = [
@@ -279,5 +295,92 @@ export const WORKSPACES: Workspace[] = [
   },
 ];
 
+// Icons a new workspace can pick from (name → component). Names are stored on
+// the Workspace row; the picker in NewWorkspaceDialog shows these.
+export const ICON_REGISTRY: Record<string, SvgIconComponent> = {
+  folder: FolderRoundedIcon,
+  storefront: StorefrontRoundedIcon,
+  "shopping-cart": ShoppingCartRoundedIcon,
+  gavel: GavelRoundedIcon,
+  public: PublicRoundedIcon,
+  campaign: CampaignRoundedIcon,
+  handshake: HandshakeRoundedIcon,
+  celebration: CelebrationRoundedIcon,
+  "local-shipping": LocalShippingRoundedIcon,
+  share: ShareRoundedIcon,
+  language: LanguageRoundedIcon,
+  "bug-report": BugReportRoundedIcon,
+  "account-balance": AccountBalanceRoundedIcon,
+  science: ScienceRoundedIcon,
+  inventory: Inventory2RoundedIcon,
+  support: SupportAgentRoundedIcon,
+  insights: InsightsRoundedIcon,
+  group: GroupsRoundedIcon,
+  work: WorkRoundedIcon,
+  rocket: RocketLaunchRoundedIcon,
+};
+export const ICON_OPTIONS = Object.keys(ICON_REGISTRY);
+
+/** Accent swatches offered when creating a workspace. */
+export const ACCENT_OPTIONS = [
+  "#0F7A8B", "#C07A1E", "#2E8B6B", "#C0417A", "#7C5CD6",
+  "#2E7DE0", "#4A6572", "#B08A24", "#C15B8A", "#5B8C3E",
+];
+
+// ---- Dynamic (user-added) workspaces --------------------------------------
+// Loaded from the API once and cached in-module so getWorkspace stays sync.
+
+function fromDynamic(w: DynamicWorkspace): Workspace {
+  return {
+    key: w.key,
+    label: w.label,
+    blurb: w.blurb,
+    Icon: ICON_REGISTRY[w.icon] ?? FolderRoundedIcon,
+    sections: [],
+    categories: [],            // starts empty — sections are built per project
+    accent: w.accent || undefined,
+    dynamic: true,
+  };
+}
+
+let dynamicCache: Workspace[] = [];
+let dynamicLoaded = false;
+let dynamicLoading: Promise<void> | null = null;
+const listeners = new Set<() => void>();
+
+export function allWorkspaces(): Workspace[] {
+  return [...WORKSPACES, ...dynamicCache];
+}
+
 export const getWorkspace = (key?: string): Workspace | undefined =>
-  WORKSPACES.find((w) => w.key === key);
+  allWorkspaces().find((w) => w.key === key);
+
+/** Whether the dynamic set has loaded — lets pages show a spinner instead of a
+ *  false "not found" while a user-added workspace is still being fetched. */
+export const dynamicWorkspacesReady = (): boolean => dynamicLoaded;
+
+export function loadDynamicWorkspaces(force = false): Promise<void> {
+  if (dynamicLoading && !force) return dynamicLoading;
+  dynamicLoading = listWorkspaces()
+    .then((rows) => {
+      dynamicCache = rows.map(fromDynamic);
+      registerDynamicAccents(rows.map((r) => ({ key: r.key, accent: r.accent })));
+      dynamicLoaded = true;
+      listeners.forEach((l) => l());
+    })
+    .catch(() => { dynamicLoaded = true; })
+    .finally(() => { dynamicLoading = null; });
+  return dynamicLoading;
+}
+
+/** Reactive list of all workspaces (built-in + dynamic). Loads the dynamic set
+ *  once and re-renders subscribers when it arrives or is refreshed. */
+export function useWorkspaces(): Workspace[] {
+  const [, bump] = useReducer((n) => n + 1, 0);
+  useEffect(() => {
+    listeners.add(bump);
+    if (!dynamicLoaded) loadDynamicWorkspaces();
+    return () => { listeners.delete(bump); };
+  }, []);
+  return allWorkspaces();
+}

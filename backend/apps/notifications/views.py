@@ -1,6 +1,8 @@
 """Notification & preference endpoints (PRD §22)."""
 from __future__ import annotations
 
+from django.conf import settings
+from django.core.mail import get_connection, send_mail
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -10,11 +12,14 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.permissions import IsAdministrator
 from apps.audit.models import AuditAction
 from apps.audit.services import record
 
-from .models import Notification
-from .serializers import NotificationPreferenceSerializer, NotificationSerializer
+from .models import EmailAccount, Notification
+from .serializers import (
+    EmailAccountSerializer, NotificationPreferenceSerializer, NotificationSerializer,
+)
 from .services import get_prefs
 
 
@@ -83,3 +88,64 @@ class NotificationPreferenceView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class EmailAccountView(APIView):
+    """Configure the KOS outbound email account (Integrations → Email). Admins
+    only; the stored password is never returned."""
+
+    permission_classes = [IsAuthenticated, IsAdministrator]
+
+    def get(self, request: Request) -> Response:
+        return Response(EmailAccountSerializer(EmailAccount.load()).data)
+
+    def put(self, request: Request) -> Response:
+        account = EmailAccount.load()
+        serializer = EmailAccountSerializer(account, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(updated_by=request.user)
+        record(action=AuditAction.UPDATE, object_type="EmailAccount", object_id="1",
+               new_value={"username": account.username, "is_enabled": account.is_enabled}, request=request)
+        return Response(EmailAccountSerializer(account).data)
+
+
+class EmailAccountTestView(APIView):
+    """Send a test email using the posted form values (falling back to the saved
+    account), so an admin can verify before saving/enabling."""
+
+    permission_classes = [IsAuthenticated, IsAdministrator]
+
+    def post(self, request: Request) -> Response:
+        account = EmailAccount.load()
+        data = request.data
+        to = (data.get("to") or request.user.email or "").strip()
+        if not to:
+            raise ValidationError({"to": "Enter an address to send the test to."})
+        host = (data.get("host") or account.host or "").strip()
+        try:
+            port = int(data.get("port") or account.port or 587)
+        except (TypeError, ValueError):
+            port = 587
+        use_tls = data.get("use_tls", account.use_tls)
+        if isinstance(use_tls, str):
+            use_tls = use_tls.lower() in ("true", "1", "yes")
+        username = (data.get("username") or account.username or "").strip()
+        password = data.get("password") or account.get_password()
+        from_email = (data.get("from_email") or username or settings.DEFAULT_FROM_EMAIL).strip()
+        if not (host and username and password):
+            raise ValidationError("Enter the sender email, password and host before sending a test.")
+        try:
+            connection = get_connection(
+                backend="django.core.mail.backends.smtp.EmailBackend",
+                host=host, port=port, username=username, password=password,
+                use_tls=bool(use_tls), fail_silently=False,
+            )
+            send_mail(
+                "[KOS] Test email",
+                "This is a test from KOS. Your email integration is working.",
+                from_email, [to], connection=connection, fail_silently=False,
+            )
+        except Exception as exc:  # surface the SMTP error to the admin
+            return Response({"ok": False, "detail": f"Could not send: {exc}"[:300]},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ok": True, "detail": f"Test email sent to {to}."})

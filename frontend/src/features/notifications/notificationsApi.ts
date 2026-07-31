@@ -56,3 +56,40 @@ export async function updatePreferences(payload: Partial<Preferences>): Promise<
   const { data } = await api.put<Preferences>("/notification-preferences/", payload);
   return data;
 }
+
+// --- Outbound email account (Integrations → Email), admin-only -------------- //
+export interface EmailAccount {
+  host: string;
+  port: number;
+  use_tls: boolean;
+  username: string;
+  from_email: string;
+  is_enabled: boolean;
+  has_password: boolean;
+  updated_at: string | null;
+}
+
+export interface EmailAccountInput {
+  host?: string;
+  port?: number;
+  use_tls?: boolean;
+  username?: string;
+  from_email?: string;
+  is_enabled?: boolean;
+  password?: string;
+}
+
+export async function getEmailAccount(): Promise<EmailAccount> {
+  const { data } = await api.get<EmailAccount>("/email-account/");
+  return data;
+}
+
+export async function updateEmailAccount(payload: EmailAccountInput): Promise<EmailAccount> {
+  const { data } = await api.put<EmailAccount>("/email-account/", payload);
+  return data;
+}
+
+export async function testEmailAccount(payload: EmailAccountInput & { to?: string }) {
+  const { data } = await api.post<{ ok: boolean; detail: string }>("/email-account/test/", payload);
+  return data;
+}

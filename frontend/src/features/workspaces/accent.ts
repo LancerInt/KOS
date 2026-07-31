@@ -23,4 +23,24 @@ const MAP: Record<string, Accent> = {
 
 const DEFAULT: Accent = { base: tokens.kriya, ink: tokens.kriyaInk, soft: tokens.kriyaWash };
 
-export const workspaceAccent = (key?: string): Accent => (key && MAP[key]) || DEFAULT;
+/** Build an {base, ink, soft} accent from a single hex — for dynamic workspaces
+ *  whose colour is chosen at creation. ink = a darkened shade, soft = a pale wash. */
+export function accentFromHex(hex?: string): Accent {
+  if (!hex || !/^#([0-9a-f]{6})$/i.test(hex)) return DEFAULT;
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = (c: number, t: number, amt: number) => Math.round(c + (t - c) * amt);
+  const hx = (c: number) => c.toString(16).padStart(2, "0");
+  const ink = `#${hx(mix(r, 0, 0.32))}${hx(mix(g, 0, 0.32))}${hx(mix(b, 0, 0.32))}`;   // 32% toward black
+  const soft = `#${hx(mix(r, 255, 0.86))}${hx(mix(g, 255, 0.86))}${hx(mix(b, 255, 0.86))}`; // 86% toward white
+  return { base: hex, ink, soft };
+}
+
+// Accents for dynamic workspaces, registered at load time (keyed by their slug).
+const DYNAMIC: Record<string, Accent> = {};
+export function registerDynamicAccents(entries: { key: string; accent?: string }[]): void {
+  for (const e of entries) if (e.accent) DYNAMIC[e.key] = accentFromHex(e.accent);
+}
+
+export const workspaceAccent = (key?: string): Accent =>
+  (key && (MAP[key] || DYNAMIC[key])) || DEFAULT;

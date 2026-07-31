@@ -28,6 +28,7 @@ import WorkspacePermissionsPage from "./pages/WorkspacePermissionsPage";
 import AiSettingsPage from "./pages/AiSettingsPage";
 import MeetingNotesPage from "./pages/MeetingNotesPage";
 import LastLoginsPage from "./pages/LastLoginsPage";
+import ArchivePage from "./pages/ArchivePage";
 
 export default function App() {
   const dispatch = useAppDispatch();
@@ -74,6 +75,7 @@ export default function App() {
             <Route path="/admin/permissions" element={<WorkspacePermissionsPage />} />
             <Route path="/admin/last-logins" element={<LastLoginsPage />} />
             <Route path="/admin/ai" element={<AiSettingsPage />} />
+            <Route path="/archive" element={<ArchivePage />} />
             <Route path="/integrations" element={<IntegrationsPage />} />
           </Route>
         </Route>

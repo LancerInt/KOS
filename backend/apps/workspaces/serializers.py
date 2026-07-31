@@ -2,18 +2,71 @@
 from __future__ import annotations
 
 import json
+import math
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
-    WorkspacePermission, WorkspaceProject, WorkspaceRecord, WorkspaceSection,
+    Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
+    WorkspaceRecord, WorkspaceSection,
 )
+
+
+class WorkspaceSerializer(serializers.ModelSerializer):
+    is_archived = serializers.SerializerMethodField()
+    days_left = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Workspace
+        fields = (
+            "id", "key", "label", "blurb", "icon", "accent", "domain", "order",
+            "archived_at", "is_archived", "days_left", "created_at",
+        )
+        read_only_fields = ("key", "domain", "archived_at", "created_at")
+
+    def get_is_archived(self, obj) -> bool:
+        return obj.is_archived
+
+    def get_days_left(self, obj):
+        if not obj.archived_at:
+            return None
+        gone_days = (timezone.now() - obj.archived_at).total_seconds() / 86400
+        return max(0, math.ceil(Workspace.ARCHIVE_TTL_DAYS - gone_days))
+
+    def validate_label(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("A workspace name is required.")
+        return value
 
 
 class WorkspacePermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkspacePermission
         fields = ("id", "role", "workspace", "access")
+
+
+class WorkspaceMemberSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    added_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkspaceMember
+        fields = (
+            "id", "workspace", "user", "user_name", "user_email",
+            "access", "added_by", "added_by_name", "created_at",
+        )
+        # A member always holds full edit; who added them and when are set server-side.
+        read_only_fields = ("access", "added_by", "created_at")
+
+    def get_user_name(self, obj) -> str:
+        return obj.user.get_full_name() or obj.user.username
+
+    def get_added_by_name(self, obj) -> str:
+        u = obj.added_by
+        return (u.get_full_name() or u.username) if u else ""
 
 
 class WorkspaceProjectSerializer(serializers.ModelSerializer):

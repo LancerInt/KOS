@@ -141,6 +141,7 @@ class AIAction(models.TextChoices):
     REPORT = "report", "Generate report"
     DUPLICATE_DETECTION = "duplicate_detection", "Duplicate detection"
     WORKLOAD = "workload", "Workload balancing"
+    WORKSPACE_SCAFFOLD = "workspace_scaffold", "Build workspace project from a prompt"
 
 
 class AIRequestLog(models.Model):

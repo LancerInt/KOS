@@ -6,7 +6,7 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import {
-  Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
+  Box, Button, Checkbox, Chip, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControlLabel, MenuItem, Paper, Select, Stack, Switch, TextField, Typography,
 } from "@mui/material";
 
@@ -16,6 +16,9 @@ import {
   type AuthScheme, type ConnectionInput, type ErpConnection, type EventOption,
   type InboundEvent, type WebhookDelivery,
 } from "../features/integrations/integrationsApi";
+import {
+  getEmailAccount, updateEmailAccount, testEmailAccount, type EmailAccount, type EmailAccountInput,
+} from "../features/notifications/notificationsApi";
 import { tokens, monoFont } from "../theme";
 
 const DSTATUS: Record<string, string> = {
@@ -23,7 +26,7 @@ const DSTATUS: Record<string, string> = {
 };
 
 export default function IntegrationsPage() {
-  const [tab, setTab] = useState<"connections" | "deliveries" | "inbound">("connections");
+  const [tab, setTab] = useState<"connections" | "deliveries" | "inbound" | "email">("connections");
   const [forbidden, setForbidden] = useState(false);
   const onForbidden = () => setForbidden(true);
 
@@ -44,7 +47,7 @@ export default function IntegrationsPage() {
       </Typography>
 
       <Stack direction="row" spacing={0.5} sx={{ borderBottom: `1px solid ${tokens.line}`, mb: 2.5 }}>
-        {(["connections", "deliveries", "inbound"] as const).map((t) => (
+        {(["connections", "deliveries", "inbound", "email"] as const).map((t) => (
           <Box key={t} onClick={() => setTab(t)}
             sx={{ cursor: "pointer", px: 1.5, py: 1.1, fontSize: 13.5, fontWeight: 500, textTransform: "capitalize",
               color: tab === t ? tokens.kriyaInk : tokens.text2,
@@ -57,6 +60,7 @@ export default function IntegrationsPage() {
       {tab === "connections" && <ConnectionsTab onForbidden={onForbidden} />}
       {tab === "deliveries" && <DeliveriesTab onForbidden={onForbidden} />}
       {tab === "inbound" && <InboundTab onForbidden={onForbidden} />}
+      {tab === "email" && <EmailTab onForbidden={onForbidden} />}
     </Box>
   );
 }
@@ -275,4 +279,120 @@ function InboundTab({ onForbidden }: { onForbidden: () => void }) {
 
 function FieldLabel({ children }: { children: ReactNode }) {
   return <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 0.5 }}>{children}</Typography>;
+}
+
+function EmailTab({ onForbidden }: { onForbidden: () => void }) {
+  const [acct, setAcct] = useState<EmailAccount | null>(null);
+  const [form, setForm] = useState<EmailAccountInput>({});
+  const [password, setPassword] = useState("");
+  const [testTo, setTestTo] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  useEffect(() => {
+    getEmailAccount()
+      .then((a) => { setAcct(a); setForm({ host: a.host, port: a.port, use_tls: a.use_tls, username: a.username, from_email: a.from_email, is_enabled: a.is_enabled }); })
+      .catch((e) => { if (e?.response?.status === 403) onForbidden(); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const set = (patch: EmailAccountInput) => setForm((f) => ({ ...f, ...patch }));
+
+  const save = async () => {
+    setSaving(true); setStatus(null);
+    try {
+      const payload: EmailAccountInput = { ...form };
+      if (password) payload.password = password;
+      const a = await updateEmailAccount(payload);
+      setAcct(a); setPassword("");
+      setStatus({ ok: true, msg: "Saved." });
+    } catch {
+      setStatus({ ok: false, msg: "Could not save." });
+    } finally { setSaving(false); }
+  };
+
+  const sendTest = async () => {
+    setTesting(true); setStatus(null);
+    try {
+      const r = await testEmailAccount({ ...form, ...(password ? { password } : {}), to: testTo || form.username });
+      setStatus({ ok: r.ok, msg: r.detail });
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setStatus({ ok: false, msg: detail ?? "Test failed." });
+    } finally { setTesting(false); }
+  };
+
+  if (!acct) return <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>;
+
+  return (
+    <Box sx={{ maxWidth: 620 }}>
+      <Typography sx={{ fontSize: 13.5, color: tokens.text2, mb: 2 }}>
+        The account KOS sends notification &amp; AI emails <b>from</b>. For Gmail, use your address and a
+        16‑character <b>App Password</b> (Google Account → Security → App passwords). Stored encrypted;
+        leave blank to keep the current one. If disabled, KOS falls back to the server default.
+      </Typography>
+
+      <Paper sx={{ p: 2.5, borderRadius: "6px" }}>
+        <Stack spacing={2}>
+          <FormControlLabel
+            control={<Switch checked={!!form.is_enabled} onChange={(e) => set({ is_enabled: e.target.checked })} />}
+            label={<Typography sx={{ fontSize: 13.5 }}>Send emails through this account</Typography>} />
+
+          <Box>
+            <FieldLabel>Sender email (SMTP login)</FieldLabel>
+            <TextField size="small" fullWidth placeholder="yourname@gmail.com" value={form.username ?? ""}
+              onChange={(e) => set({ username: e.target.value })} />
+          </Box>
+          <Box>
+            <FieldLabel>App password</FieldLabel>
+            <TextField size="small" fullWidth type="password"
+              placeholder={acct.has_password ? "•••••••••••• (saved — leave blank to keep)" : "16-character app password"}
+              value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Box>
+          <Box>
+            <FieldLabel>From address (optional)</FieldLabel>
+            <TextField size="small" fullWidth placeholder="defaults to the sender email" value={form.from_email ?? ""}
+              onChange={(e) => set({ from_email: e.target.value })} />
+          </Box>
+          <Stack direction="row" spacing={1.5}>
+            <Box sx={{ flex: 1 }}>
+              <FieldLabel>SMTP host</FieldLabel>
+              <TextField size="small" fullWidth value={form.host ?? ""} onChange={(e) => set({ host: e.target.value })} />
+            </Box>
+            <Box sx={{ width: 90 }}>
+              <FieldLabel>Port</FieldLabel>
+              <TextField size="small" fullWidth type="number" value={form.port ?? 587}
+                onChange={(e) => set({ port: Number(e.target.value) })} />
+            </Box>
+            <Box sx={{ pt: 2.75 }}>
+              <FormControlLabel control={<Checkbox size="small" checked={!!form.use_tls} onChange={(e) => set({ use_tls: e.target.checked })} />}
+                label={<Typography sx={{ fontSize: 13 }}>TLS</Typography>} />
+            </Box>
+          </Stack>
+
+          <Box sx={{ borderTop: `1px dashed ${tokens.line}`, pt: 2 }}>
+            <FieldLabel>Send a test to</FieldLabel>
+            <Stack direction="row" spacing={1}>
+              <TextField size="small" fullWidth placeholder={form.username || "you@example.com"} value={testTo}
+                onChange={(e) => setTestTo(e.target.value)} />
+              <Button variant="outlined" startIcon={<SendRoundedIcon sx={{ fontSize: 16 }} />} onClick={sendTest}
+                disabled={testing} sx={{ flexShrink: 0 }}>
+                {testing ? "Sending…" : "Send test"}
+              </Button>
+            </Stack>
+          </Box>
+
+          {status && (
+            <Typography sx={{ fontSize: 12.5, color: status.ok ? "#2FA36B" : tokens.attn }}>{status.msg}</Typography>
+          )}
+
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Button variant="contained" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+            {acct.updated_at && <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>Updated {new Date(acct.updated_at).toLocaleString()}</Typography>}
+          </Stack>
+        </Stack>
+      </Paper>
+    </Box>
+  );
 }

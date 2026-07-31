@@ -227,3 +227,33 @@ WORKLOAD = {
     "burnout_risks": [{"person": "name", "severity": RISK, "signals": ["signal", "..."]}],
     "recommendations": ["rebalancing recommendation", "..."],
 }
+
+# A new workspace's identity (a top-level area of operations). The ERP creates
+# it via the normal workspace endpoint after the user confirms.
+WORKSPACE_META = {
+    "label": "a short workspace name under 40 characters",
+    "blurb": "a one-line description of the workspace",
+    "icon": "one icon keyword, exactly from the provided list",
+    "accent": "one hex colour, exactly from the provided list",
+}
+
+# A project structure to scaffold inside a workspace: a project name plus
+# sections, each a form with typed fields. The ERP creates these via the normal
+# project/section endpoints once the user confirms.
+WORKSPACE_SCAFFOLD = {
+    "project_name": "a short, clear project name under 80 characters",
+    "sections": [
+        {
+            "name": "section name under 60 characters",
+            "blurb": "one-line description of the section, or empty string",
+            "fields": [
+                {
+                    "type": "one of: text | paragraph | dropdown | radio | checkbox | number | date | file",
+                    "label": "field label under 60 characters",
+                    "required": "true or false",
+                    "options": ["2-6 choices for dropdown/radio/checkbox; empty list for other types"],
+                }
+            ],
+        }
+    ],
+}

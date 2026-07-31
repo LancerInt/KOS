@@ -8,12 +8,16 @@ import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 
-import { getWorkspace } from "../features/workspaces/workspaces";
+import { getWorkspace, useWorkspaces, loadDynamicWorkspaces, dynamicWorkspacesReady } from "../features/workspaces/workspaces";
+import BuildWithAiDialog from "../features/ai/BuildWithAiDialog";
 import { listProjects, createProject, deleteProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
+import { archiveWorkspace } from "../features/workspaces/workspacesApi";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
-import { workspaceAccent } from "../features/workspaces/accent";
+import { workspaceAccent, accentFromHex } from "../features/workspaces/accent";
 import { tokens, monoFont } from "../theme";
 
 const STATUS_DOT: Record<DurationStatus, string> = {
@@ -32,9 +36,10 @@ const localNowInput = () => {
 export default function WorkspacePage() {
   const { key } = useParams<{ key: string }>();
   const navigate = useNavigate();
+  useWorkspaces();                                    // load + subscribe so dynamic workspaces resolve
   const ws = getWorkspace(key);
   const { mine, loading: accessLoading } = useMyAccess();
-  const acc = workspaceAccent(ws?.key);
+  const acc = ws?.dynamic && ws.accent ? accentFromHex(ws.accent) : workspaceAccent(ws?.key);
 
   const [projects, setProjects] = useState<WorkspaceProject[] | null>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -43,6 +48,7 @@ export default function WorkspacePage() {
   const [newEnd, setNewEnd] = useState("");
   const [newErr, setNewErr] = useState("");
   const [creating, setCreating] = useState(false);
+  const [buildAiOpen, setBuildAiOpen] = useState(false);
 
   const load = () => {
     if (!ws) { setProjects([]); return; }
@@ -53,6 +59,14 @@ export default function WorkspacePage() {
   useEffect(() => { load(); }, [key]);
 
   if (!ws) {
+    // A user-added workspace may still be loading — don't flash "not found".
+    if (!dynamicWorkspacesReady()) {
+      return (
+        <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+          <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>
+        </Box>
+      );
+    }
     return (
       <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
         <Typography variant="h1" sx={{ fontSize: 26, mb: 0.5 }}>Workspace not found</Typography>
@@ -100,16 +114,33 @@ export default function WorkspacePage() {
     load();
   };
 
+  const archiveWs = async () => {
+    if (!window.confirm(
+      `Delete the "${ws.label}" workspace? It moves to the Archive and is permanently removed after 30 days unless restored.`
+    )) return;
+    await archiveWorkspace(ws.key);
+    await loadDynamicWorkspaces(true);
+    navigate("/");
+  };
+  const canArchive = !!ws.dynamic && !!mine?.is_admin;
+
   const header = (
     <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.75 }}>
       <Box sx={{ width: 44, height: 44, borderRadius: "11px", flexShrink: 0, display: "grid", placeItems: "center",
         background: `linear-gradient(150deg, ${acc.base}, ${acc.ink})`, color: "#fff", boxShadow: `0 6px 16px ${acc.base}40` }}>
         <Icon sx={{ fontSize: 23 }} />
       </Box>
-      <Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="h1" sx={{ fontSize: 26, lineHeight: 1.2 }}>{ws.label}</Typography>
-        <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>{ws.blurb}</Typography>
+        <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>{ws.blurb || "Custom workspace."}</Typography>
       </Box>
+      {canArchive && (
+        <Tooltip title="Delete workspace (archive)">
+          <IconButton onClick={archiveWs} sx={{ color: tokens.text3, "&:hover": { color: tokens.attn, bgcolor: tokens.attnWash } }}>
+            <Inventory2RoundedIcon sx={{ fontSize: 19 }} />
+          </IconButton>
+        </Tooltip>
+      )}
     </Stack>
   );
 
@@ -154,9 +185,16 @@ export default function WorkspacePage() {
           )}
         </Stack>
         {canEdit && (
-          <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={openNew}>
-            New project
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button variant="outlined" size="small" startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 17 }} />}
+              onClick={() => setBuildAiOpen(true)}
+              sx={{ color: "#5B41A5", borderColor: "#D6CCF2", "&:hover": { borderColor: "#7C5CD6", bgcolor: "rgba(124,92,214,.06)" } }}>
+              Build with AI
+            </Button>
+            <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={openNew}>
+              New project
+            </Button>
+          </Stack>
         )}
       </Stack>
 
@@ -236,6 +274,10 @@ export default function WorkspacePage() {
           })}
         </Box>
       )}
+
+      <BuildWithAiDialog open={buildAiOpen} onClose={() => setBuildAiOpen(false)}
+        workspace={ws.key} workspaceLabel={ws.label}
+        onCreated={(projectId) => { setBuildAiOpen(false); navigate(`/workspaces/${ws.key}/projects/${projectId}`); }} />
 
       {/* New project dialog */}
       <Dialog open={newOpen} onClose={() => setNewOpen(false)} fullWidth maxWidth="xs">
