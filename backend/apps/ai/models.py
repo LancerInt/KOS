@@ -208,8 +208,12 @@ class AIAction(models.TextChoices):
     REPORT = "report", "Generate report"
     DUPLICATE_DETECTION = "duplicate_detection", "Duplicate detection"
     WORKLOAD = "workload", "Workload balancing"
+<<<<<<< HEAD
     DAILY_STANDUP = "daily_standup", "Daily stand-up"
     EXECUTIVE_SUMMARY = "executive_summary", "Executive summary"
+=======
+    WORKSPACE_SCAFFOLD = "workspace_scaffold", "Build workspace project from a prompt"
+>>>>>>> Swe
 
 
 class AIRequestLog(models.Model):

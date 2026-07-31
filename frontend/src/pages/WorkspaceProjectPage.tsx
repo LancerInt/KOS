@@ -7,7 +7,7 @@ import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
-import { getWorkspace, type WorkspaceCategory } from "../features/workspaces/workspaces";
+import { getWorkspace, useWorkspaces, dynamicWorkspacesReady, type WorkspaceCategory } from "../features/workspaces/workspaces";
 import { getProject, updateProject, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import { listRecords, type WorkspaceRecord } from "../features/workspaces/recordsApi";
 import { listSections, createSection, updateSection } from "../features/workspaces/sectionsApi";
@@ -25,6 +25,7 @@ const SECTION_TEXT = "#2A2620";
 export default function WorkspaceProjectPage() {
   const { key, projectId } = useParams<{ key: string; projectId: string }>();
   const navigate = useNavigate();
+  useWorkspaces();                                    // load + subscribe so dynamic workspaces resolve
   const ws = getWorkspace(key);
   const pid = Number(projectId);
   const { mine, loading: accessLoading } = useMyAccess();
@@ -93,6 +94,13 @@ export default function WorkspaceProjectPage() {
   const selectedRecords = selected ? records.filter((r) => r.category === selected.name) : [];
 
   if (!ws) {
+    if (!dynamicWorkspacesReady()) {
+      return (
+        <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+          <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>
+        </Box>
+      );
+    }
     return (
       <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
         <Typography variant="h1" sx={{ fontSize: 26, mb: 0.5 }}>Workspace not found</Typography>

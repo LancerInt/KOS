@@ -88,6 +88,7 @@ from .serializers import (
     SummarizeSerializer,
     TextInputSerializer,
     TranslateSerializer,
+    WorkspaceScaffoldSerializer,
 )
 from .service import AIUnavailable
 
@@ -753,6 +754,87 @@ class CreateTasksView(AIView):
              "tasks": [{"id": t.id, "title": t.title} for t in created]},
             status=status.HTTP_201_CREATED,
         )
+
+
+# --------------------------------------------------------------------------- #
+# Workspaces — build a project structure from a prompt
+# --------------------------------------------------------------------------- #
+_SCAFFOLD_FIELD_TYPES = {"text", "paragraph", "dropdown", "radio", "checkbox", "number", "date", "file"}
+
+
+def _clean_scaffold(data: dict) -> dict:
+    """Coerce the model's plan into the exact shape the workspace endpoints expect
+    — valid field types, options only where they belong, no empty labels."""
+    sections = []
+    for raw in (data.get("sections") or [])[:12]:
+        if not isinstance(raw, dict):
+            continue
+        fields = []
+        for f in (raw.get("fields") or [])[:20]:
+            if not isinstance(f, dict):
+                continue
+            label = str(f.get("label") or "").strip()
+            if not label:
+                continue
+            ftype = str(f.get("type") or "").strip().lower()
+            if ftype not in _SCAFFOLD_FIELD_TYPES:
+                ftype = "text"
+            field = {"type": ftype, "label": label[:120], "required": str(f.get("required")).lower() in ("true", "1")}
+            if ftype in ("dropdown", "radio", "checkbox"):
+                opts = [str(o).strip() for o in (f.get("options") or []) if str(o).strip()][:8]
+                field["options"] = opts or ["Option 1", "Option 2"]
+            fields.append(field)
+        name = str(raw.get("name") or "").strip()
+        if name:
+            sections.append({"name": name[:120], "blurb": str(raw.get("blurb") or "").strip()[:300], "fields": fields})
+    return {"project_name": (str(data.get("project_name") or "").strip()[:120] or "New project"), "sections": sections}
+
+
+@ai_endpoint(WorkspaceScaffoldSerializer)
+class WorkspaceScaffoldView(AIView):
+    """Propose a project + sections + typed fields from a prompt. Writes nothing —
+    the browser confirms, then calls the normal project/section create endpoints."""
+
+    def post(self, request: Request) -> Response:
+        from apps.workspaces.access import can_edit
+
+        data = validated(WorkspaceScaffoldSerializer, request)
+        if not can_edit(request.user, data["workspace"]):
+            raise PermissionDenied("You need edit access to this workspace to build a project in it.")
+        outcome = service.scaffold_workspace(
+            data["prompt"], workspace_label=data.get("workspace_label", ""), user=request.user
+        )
+        outcome.data = _clean_scaffold(outcome.data if isinstance(outcome.data, dict) else {})
+        return envelope(outcome, AIAction.WORKSPACE_SCAFFOLD)
+
+
+@ai_endpoint(None)
+class WorkspaceSuggestView(AIView):
+    """Propose a new workspace's identity (label, blurb, icon, accent) from a
+    prompt. Anyone may create a workspace, so this needs no extra gate. Writes
+    nothing — the browser confirms via the normal workspace create endpoint."""
+
+    def post(self, request: Request) -> Response:
+        import re
+
+        prompt = (request.data.get("prompt") or "").strip()
+        if not prompt:
+            raise ValidationError({"prompt": "Describe the workspace you want."})
+        outcome = service.suggest_workspace(prompt, user=request.user)
+        d = outcome.data if isinstance(outcome.data, dict) else {}
+        icon = str(d.get("icon") or "").strip().lower()
+        if icon not in service.WORKSPACE_ICON_NAMES:
+            icon = "folder"
+        accent = str(d.get("accent") or "").strip()
+        if not re.match(r"^#[0-9a-fA-F]{6}$", accent):
+            accent = service.WORKSPACE_ACCENTS[len(str(d.get("label") or "")) % len(service.WORKSPACE_ACCENTS)]
+        outcome.data = {
+            "label": str(d.get("label") or "").strip()[:120],
+            "blurb": str(d.get("blurb") or "").strip()[:300],
+            "icon": icon,
+            "accent": accent,
+        }
+        return envelope(outcome, AIAction.WORKSPACE_SCAFFOLD)
 
 
 # --------------------------------------------------------------------------- #

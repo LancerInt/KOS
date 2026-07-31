@@ -48,6 +48,8 @@ from .views import (
     ProjectSummaryView,
     ProjectTaskAnalysisView,
     ProjectWorkloadView,
+    WorkspaceScaffoldView,
+    WorkspaceSuggestView,
     TaskApplySubtasksView,
     TaskEstimateView,
     TaskPrioritizeView,
@@ -103,6 +105,10 @@ urlpatterns = [
     path("ai/meetings/summarize/", MeetingSummaryView.as_view(), name="ai-meeting-summary"),
     path("ai/notes/extract-tasks/", ExtractTasksView.as_view(), name="ai-extract-tasks"),
     path("ai/notes/create-tasks/", CreateTasksView.as_view(), name="ai-create-tasks"),
+
+    # Workspaces — build from a prompt
+    path("ai/workspace/scaffold/", WorkspaceScaffoldView.as_view(), name="ai-workspace-scaffold"),
+    path("ai/workspace/suggest/", WorkspaceSuggestView.as_view(), name="ai-workspace-suggest"),
 
     # CRM
     path("ai/crm/customers/<int:pk>/summary/", CustomerSummaryView.as_view(), name="ai-customer-summary"),

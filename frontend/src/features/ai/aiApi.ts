@@ -589,6 +589,37 @@ export const hr = {
     post("/ai/hr/performance-summary/", payload),
 };
 
+// --- workspace scaffold (build a project from a prompt) ------------------- //
+export interface ScaffoldField {
+  type: string;
+  label: string;
+  required?: boolean;
+  options?: string[];
+}
+export interface ScaffoldSection {
+  name: string;
+  blurb: string;
+  fields: ScaffoldField[];
+}
+export interface ScaffoldPlan {
+  project_name: string;
+  sections: ScaffoldSection[];
+}
+
+export function scaffoldWorkspace(workspace: string, prompt: string, workspaceLabel = "") {
+  return post<ScaffoldPlan>("/ai/workspace/scaffold/", { workspace, prompt, workspace_label: workspaceLabel });
+}
+
+export interface WorkspaceSuggestion {
+  label: string;
+  blurb: string;
+  icon: string;
+  accent: string;
+}
+export function suggestWorkspace(prompt: string) {
+  return post<WorkspaceSuggestion>("/ai/workspace/suggest/", { prompt });
+}
+
 // --- dashboard ------------------------------------------------------------ //
 export interface InsightsData {
   headline: string;

@@ -1,15 +1,24 @@
-"""Resolve a user's effective per-workspace access from their roles.
+"""Resolve a user's effective per-workspace access.
 
-Access levels: ``edit`` > ``view`` > none. A user's level for a workspace is the
-highest granted across all their roles. Superusers and anyone with the
-``administer`` capability (e.g. IT Team) bypass the table entirely — full edit
-on every workspace, represented by ``effective_access() is None``.
+Access is **need-to-know**, resolved in two tiers:
+
+* **Supervisors** — superusers, anyone with the ``administer`` capability (IT
+  Team) and the Management team — see and edit *every* workspace. Represented by
+  ``effective_access() is None``.
+* **Everyone else** (Researchers / Executives) — see a workspace only if they
+  hold a ``WorkspaceMember`` row for it. A member always has full ``edit``.
+
+The old per-*role* ``WorkspacePermission`` grid is no longer consulted for
+visibility; membership replaces it (rows are kept for reference / backfill).
 """
 from __future__ import annotations
 
-from .models import WorkspacePermission
+from .models import WorkspaceMember
 
 _RANK = {"": 0, None: 0, "view": 1, "edit": 2}
+
+# Teams that see every workspace without an explicit membership.
+SUPERVISOR_ROLE_NAMES = frozenset({"IT Team", "Management"})
 
 
 def is_workspace_admin(user) -> bool:
@@ -23,17 +32,26 @@ def is_workspace_admin(user) -> bool:
         return False
 
 
+def is_supervisor(user) -> bool:
+    """A see-everything user: admin (superuser / ``administer`` / IT Team) or
+    the Management team. Supervisors bypass per-user membership entirely."""
+    if is_workspace_admin(user):
+        return True
+    if not user or not user.is_authenticated:
+        return False
+    return user.roles.filter(name__in=SUPERVISOR_ROLE_NAMES).exists()
+
+
 def effective_access(user) -> dict[str, str] | None:
     """{workspace: 'view'|'edit'} for this user, or None meaning 'all workspaces, edit'."""
-    if is_workspace_admin(user):
+    if is_supervisor(user):
         return None
     if not user or not user.is_authenticated:
         return {}
-    role_ids = list(user.roles.values_list("id", flat=True))
     out: dict[str, str] = {}
-    for perm in WorkspacePermission.objects.filter(role_id__in=role_ids):
-        if _RANK[perm.access] > _RANK.get(out.get(perm.workspace), 0):
-            out[perm.workspace] = perm.access
+    for m in WorkspaceMember.objects.filter(user=user).values("workspace", "access"):
+        if _RANK[m["access"]] > _RANK.get(out.get(m["workspace"]), 0):
+            out[m["workspace"]] = m["access"]
     return out
 
 

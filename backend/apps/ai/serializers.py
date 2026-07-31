@@ -105,6 +105,12 @@ class NotesSerializer(serializers.Serializer):
     project_id = serializers.IntegerField(required=False, allow_null=True)
 
 
+class WorkspaceScaffoldSerializer(serializers.Serializer):
+    prompt = serializers.CharField(max_length=4000)
+    workspace = serializers.CharField(max_length=64)
+    workspace_label = serializers.CharField(required=False, allow_blank=True, default="", max_length=120)
+
+
 class CreateTasksSerializer(serializers.Serializer):
     """Confirmed task drafts to actually write into the project."""
 

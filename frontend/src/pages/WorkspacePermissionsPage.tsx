@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Box, Button, CircularProgress, MenuItem, Paper, Select, Stack, Typography } from "@mui/material";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 
-import { WORKSPACES } from "../features/workspaces/workspaces";
+import { useWorkspaces } from "../features/workspaces/workspaces";
 import { listRoles, type AdminRole } from "../features/admin/adminApi";
 import { listRolePermissions, saveRolePermissions, type WsAccess } from "../features/admin/permissionsApi";
 import { tokens } from "../theme";
@@ -19,6 +19,7 @@ const LEVEL_META = (v: Level) => LEVELS.find((l) => l.value === v) ?? LEVELS[0];
 
 export default function WorkspacePermissionsPage() {
   const navigate = useNavigate();
+  const workspaces = useWorkspaces();
   const [roles, setRoles] = useState<AdminRole[] | null>(null);
   const [grid, setGrid] = useState<Record<number, Record<string, Level>>>({});
   const [forbidden, setForbidden] = useState(false);
@@ -31,7 +32,7 @@ export default function WorkspacePermissionsPage() {
         const g: Record<number, Record<string, Level>> = {};
         for (const r of rs) {
           g[r.id] = {};
-          for (const w of WORKSPACES) g[r.id][w.key] = "hidden";
+          for (const w of workspaces) g[r.id][w.key] = "hidden";
         }
         const all = await Promise.all(rs.map((r) => listRolePermissions(r.id).then((p) => [r.id, p] as const)));
         for (const [rid, perms] of all) for (const p of perms) g[rid][p.workspace] = p.access;
@@ -41,7 +42,7 @@ export default function WorkspacePermissionsPage() {
   }, []);
 
   const persist = async (roleId: number, next: Record<string, Level>) => {
-    const permissions = WORKSPACES
+    const permissions = workspaces
       .filter((w) => next[w.key] && next[w.key] !== "hidden")
       .map((w) => ({ workspace: w.key, access: next[w.key] as WsAccess }));
     setStatus("Saving…");
@@ -96,9 +97,9 @@ export default function WorkspacePermissionsPage() {
             ))}
 
             {/* rows */}
-            {WORKSPACES.map((w, i) => (
+            {workspaces.map((w, i) => (
               <Box key={w.key} sx={{ display: "contents" }}>
-                <Box sx={{ px: 1.75, py: 1, borderBottom: i === WORKSPACES.length - 1 ? "none" : `1px solid ${tokens.line}`,
+                <Box sx={{ px: 1.75, py: 1, borderBottom: i === workspaces.length - 1 ? "none" : `1px solid ${tokens.line}`,
                   position: "sticky", left: 0, bgcolor: tokens.surface, zIndex: 1, display: "flex", alignItems: "center", gap: 1.25 }}>
                   <Box sx={{ width: 26, height: 26, flexShrink: 0, borderRadius: "6px", display: "grid", placeItems: "center",
                     bgcolor: tokens.kriyaWash, color: tokens.kriyaInk }}>
@@ -111,7 +112,7 @@ export default function WorkspacePermissionsPage() {
                   const meta = LEVEL_META(value);
                   return (
                     <Box key={r.id} sx={{ px: 0.75, py: 0.75, display: "grid", placeItems: "center",
-                      borderLeft: `1px solid ${tokens.line}`, borderBottom: i === WORKSPACES.length - 1 ? "none" : `1px solid ${tokens.line}` }}>
+                      borderLeft: `1px solid ${tokens.line}`, borderBottom: i === workspaces.length - 1 ? "none" : `1px solid ${tokens.line}` }}>
                       <Select size="small" value={value} onChange={(e) => setCell(r.id, w.key, e.target.value as Level)}
                         sx={{ width: "100%", fontSize: 12.5, bgcolor: meta.bg, color: meta.fg, fontWeight: 600,
                           "& .MuiOutlinedInput-notchedOutline": { borderColor: value === "hidden" ? tokens.line : "transparent" },

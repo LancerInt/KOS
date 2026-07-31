@@ -11,12 +11,18 @@ import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
+<<<<<<< HEAD
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
+=======
+import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+>>>>>>> Swe
 
 import { useAppDispatch, useAppSelector } from "../hooks";
 import { logout } from "../features/auth/authSlice";
 import { unreadCount } from "../features/notifications/notificationsApi";
-import { WORKSPACES } from "../features/workspaces/workspaces";
+import { useWorkspaces } from "../features/workspaces/workspaces";
+import NewWorkspaceDialog from "../features/workspaces/NewWorkspaceDialog";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { AiProvider } from "../features/ai/AiContext";
 import AiAssistantDrawer from "../features/ai/AiAssistantDrawer";
@@ -39,6 +45,7 @@ interface NavGroup {
 // mockup): a personal top block, the operational Workspaces, and the
 // cross-cutting Platform tools. Capability-gated items drop out per user, and a
 // section header is hidden whenever all of its items are filtered away.
+<<<<<<< HEAD
 const NAV: NavGroup[] = [
   {
     items: [
@@ -70,6 +77,26 @@ const NAV: NavGroup[] = [
     ],
   },
 ];
+=======
+// The static groups. The Workspaces group is built at render time from
+// useWorkspaces() (built-ins + user-added), so new/restored ones appear live.
+const NAV_TOP: NavGroup = {
+  items: [
+    { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
+    { to: "/meetings", label: "Meetings & Notes", icon: <EventNoteRoundedIcon fontSize="small" /> },
+    { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
+  ],
+};
+const NAV_PLATFORM: NavGroup = {
+  title: "Platform",
+  items: [
+    { to: "/integrations", label: "Integrations", icon: <HubRoundedIcon fontSize="small" />, capability: "administer" },
+    { to: "/admin/ai", label: "AI Automation", icon: <AutoAwesomeRoundedIcon fontSize="small" />, capability: "administer" },
+    { to: "/admin/roles", label: "Roles & Access", icon: <AdminPanelSettingsRoundedIcon fontSize="small" />, capability: "administer" },
+    { to: "/archive", label: "Archive", icon: <Inventory2RoundedIcon fontSize="small" />, capability: "administer" },
+  ],
+};
+>>>>>>> Swe
 
 // Sidebar palette — deep teal rail.
 const RAIL = {
@@ -110,10 +137,23 @@ function GlobalSearchBar() {
 
 export default function AppShell() {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const location = useLocation();
   const user = useAppSelector((s) => s.auth.user);
   const caps = user?.effective_capabilities ?? {};
   const { mine, loading: accessLoading } = useMyAccess();
+  const workspaces = useWorkspaces();
+  const [newWsOpen, setNewWsOpen] = useState(false);
+
+  // Built-ins + user-added workspaces, rebuilt whenever the dynamic set changes.
+  const NAV: NavGroup[] = [
+    NAV_TOP,
+    {
+      title: "Workspaces",
+      items: workspaces.map((w) => ({ to: `/workspaces/${w.key}`, label: w.label, icon: <w.Icon fontSize="small" /> })),
+    },
+    NAV_PLATFORM,
+  ];
 
   const [unread, setUnread] = useState(0);
   useEffect(() => {
@@ -191,14 +231,37 @@ export default function AppShell() {
             if (items.length === 0) return null;
             return (
               <Box key={group.title ?? `g${gi}`} sx={{ mb: 0.75 }}>
-                {group.title && (collapsed ? (
+                {group.title && (group.title === "Workspaces" ? (
+                  collapsed ? (
+                    <Tooltip title="New workspace" placement="right" arrow>
+                      <Box component="button" onClick={() => setNewWsOpen(true)}
+                        sx={{ display: "flex", mx: "auto", my: 0.75, p: 0.5, border: "none", bgcolor: "transparent", cursor: "pointer",
+                          color: RAIL.text, borderRadius: 1, "&:hover": { color: RAIL.textHover, bgcolor: RAIL.hoverBg } }}>
+                        <AddRoundedIcon fontSize="small" />
+                      </Box>
+                    </Tooltip>
+                  ) : (
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ pl: 1.25, pr: 0.25, pt: gi === 0 ? 0 : 1, pb: 0.75 }}>
+                      <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: ".09em", textTransform: "uppercase", color: RAIL.header }}>
+                        {group.title}
+                      </Typography>
+                      <Tooltip title="New workspace" arrow>
+                        <Box component="button" aria-label="New workspace" onClick={() => setNewWsOpen(true)}
+                          sx={{ display: "flex", p: 0.25, border: "none", bgcolor: "transparent", cursor: "pointer",
+                            color: RAIL.header, borderRadius: 1, "&:hover": { color: RAIL.textHover, bgcolor: RAIL.hoverBg } }}>
+                          <AddRoundedIcon sx={{ fontSize: 16 }} />
+                        </Box>
+                      </Tooltip>
+                    </Stack>
+                  )
+                ) : (collapsed ? (
                   <Box sx={{ height: "1px", bgcolor: RAIL.border, mx: 1, my: 0.75 }} />
                 ) : (
                   <Typography sx={{ px: 1.25, pt: gi === 0 ? 0 : 1, pb: 0.75, fontSize: 10, fontWeight: 700,
                     letterSpacing: ".09em", textTransform: "uppercase", color: RAIL.header }}>
                     {group.title}
                   </Typography>
-                ))}
+                )))}
                 <Stack spacing={0.5}>
                   {items.map((n) => {
                     const active = n.to === "/" ? location.pathname === "/" : location.pathname.startsWith(n.to);
@@ -273,6 +336,9 @@ export default function AppShell() {
 
       {/* Floating assistant — available from every page (AI spec §Frontend). */}
       <AiAssistantDrawer />
+
+      <NewWorkspaceDialog open={newWsOpen} onClose={() => setNewWsOpen(false)}
+        onCreated={(key) => { setNewWsOpen(false); navigate(`/workspaces/${key}`); }} />
     </Box>
     </AiProvider>
   );
