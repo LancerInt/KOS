@@ -17,11 +17,12 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.models import Role
 from apps.accounts.permissions import IsAdministrator
 from apps.accounts.rbac import Capability
-from apps.audit.models import AuditAction
+from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import record
 
 from .access import can_edit, effective_access, is_supervisor
@@ -484,3 +485,37 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
         instance.delete()
         record(action=AuditAction.DELETE, object_type="WorkspaceSection", object_id=oid,
                old_value=val, request=self.request)
+
+
+class WorkspaceDeletedItemsView(APIView):
+    """A record of deleted workspace content — projects, sections and records.
+
+    Everyone sees **their own** deletions (a personal archive of what they
+    removed). Supervisors (IT Team / Management / admin) see **everything**
+    deleted, with **who** deleted it and **when** — the deletion audit."""
+
+    permission_classes = [IsAuthenticated]
+    WS_TYPES = ("WorkspaceProject", "WorkspaceSection", "WorkspaceRecord")
+
+    def get(self, request):
+        supervisor = is_supervisor(request.user)
+        qs = (
+            AuditLog.objects.select_related("actor")
+            .filter(action=AuditAction.DELETE, object_type__in=self.WS_TYPES)
+            .order_by("-created_at")
+        )
+        if not supervisor:                       # a regular user: only what they deleted
+            qs = qs.filter(actor=request.user)
+        items = []
+        for log in qs[:200]:
+            ov = log.old_value or {}
+            items.append({
+                "id": log.id,
+                "kind": ov.get("kind") or log.object_type.replace("Workspace", "").lower(),
+                "name": ov.get("name") or "(untitled)",
+                "workspace": ov.get("workspace") or "",
+                "context": ov.get("context") or "",
+                "actor": (log.actor.get_full_name() or log.actor.username) if log.actor else "System",
+                "at": log.created_at,
+            })
+        return Response({"is_supervisor": supervisor, "items": items})

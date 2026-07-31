@@ -58,7 +58,8 @@ const NAV_PLATFORM: NavGroup = {
     { to: "/integrations", label: "Integrations", icon: <HubRoundedIcon fontSize="small" />, capability: "administer" },
     { to: "/admin/ai", label: "AI Automation", icon: <AutoAwesomeRoundedIcon fontSize="small" />, capability: "administer" },
     { to: "/admin/roles", label: "Roles & Access", icon: <AdminPanelSettingsRoundedIcon fontSize="small" />, capability: "administer" },
-    { to: "/archive", label: "Archive", icon: <Inventory2RoundedIcon fontSize="small" />, capability: "administer" },
+    // Archive is for everyone — your own deleted items; IT/Management see all deletions.
+    { to: "/archive", label: "Archive", icon: <Inventory2RoundedIcon fontSize="small" /> },
   ],
 };
 

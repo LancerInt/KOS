@@ -1,8 +1,9 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    WorkspaceMemberViewSet, WorkspacePermissionViewSet, WorkspaceProjectViewSet,
-    WorkspaceRecordViewSet, WorkspaceSectionViewSet, WorkspaceViewSet,
+    WorkspaceDeletedItemsView, WorkspaceMemberViewSet, WorkspacePermissionViewSet,
+    WorkspaceProjectViewSet, WorkspaceRecordViewSet, WorkspaceSectionViewSet, WorkspaceViewSet,
 )
 
 router = DefaultRouter()
@@ -13,4 +14,8 @@ router.register("workspace-projects", WorkspaceProjectViewSet, basename="workspa
 router.register("workspace-records", WorkspaceRecordViewSet, basename="workspace-record")
 router.register("workspace-sections", WorkspaceSectionViewSet, basename="workspace-section")
 
-urlpatterns = router.urls
+urlpatterns = [
+    # Before the router so it isn't captured by the workspaces/<key>/ detail route.
+    path("workspaces/deleted-items/", WorkspaceDeletedItemsView.as_view(), name="workspace-deleted-items"),
+    *router.urls,
+]

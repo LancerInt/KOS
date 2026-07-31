@@ -40,3 +40,22 @@ export const archiveWorkspace = (key: string) => api.delete(`/workspaces/${key}/
 
 export const restoreWorkspace = (key: string) =>
   api.post<DynamicWorkspace>(`/workspaces/${key}/restore/`).then((r) => r.data);
+
+/** A deleted workspace item (project/section/record) for the Archive log. */
+export interface DeletedItem {
+  id: number;
+  kind: string;       // "project" | "section" | "record"
+  name: string;
+  workspace: string;  // workspace key
+  context: string;    // parent project / category
+  actor: string;      // who deleted it (shown to supervisors)
+  at: string;         // ISO timestamp
+}
+
+export interface DeletedItemsResponse {
+  is_supervisor: boolean;   // true for IT Team / Management / admin — they see everyone's
+  items: DeletedItem[];
+}
+
+export const listDeletedItems = () =>
+  api.get<DeletedItemsResponse>("/workspaces/deleted-items/").then((r) => r.data);

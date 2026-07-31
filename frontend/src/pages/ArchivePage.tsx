@@ -1,83 +1,128 @@
 import { useEffect, useState } from "react";
 import RestoreRoundedIcon from "@mui/icons-material/RestoreRounded";
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { Box, Button, Chip, CircularProgress, Paper, Stack, Typography } from "@mui/material";
-import { listArchivedWorkspaces, restoreWorkspace, type DynamicWorkspace } from "../features/workspaces/workspacesApi";
-import { loadDynamicWorkspaces, ICON_REGISTRY } from "../features/workspaces/workspaces";
+
+import {
+  listArchivedWorkspaces, listDeletedItems, restoreWorkspace,
+  type DeletedItem, type DynamicWorkspace,
+} from "../features/workspaces/workspacesApi";
+import { loadDynamicWorkspaces, ICON_REGISTRY, getWorkspace, useWorkspaces } from "../features/workspaces/workspaces";
 import { accentFromHex } from "../features/workspaces/accent";
-import { tokens } from "../theme";
+import { tokens, monoFont } from "../theme";
+
+const KIND_LABEL: Record<string, string> = { project: "Project", section: "Section", record: "Record", field: "Field" };
+
+function whenLabel(iso: string) {
+  return new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
 
 export default function ArchivePage() {
-  const [rows, setRows] = useState<DynamicWorkspace[] | null>(null);
-  const [forbidden, setForbidden] = useState(false);
+  useWorkspaces();                          // resolve workspace labels for the keys
+  const [items, setItems] = useState<DeletedItem[] | null>(null);
+  const [isSup, setIsSup] = useState(false);
+  const [archived, setArchived] = useState<DynamicWorkspace[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = () => {
-    listArchivedWorkspaces()
-      .then(setRows)
-      .catch((e) => { if (e?.response?.status === 403) setForbidden(true); else setRows([]); });
-  };
-  useEffect(load, []);
+  const loadDeleted = () =>
+    listDeletedItems().then((r) => { setItems(r.items); setIsSup(r.is_supervisor); }).catch(() => setItems([]));
+  // Archived workspaces are admin-only; a 403 just hides that section.
+  const loadArchived = () =>
+    listArchivedWorkspaces().then(setArchived).catch(() => setArchived([]));
+  useEffect(() => { loadDeleted(); loadArchived(); }, []);
 
   const restore = async (w: DynamicWorkspace) => {
     setBusy(w.key);
-    try {
-      await restoreWorkspace(w.key);
-      await loadDynamicWorkspaces(true);   // bring it back into the sidebar
-      load();
-    } finally {
-      setBusy(null);
-    }
+    try { await restoreWorkspace(w.key); await loadDynamicWorkspaces(true); loadArchived(); }
+    finally { setBusy(null); }
   };
+
+  const wsLabel = (key: string) => getWorkspace(key)?.label ?? key;
 
   return (
     <Box sx={{ maxWidth: 820, mx: "auto", px: 3, py: 4 }}>
       <Typography variant="h1" sx={{ fontSize: 28, mb: 0.5 }}>Archive</Typography>
       <Typography color="text.secondary" sx={{ mb: 3, fontSize: 13.5 }}>
-        Deleted workspaces stay here for 30 days, then are permanently removed. Restore one to bring it and its
-        projects back.
+        {isSup
+          ? "Everything that's been deleted — projects, sections and records — with who removed it and when."
+          : "A record of the projects, sections and records you've deleted."}
       </Typography>
 
-      {forbidden ? (
-        <Typography sx={{ color: tokens.attn }}>You need administrator access to view the archive.</Typography>
-      ) : !rows ? (
-        <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>
-      ) : rows.length === 0 ? (
-        <Paper sx={{ p: 5, textAlign: "center", borderRadius: "6px" }}>
-          <Inventory2RoundedIcon sx={{ fontSize: 30, color: tokens.text3, mb: 1 }} />
-          <Typography sx={{ fontWeight: 600, mb: 0.5 }}>The archive is empty</Typography>
-          <Typography color="text.secondary" sx={{ fontSize: 13.5 }}>Deleted workspaces will appear here.</Typography>
+      {/* ---------- Deleted items (everyone) ---------- */}
+      <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 1 }}>
+        Deleted items{items ? ` · ${items.length}` : ""}
+      </Typography>
+
+      {!items ? (
+        <Stack alignItems="center" sx={{ py: 4 }}><CircularProgress size={24} /></Stack>
+      ) : items.length === 0 ? (
+        <Paper sx={{ p: 4, textAlign: "center", borderRadius: "8px", mb: 4 }}>
+          <DeleteOutlineRoundedIcon sx={{ fontSize: 28, color: tokens.text3, mb: 1 }} />
+          <Typography sx={{ fontWeight: 600, mb: 0.25 }}>Nothing deleted</Typography>
+          <Typography color="text.secondary" sx={{ fontSize: 13 }}>
+            {isSup ? "No deletions have been recorded yet." : "Items you delete will be listed here."}
+          </Typography>
         </Paper>
       ) : (
-        <Stack spacing={1.25}>
-          {rows.map((w) => {
-            const accent = accentFromHex(w.accent);
-            const Icon = ICON_REGISTRY[w.icon] ?? Inventory2RoundedIcon;
-            const soon = (w.days_left ?? 99) <= 7;
-            return (
-              <Paper key={w.key} sx={{ p: 1.75, borderRadius: "6px", display: "flex", alignItems: "center", gap: 1.5 }}>
-                <Box sx={{ width: 40, height: 40, borderRadius: "9px", flexShrink: 0, display: "grid", placeItems: "center",
-                  bgcolor: accent.soft, color: accent.ink }}>
-                  <Icon sx={{ fontSize: 21 }} />
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 15, fontWeight: 600 }} noWrap>{w.label}</Typography>
-                  <Typography sx={{ fontSize: 12, color: tokens.text3 }}>
-                    Archived {w.archived_at ? new Date(w.archived_at).toLocaleDateString() : ""}
-                  </Typography>
-                </Box>
-                <Chip size="small"
-                  label={w.days_left === 0 ? "Deletes today" : `${w.days_left}d left`}
-                  sx={{ height: 22, fontSize: 11, fontWeight: 600,
-                    color: soon ? tokens.attn : tokens.text2, bgcolor: soon ? tokens.attnWash : "#EEF0F3" }} />
-                <Button size="small" variant="outlined" startIcon={<RestoreRoundedIcon sx={{ fontSize: 17 }} />}
-                  disabled={busy === w.key} onClick={() => restore(w)}>
-                  {busy === w.key ? "Restoring…" : "Restore"}
-                </Button>
-              </Paper>
-            );
-          })}
-        </Stack>
+        <Paper sx={{ borderRadius: "10px", overflow: "hidden", mb: 4 }}>
+          {items.map((it, i) => (
+            <Stack key={it.id} direction="row" alignItems="center" spacing={1.25}
+              sx={{ px: 1.75, py: 1.1, borderTop: i === 0 ? "none" : `1px solid ${tokens.line}` }}>
+              <Chip label={KIND_LABEL[it.kind] ?? it.kind} size="small"
+                sx={{ height: 20, fontSize: 10.5, fontWeight: 600, bgcolor: "#F1F3F5", color: tokens.text2, flexShrink: 0, width: 66 }} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontSize: 13.5, fontWeight: 500 }} noWrap>{it.name}</Typography>
+                <Typography sx={{ fontSize: 11, color: tokens.text3 }} noWrap>
+                  {wsLabel(it.workspace)}{it.context ? ` · ${it.context}` : ""}
+                </Typography>
+              </Box>
+              {isSup && (
+                <Typography sx={{ fontSize: 12, color: tokens.text2, flexShrink: 0, maxWidth: 130 }} noWrap>{it.actor}</Typography>
+              )}
+              <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3, flexShrink: 0 }}>{whenLabel(it.at)}</Typography>
+            </Stack>
+          ))}
+        </Paper>
+      )}
+
+      {/* ---------- Archived workspaces (admins only) ---------- */}
+      {archived && archived.length > 0 && (
+        <>
+          <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 1 }}>
+            Archived workspaces · {archived.length}
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 1.5, fontSize: 12.5 }}>
+            Deleted workspaces stay 30 days, then are permanently removed. Restore brings the workspace and its projects back.
+          </Typography>
+          <Stack spacing={1.25}>
+            {archived.map((w) => {
+              const accent = accentFromHex(w.accent);
+              const Icon = ICON_REGISTRY[w.icon] ?? Inventory2RoundedIcon;
+              const soon = (w.days_left ?? 99) <= 7;
+              return (
+                <Paper key={w.key} sx={{ p: 1.75, borderRadius: "8px", display: "flex", alignItems: "center", gap: 1.5 }}>
+                  <Box sx={{ width: 40, height: 40, borderRadius: "9px", flexShrink: 0, display: "grid", placeItems: "center",
+                    bgcolor: accent.soft, color: accent.ink }}>
+                    <Icon sx={{ fontSize: 21 }} />
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 15, fontWeight: 600 }} noWrap>{w.label}</Typography>
+                    <Typography sx={{ fontSize: 12, color: tokens.text3 }}>
+                      Archived {w.archived_at ? new Date(w.archived_at).toLocaleDateString() : ""}
+                    </Typography>
+                  </Box>
+                  <Chip size="small" label={w.days_left === 0 ? "Deletes today" : `${w.days_left}d left`}
+                    sx={{ height: 22, fontSize: 11, fontWeight: 600, color: soon ? tokens.attn : tokens.text2, bgcolor: soon ? tokens.attnWash : "#EEF0F3" }} />
+                  <Button size="small" variant="outlined" startIcon={<RestoreRoundedIcon sx={{ fontSize: 17 }} />}
+                    disabled={busy === w.key} onClick={() => restore(w)}>
+                    {busy === w.key ? "Restoring…" : "Restore"}
+                  </Button>
+                </Paper>
+              );
+            })}
+          </Stack>
+        </>
       )}
     </Box>
   );
