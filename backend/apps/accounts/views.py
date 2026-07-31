@@ -27,6 +27,24 @@ from .serializers import (
 )
 
 
+class PeopleDirectoryView(APIView):
+    """Active users' names + emails, for recipient pickers (any authenticated
+    user). Deliberately minimal — id, name, email only — so it can be open to
+    everyone without exposing the full user record."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        users = (
+            User.objects.filter(is_active=True).exclude(email="")
+            .order_by("first_name", "last_name", "username")
+        )
+        return Response([
+            {"id": u.id, "name": u.get_full_name() or u.username, "email": u.email}
+            for u in users
+        ])
+
+
 class LoginView(APIView):
     """Username/password login, enforcing MFA for privileged users (§32).
 

@@ -28,6 +28,7 @@ import WorkspacePermissionsPage from "./pages/WorkspacePermissionsPage";
 import AiSettingsPage from "./pages/AiSettingsPage";
 import LastLoginsPage from "./pages/LastLoginsPage";
 import ArchivePage from "./pages/ArchivePage";
+import EmailPage from "./pages/EmailPage";
 
 export default function App() {
   const dispatch = useAppDispatch();
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/crm" element={<CrmPage />} />
             <Route path="/regulatory" element={<RegulatoryPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/email" element={<EmailPage />} />
             <Route path="/admin/roles" element={<RolesPage />} />
             <Route path="/admin/permissions" element={<WorkspacePermissionsPage />} />
             <Route path="/admin/last-logins" element={<LastLoginsPage />} />

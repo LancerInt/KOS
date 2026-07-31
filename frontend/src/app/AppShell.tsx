@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Avatar, Box, InputAdornment, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
+import EmailRoundedIcon from "@mui/icons-material/EmailRounded";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
 import HubRoundedIcon from "@mui/icons-material/HubRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
@@ -45,6 +46,7 @@ interface NavGroup {
 const NAV_TOP: NavGroup = {
   items: [
     { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
+    { to: "/email", label: "Email", icon: <EmailRoundedIcon fontSize="small" /> },
     { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
   ],
 };

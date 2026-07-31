@@ -10,6 +10,7 @@ from .views import (
     MeView,
     MfaSetupView,
     MfaVerifyView,
+    PeopleDirectoryView,
     RoleViewSet,
     TeamViewSet,
     UserViewSet,
@@ -29,5 +30,6 @@ urlpatterns = [
     path("auth/mfa/setup/", MfaSetupView.as_view(), name="mfa-setup"),
     path("auth/mfa/verify/", MfaVerifyView.as_view(), name="mfa-verify"),
     path("auth/last-logins/", LastLoginsView.as_view(), name="last-logins"),
+    path("auth/people/", PeopleDirectoryView.as_view(), name="people-directory"),
     *router.urls,
 ]
