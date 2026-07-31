@@ -14,7 +14,8 @@ from __future__ import annotations
 import csv
 from datetime import date, timedelta
 
-from django.db.models import Count, Q
+from django.db.models import Count, Q, TextField
+from django.db.models.functions import Cast
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
@@ -33,6 +34,8 @@ from apps.projects.models import Project, ProjectHealth, ProjectStatus
 from apps.projects.scoping import visible_projects
 from apps.registers.models import Decision, Issue, RegisterStatus, Risk
 from apps.tasks.models import Task
+from apps.workspaces.access import effective_access
+from apps.workspaces.models import Workspace, WorkspaceProject, WorkspaceRecord, WorkspaceSection
 
 from .aggregates import (
     category_map,
@@ -56,6 +59,11 @@ def _require(user, capability) -> None:
 # Global search (§20)
 # --------------------------------------------------------------------------- #
 class GlobalSearchView(APIView):
+    """Search across the Workspaces content the user may see — workspace
+    projects, records, sections and (user-added) workspace names. Every result
+    is scoped to the caller's viewable workspaces (need-to-know), so search can
+    never surface content from a workspace they aren't a member of."""
+
     permission_classes = [IsAuthenticated]
     LIMIT = 8
 
@@ -65,40 +73,56 @@ class GlobalSearchView(APIView):
             return Response({"query": q, "results": {}, "total": 0})
 
         user = request.user
-        cat_map = category_map()
-        visible = visible_projects(user, Project.objects.all())
         n = self.LIMIT
 
-        projects = [
-            {"id": p.id, "code": p.code, "name": p.name, "project_type": p.project_type,
-             "status": p.status, "health": p.health}
-            for p in visible.filter(Q(name__icontains=q) | Q(code__icontains=q))[:n]
-        ]
-        tasks = [
-            {"id": t.id, "title": t.title, "project": t.project_id, "project_code": t.project.code,
-             "status": t.status, "category": cat_map.get(t.status, "not_started"),
-             "due_date": t.due_date, "is_overdue": t.is_overdue}
-            for t in Task.objects.filter(project__in=visible, title__icontains=q).select_related("project")[:n]
-        ]
-        documents = [
-            {"id": d.id, "title": d.title, "project": d.project_id, "category": d.category,
-             "status": d.status}
-            for d in Document.objects.filter(Q(project__in=visible) | Q(project__isnull=True))
-            .filter(Q(title__icontains=q) | Q(tags__icontains=q))[:n]
-        ]
-        sops = [
-            {"id": s.id, "code": s.code, "title": s.title, "stage": s.stage}
-            for s in SOP.objects.filter(Q(code__icontains=q) | Q(title__icontains=q))[:n]
-        ]
-        registers = []
-        for r in Risk.objects.filter(project__in=visible, statement__icontains=q)[:n]:
-            registers.append({"type": "risk", "id": r.id, "label": r.statement[:140], "project": r.project_id, "status": r.status})
-        for i in Issue.objects.filter(project__in=visible, description__icontains=q)[:n]:
-            registers.append({"type": "issue", "id": i.id, "label": i.description[:140], "project": i.project_id, "status": i.status})
-        for d in Decision.objects.filter(project__in=visible, decision_required__icontains=q)[:n]:
-            registers.append({"type": "decision", "id": d.id, "label": d.decision_required[:140], "project": d.project_id, "status": d.status})
+        # Scope to what the user may view. None = supervisor/admin = every
+        # workspace; otherwise just their memberships. Archived are always hidden.
+        acc = effective_access(user)
+        archived = set(Workspace.objects.filter(archived_at__isnull=False).values_list("key", flat=True))
+        if acc is None:
+            scope = ~Q(workspace__in=archived) if archived else Q()
+            ws_keys = None
+        else:
+            ws_keys = set(acc.keys()) - archived
+            scope = Q(workspace__in=ws_keys)
 
-        results = {"projects": projects, "tasks": tasks, "documents": documents, "sops": sops, "registers": registers}
+        wprojects = [
+            {"id": p.id, "workspace": p.workspace, "name": p.name}
+            for p in WorkspaceProject.objects.filter(scope).filter(name__icontains=q).order_by("-created_at")[:n]
+        ]
+        wsections = [
+            {"id": s.id, "workspace": s.workspace, "project": s.project_id, "name": s.name}
+            for s in WorkspaceSection.objects.filter(scope).filter(name__icontains=q, hidden=False)[:n]
+        ]
+        # Records: match anywhere in the JSON payload (cast to text) or the category.
+        records = []
+        rec_qs = (
+            WorkspaceRecord.objects.filter(scope)
+            .annotate(_txt=Cast("data", output_field=TextField()))
+            .filter(Q(_txt__icontains=q) | Q(category__icontains=q))
+            .order_by("-created_at")[:n]
+        )
+        for rec in rec_qs:
+            headline = ""
+            if isinstance(rec.data, dict):
+                headline = next((str(v) for v in rec.data.values() if v), "")
+            records.append({
+                "id": rec.id, "workspace": rec.workspace, "project": rec.project_id,
+                "category": rec.category, "headline": headline or rec.category,
+            })
+
+        ws_qs = Workspace.objects.filter(archived_at__isnull=True).filter(
+            Q(label__icontains=q) | Q(blurb__icontains=q))
+        if ws_keys is not None:
+            ws_qs = ws_qs.filter(key__in=ws_keys)
+        workspaces = [{"key": w.key, "label": w.label, "blurb": w.blurb} for w in ws_qs[:n]]
+
+        results = {
+            "workspaces": workspaces,
+            "workspace_projects": wprojects,
+            "workspace_sections": wsections,
+            "records": records,
+        }
         return Response({"query": q, "results": results, "total": sum(len(v) for v in results.values())})
 
 

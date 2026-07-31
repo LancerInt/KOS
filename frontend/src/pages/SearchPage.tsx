@@ -4,16 +4,13 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import { Box, Chip, InputAdornment, Paper, Stack, TextField, Typography } from "@mui/material";
 
 import { globalSearch, type SearchResponse } from "../features/reports/reportsApi";
-import { tokens, monoFont, categoryColors } from "../theme";
-
-const CATEGORY_DOT: Record<string, string> = {
-  not_started: categoryColors.notStarted, active: categoryColors.active, waiting: categoryColors.waiting,
-  in_review: categoryColors.inReview, done: categoryColors.done, cancelled: categoryColors.cancelled,
-};
+import { getWorkspace, useWorkspaces } from "../features/workspaces/workspaces";
+import { tokens, monoFont } from "../theme";
 
 export default function SearchPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  useWorkspaces();                          // load dynamic workspaces so we can show their labels
   const initial = params.get("q") ?? "";
   const [q, setQ] = useState(initial);
   const [resp, setResp] = useState<SearchResponse | null>(null);
@@ -33,13 +30,14 @@ export default function SearchPage() {
 
   const r = resp?.results ?? {};
   const empty = useMemo(() => resp && resp.total === 0, [resp]);
+  const wsLabel = (key: string) => getWorkspace(key)?.label ?? key;
 
   return (
     <Box sx={{ maxWidth: 820, mx: "auto", px: 3, py: 4 }}>
       <Typography variant="h1" sx={{ fontSize: 27, mb: 2 }}>Search</Typography>
 
       <TextField
-        autoFocus fullWidth placeholder="Search projects, tasks, documents, SOPs, registers…"
+        autoFocus fullWidth placeholder="Search workspaces, projects, sections and records…"
         value={q} onChange={(e) => setQ(e.target.value)}
         InputProps={{ startAdornment: (
           <InputAdornment position="start"><SearchRoundedIcon sx={{ color: tokens.text3 }} /></InputAdornment>
@@ -51,51 +49,38 @@ export default function SearchPage() {
       {loading && q.trim().length >= 2 && <Hint text="Searching…" />}
       {empty && <Hint text={`Nothing matched "${resp?.query}".`} />}
 
-      {r.projects && r.projects.length > 0 && (
+      {r.workspaces && r.workspaces.length > 0 && (
+        <Group label="Workspaces">
+          {r.workspaces.map((w) => (
+            <Row key={`w${w.key}`} title={w.label} meta={w.blurb || undefined}
+              onClick={() => navigate(`/workspaces/${w.key}`)} />
+          ))}
+        </Group>
+      )}
+
+      {r.workspace_projects && r.workspace_projects.length > 0 && (
         <Group label="Projects">
-          {r.projects.map((p) => (
-            <Row key={`p${p.id}`} mono={p.code} title={p.name}
-              meta={`${p.project_type} · ${p.status.replace("_", " ")}`}
-              onClick={() => navigate(`/projects/${p.id}`)} />
+          {r.workspace_projects.map((p) => (
+            <Row key={`p${p.id}`} title={p.name} meta={wsLabel(p.workspace)}
+              onClick={() => navigate(`/workspaces/${p.workspace}/projects/${p.id}`)} />
           ))}
         </Group>
       )}
 
-      {r.tasks && r.tasks.length > 0 && (
-        <Group label="Tasks">
-          {r.tasks.map((t) => (
-            <Row key={`t${t.id}`} title={t.title} dot={CATEGORY_DOT[t.category]}
-              meta={`${t.project_code}${t.due_date ? ` · due ${t.due_date}` : ""}`}
-              attn={t.is_overdue}
-              onClick={() => navigate(`/projects/${t.project}`)} />
+      {r.workspace_sections && r.workspace_sections.length > 0 && (
+        <Group label="Sections">
+          {r.workspace_sections.map((s) => (
+            <Row key={`s${s.id}`} title={s.name} chip="section" meta={wsLabel(s.workspace)}
+              onClick={() => s.project && navigate(`/workspaces/${s.workspace}/projects/${s.project}`)} />
           ))}
         </Group>
       )}
 
-      {r.documents && r.documents.length > 0 && (
-        <Group label="Documents">
-          {r.documents.map((d) => (
-            <Row key={`d${d.id}`} title={d.title} meta={`${d.category} · ${d.status.replace("_", " ")}`}
-              onClick={() => d.project && navigate(`/projects/${d.project}/documents`)} />
-          ))}
-        </Group>
-      )}
-
-      {r.sops && r.sops.length > 0 && (
-        <Group label="SOPs">
-          {r.sops.map((s) => (
-            <Row key={`s${s.id}`} mono={s.code} title={s.title} meta={s.stage}
-              onClick={() => navigate("/sops")} />
-          ))}
-        </Group>
-      )}
-
-      {r.registers && r.registers.length > 0 && (
-        <Group label="Risks, issues & decisions">
-          {r.registers.map((x) => (
-            <Row key={`${x.type}${x.id}`} title={x.label}
-              chip={x.type} meta={x.status.replace("_", " ")}
-              onClick={() => navigate(`/projects/${x.project}/registers`)} />
+      {r.records && r.records.length > 0 && (
+        <Group label="Records">
+          {r.records.map((rec) => (
+            <Row key={`r${rec.id}`} title={rec.headline} meta={`${wsLabel(rec.workspace)} · ${rec.category}`}
+              onClick={() => rec.project && navigate(`/workspaces/${rec.workspace}/projects/${rec.project}`)} />
           ))}
         </Group>
       )}
@@ -114,18 +99,17 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Row({ title, meta, mono, dot, chip, attn, onClick }: {
-  title: string; meta?: string; mono?: string; dot?: string; chip?: string; attn?: boolean; onClick?: () => void;
+function Row({ title, meta, mono, chip, onClick }: {
+  title: string; meta?: string; mono?: string; chip?: string; onClick?: () => void;
 }) {
   return (
     <Paper onClick={onClick}
       sx={{ p: 1.25, borderRadius: 2.5, display: "flex", alignItems: "center", gap: 1.25, cursor: onClick ? "pointer" : "default",
         "&:hover": onClick ? { borderColor: "#DADEE4" } : undefined }}>
-      {dot && <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: dot }} />}
       {mono && <Typography sx={{ fontFamily: monoFont, fontSize: 11, color: tokens.text3, width: 88 }} noWrap>{mono}</Typography>}
       {chip && <Chip label={chip} size="small" sx={{ height: 18, fontSize: 9.5, textTransform: "capitalize", bgcolor: "#F1F3F5", color: tokens.text2 }} />}
       <Typography sx={{ fontSize: 13.5, fontWeight: 500, flex: 1 }} noWrap>{title}</Typography>
-      {meta && <Typography sx={{ fontSize: 11.5, color: attn ? tokens.attn : tokens.text3, textTransform: "capitalize", whiteSpace: "nowrap" }}>{meta}</Typography>}
+      {meta && <Typography sx={{ fontSize: 11.5, color: tokens.text3, whiteSpace: "nowrap" }} noWrap>{meta}</Typography>}
     </Paper>
   );
 }

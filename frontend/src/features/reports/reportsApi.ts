@@ -52,11 +52,10 @@ export interface ProjectReportRow {
 }
 
 export interface SearchResults {
-  projects: { id: number; code: string; name: string; project_type: string; status: string; health: string }[];
-  tasks: { id: number; title: string; project: number; project_code: string; status: string; category: string; due_date: string | null; is_overdue: boolean }[];
-  documents: { id: number; title: string; project: number | null; category: string; status: string }[];
-  sops: { id: number; code: string; title: string; stage: string }[];
-  registers: { type: string; id: number; label: string; project: number; status: string }[];
+  workspaces: { key: string; label: string; blurb: string }[];
+  workspace_projects: { id: number; workspace: string; name: string }[];
+  workspace_sections: { id: number; workspace: string; project: number | null; name: string }[];
+  records: { id: number; workspace: string; project: number | null; category: string; headline: string }[];
 }
 
 export interface SearchResponse {
