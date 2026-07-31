@@ -1127,7 +1127,18 @@ class AIAutomationLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, v
 # feature is broken because a queue is down.
 # --------------------------------------------------------------------------- #
 def queued(task, *args, **kwargs) -> bool:
-    """Try to hand a task to a worker. False means "no broker, run it here"."""
+    """Hand a task to a Celery worker, or return False to run it inline.
+
+    A live Redis broker makes ``apply_async`` succeed even when **no worker** is
+    running to consume the queue — the job would then sit unprocessed forever
+    (the page polls and reports "still being generated"). This deployment runs no
+    worker, so unless ``AI_USE_CELERY`` is explicitly enabled we always run
+    inline: a few seconds' wait beats a briefing that never appears.
+    """
+    from django.conf import settings
+
+    if not getattr(settings, "AI_USE_CELERY", False):
+        return False
     try:
         task.apply_async(args=args, kwargs=kwargs, retry=False)
         return True
