@@ -10,9 +10,12 @@ import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 
 import { getWorkspace, useWorkspaces, loadDynamicWorkspaces, dynamicWorkspacesReady } from "../features/workspaces/workspaces";
 import BuildWithAiDialog from "../features/ai/BuildWithAiDialog";
+import MembersDialog from "../features/workspaces/MembersDialog";
+import { listMembers } from "../features/workspaces/workspaceMembersApi";
 import { listProjects, createProject, deleteProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
 import { archiveWorkspace } from "../features/workspaces/workspacesApi";
@@ -49,14 +52,23 @@ export default function WorkspacePage() {
   const [newErr, setNewErr] = useState("");
   const [creating, setCreating] = useState(false);
   const [buildAiOpen, setBuildAiOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [memberCount, setMemberCount] = useState<number | null>(null);
 
   const load = () => {
     if (!ws) { setProjects([]); return; }
     listProjects(ws.key).then(setProjects).catch(() => setProjects([]));
   };
 
+  const refreshMemberCount = () => {
+    if (!ws) return;
+    listMembers(ws.key).then((m) => setMemberCount(m.length)).catch(() => {});
+  };
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [key]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (ws && !accessLoading) refreshMemberCount(); }, [key, accessLoading]);
 
   if (!ws) {
     // A user-added workspace may still be loading — don't flash "not found".
@@ -134,6 +146,16 @@ export default function WorkspacePage() {
         <Typography variant="h1" sx={{ fontSize: 26, lineHeight: 1.2 }}>{ws.label}</Typography>
         <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>{ws.blurb || "Custom workspace."}</Typography>
       </Box>
+      {!accessLoading && level !== "none" && (
+        <Tooltip title="Members — who can open this workspace">
+          <Button size="small" variant="outlined" startIcon={<GroupRoundedIcon sx={{ fontSize: 17 }} />}
+            onClick={() => setMembersOpen(true)}
+            sx={{ color: tokens.text2, borderColor: tokens.line, whiteSpace: "nowrap", flexShrink: 0,
+              "&:hover": { borderColor: acc.base, bgcolor: `${acc.base}0A` } }}>
+            Members{memberCount !== null ? ` · ${memberCount}` : ""}
+          </Button>
+        </Tooltip>
+      )}
       {canArchive && (
         <Tooltip title="Delete workspace (archive)">
           <IconButton onClick={archiveWs} sx={{ color: tokens.text3, "&:hover": { color: tokens.attn, bgcolor: tokens.attnWash } }}>
@@ -278,6 +300,10 @@ export default function WorkspacePage() {
       <BuildWithAiDialog open={buildAiOpen} onClose={() => setBuildAiOpen(false)}
         workspace={ws.key} workspaceLabel={ws.label}
         onCreated={(projectId) => { setBuildAiOpen(false); navigate(`/workspaces/${ws.key}/projects/${projectId}`); }} />
+
+      <MembersDialog open={membersOpen} onClose={() => setMembersOpen(false)}
+        workspace={ws.key} workspaceLabel={ws.label} canManage={canEdit}
+        onChanged={refreshMemberCount} />
 
       {/* New project dialog */}
       <Dialog open={newOpen} onClose={() => setNewOpen(false)} fullWidth maxWidth="xs">
