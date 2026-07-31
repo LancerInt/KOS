@@ -17,12 +17,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.notifications.models import NotificationEvent
 from apps.notifications.services import notify
 
-from .models import WorkspaceProject, WorkspaceRecord
+from .access import effective_access
+from .models import WorkspaceMember, WorkspaceProject, WorkspaceRecord
+
+User = get_user_model()
 
 
 def _fmt(dt) -> str:
@@ -61,8 +66,19 @@ def _stage_message(project, key):
             f"Acknowledge with a new expected date or a reason.")
 
 
+def _project_recipients(project):
+    """Everyone who should hear about a project's schedule: the members of its
+    workspace (the people responsible for it) plus its creator. Supervisors
+    (IT / Management / admin) see it in the UI and aren't pinged unless they
+    created it — otherwise every overdue project would spam them."""
+    ids = set(WorkspaceMember.objects.filter(workspace=project.workspace).values_list("user_id", flat=True))
+    if project.created_by_id:
+        ids.add(project.created_by_id)
+    return list(User.objects.filter(id__in=ids))
+
+
 def _sync_project(project, now) -> int:
-    if project.completed_at or not project.end_at or not project.start_at or not project.created_by_id:
+    if project.completed_at or not project.end_at or not project.start_at:
         return 0
     reached = [s for s in _project_stages(project) if s[1] <= now]
     if not reached:
@@ -72,9 +88,10 @@ def _sync_project(project, now) -> int:
     fired = 0
     if key not in sent:
         title, body = _stage_message(project, key)
-        notify(project.created_by, event=event, title=title, body=body,
-               url=f"/workspaces/{project.workspace}/projects/{project.id}", requires_ack=ack)
-        fired = 1
+        for user in _project_recipients(project):
+            notify(user, event=event, title=title, body=body,
+                   url=f"/workspaces/{project.workspace}/projects/{project.id}", requires_ack=ack)
+            fired += 1
     new_sent = sent | {s[0] for s in reached}   # mark earlier stages done too
     if new_sent != sent:
         project.reminders_sent = sorted(new_sent)
@@ -127,10 +144,17 @@ def _run(project_qs, record_qs) -> int:
 
 
 def sync_due_durations(user) -> int:
-    """Reminders for `user`'s own projects/records — the lazy on-open path."""
+    """Reminders for projects/records the user is responsible for — the lazy
+    on-open path. Covers projects they created AND every project in a workspace
+    they're a member of, so an assigned member gets overdue pings for their own
+    workspaces even when someone else created the project."""
     if not user or not getattr(user, "is_authenticated", False):
         return 0
-    projects = WorkspaceProject.objects.filter(created_by=user)
+    q = Q(created_by=user)
+    acc = effective_access(user)
+    if acc is not None:                       # a member: also scan their workspaces
+        q |= Q(workspace__in=set(acc.keys()))
+    projects = WorkspaceProject.objects.filter(q)
     records = WorkspaceRecord.objects.filter(created_by=user, workspace="entomology")
     return _run(projects, records)
 
