@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type HTMLAttributes, type Key } from "react";
 import {
   Autocomplete, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, IconButton, Snackbar, Stack, TextField, Tooltip, Typography,
@@ -110,14 +110,19 @@ export default function MembersDialog({
               isOptionEqualToValue={(a, b) => a.id === b.id}
               noOptionsText="No teammates left to add"
               renderInput={(p) => <TextField {...p} placeholder="Add a teammate…" />}
-              renderOption={(props, o) => (
-                <Box component="li" {...props} key={o.id}>
-                  <Stack sx={{ minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 13.5 }} noWrap>{o.name}</Typography>
-                    <Typography sx={{ fontSize: 11, color: tokens.text3 }} noWrap>{o.email}</Typography>
-                  </Stack>
-                </Box>
-              )}
+              renderOption={(props, o) => {
+                // MUI v6: `key` is inside props — spreading it into JSX is a
+                // React error and can break option selection. Pull it out.
+                const { key, ...liProps } = props as HTMLAttributes<HTMLLIElement> & { key?: Key };
+                return (
+                  <Box component="li" key={key ?? o.id} {...liProps}>
+                    <Stack sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 13.5 }} noWrap>{o.name}</Typography>
+                      <Typography sx={{ fontSize: 11, color: tokens.text3 }} noWrap>{o.email}</Typography>
+                    </Stack>
+                  </Box>
+                );
+              }}
             />
             <Button variant="contained" disabled={!picked || busy}
               onClick={() => picked && doAdd(picked.id)}
