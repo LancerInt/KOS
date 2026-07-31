@@ -25,7 +25,6 @@ import FormatListBulletedRoundedIcon from "@mui/icons-material/FormatListBullete
 import ViewKanbanRoundedIcon from "@mui/icons-material/ViewKanbanRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
-import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 
 import { listAllProjects, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
@@ -230,16 +229,6 @@ export default function DashboardPage() {
           <AiActionButton label="What should I focus on?" title="Today's recommendations" run={() => dashboardAi.recommendations()} />
           <AiActionButton label="AI insights" title="Insights on my projects" run={() => dashboardAi.insights()} />
           <AiActionButton label="Weekly report" title="Weekly report" run={() => generateReport("weekly")} />
-          {canReports && (
-            <Button
-              size="small" variant="outlined"
-              startIcon={<InsightsRoundedIcon sx={{ fontSize: 16 }} />}
-              onClick={() => navigate("/executive-summary")}
-              sx={{ whiteSpace: "nowrap" }}
-            >
-              Executive summary
-            </Button>
-          )}
           <AiActionButton
             label="Generate email" title="Draft an email"
             fields={[

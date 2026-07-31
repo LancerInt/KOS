@@ -10,8 +10,6 @@ import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
-import EventNoteRoundedIcon from "@mui/icons-material/EventNoteRounded";
-import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 
@@ -47,8 +45,6 @@ interface NavGroup {
 const NAV_TOP: NavGroup = {
   items: [
     { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
-    { to: "/executive-summary", label: "Executive Summary", icon: <InsightsRoundedIcon fontSize="small" />, capability: "view_reports" },
-    { to: "/meetings", label: "Meetings & Notes", icon: <EventNoteRoundedIcon fontSize="small" /> },
     { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
   ],
 };

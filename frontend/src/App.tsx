@@ -26,8 +26,6 @@ import WorkspacePage from "./pages/WorkspacePage";
 import WorkspaceProjectPage from "./pages/WorkspaceProjectPage";
 import WorkspacePermissionsPage from "./pages/WorkspacePermissionsPage";
 import AiSettingsPage from "./pages/AiSettingsPage";
-import MeetingNotesPage from "./pages/MeetingNotesPage";
-import ExecutiveSummaryPage from "./pages/ExecutiveSummaryPage";
 import LastLoginsPage from "./pages/LastLoginsPage";
 import ArchivePage from "./pages/ArchivePage";
 
@@ -57,7 +55,6 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/dashboard" element={<Navigate to="/" replace />} />
             <Route path="/reports" element={<Navigate to="/" replace />} />
-            <Route path="/executive-summary" element={<ExecutiveSummaryPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
@@ -72,7 +69,6 @@ export default function App() {
             <Route path="/crm" element={<CrmPage />} />
             <Route path="/regulatory" element={<RegulatoryPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/meetings" element={<MeetingNotesPage />} />
             <Route path="/admin/roles" element={<RolesPage />} />
             <Route path="/admin/permissions" element={<WorkspacePermissionsPage />} />
             <Route path="/admin/last-logins" element={<LastLoginsPage />} />
