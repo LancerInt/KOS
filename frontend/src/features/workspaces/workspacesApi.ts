@@ -41,15 +41,16 @@ export const archiveWorkspace = (key: string) => api.delete(`/workspaces/${key}/
 export const restoreWorkspace = (key: string) =>
   api.post<DynamicWorkspace>(`/workspaces/${key}/restore/`).then((r) => r.data);
 
-/** A deleted workspace item (project/section/record) for the Archive log. */
+/** A soft-deleted workspace item (project/section/record) in the Archive. */
 export interface DeletedItem {
   id: number;
-  kind: string;       // "project" | "section" | "record"
+  kind: "project" | "section" | "record";
   name: string;
   workspace: string;  // workspace key
   context: string;    // parent project / category
   actor: string;      // who deleted it (shown to supervisors)
-  at: string;         // ISO timestamp
+  at: string;         // ISO timestamp of deletion
+  days_left: number;  // days until permanent purge
 }
 
 export interface DeletedItemsResponse {
@@ -59,3 +60,7 @@ export interface DeletedItemsResponse {
 
 export const listDeletedItems = () =>
   api.get<DeletedItemsResponse>("/workspaces/deleted-items/").then((r) => r.data);
+
+/** Restore a soft-deleted project/section/record back into its workspace. */
+export const restoreDeletedItem = (kind: DeletedItem["kind"], id: number) =>
+  api.post("/workspaces/deleted-items/", { kind, id }).then((r) => r.data);

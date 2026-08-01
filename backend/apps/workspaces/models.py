@@ -16,7 +16,12 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
+
+# Deleted projects/sections/records (and archived workspaces) are recoverable
+# from the Archive for this many days, then permanently purged.
+ARCHIVE_TTL_DAYS = 30
 
 
 def _left_label(seconds: float) -> str:
@@ -77,7 +82,8 @@ def compute_duration_state(start_at, end_at, completed_at, now=None) -> dict:
 
 class WorkspaceProject(models.Model):
     """A user-created project inside a workspace (e.g. "Neem Oil 2026" under
-    Amazon USA). Deleting it removes its sections and records."""
+    Amazon USA). Deleting it soft-deletes it (and its sections/records ride
+    along); the Archive can restore it for 30 days, then it's purged."""
 
     workspace = models.CharField(max_length=64)   # e.g. "amazon-usa"
     name = models.CharField(max_length=200)
@@ -98,11 +104,22 @@ class WorkspaceProject(models.Model):
     duration_notified_at = models.DateTimeField(null=True, blank=True)
     # Which staged reminders (due-7 / due-1 / due / overdue) have already fired.
     reminders_sent = models.JSONField(default=list, blank=True)
+    # Soft-delete → recoverable from the Archive, auto-purged after the TTL.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         ordering = ("-created_at",)
         constraints = [
-            models.UniqueConstraint(fields=["workspace", "name"], name="uniq_workspace_project"),
+            # Only one *live* project per name per workspace — a soft-deleted one
+            # frees the name so a replacement can reuse it.
+            models.UniqueConstraint(
+                fields=["workspace", "name"], condition=Q(deleted_at__isnull=True),
+                name="uniq_workspace_project_active",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -198,6 +215,12 @@ class WorkspaceRecord(models.Model):
     duration_days = models.PositiveIntegerField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     duration_notified_at = models.DateTimeField(null=True, blank=True)
+    # Soft-delete → recoverable from the Archive, auto-purged after the TTL.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         ordering = ("-created_at",)
@@ -232,18 +255,29 @@ class WorkspaceSection(models.Model):
     # once their fields are customised (the row "adopts" the built-in section).
     fields = models.JSONField(default=list, blank=True)
     # Per-project removal of a built-in section: a hidden row keeps that section
-    # off this project's grid (custom sections are hard-deleted instead).
+    # off this project's grid. A deleted section is also hidden — ``deleted_at``
+    # marks it for the Archive (restore within the TTL, else purge). Records are
+    # kept until purge so a restore brings the section back intact.
     hidden = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="workspace_sections",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Soft-delete → recoverable from the Archive, auto-purged after the TTL.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         ordering = ("created_at",)
         constraints = [
-            models.UniqueConstraint(fields=["project", "name"], name="uniq_project_section"),
+            models.UniqueConstraint(
+                fields=["project", "name"], condition=Q(deleted_at__isnull=True),
+                name="uniq_project_section_active",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -260,7 +294,7 @@ class Workspace(models.Model):
     are hard-purged (with all their projects/sections/records) after 30 days
     unless restored first."""
 
-    ARCHIVE_TTL_DAYS = 30
+    ARCHIVE_TTL_DAYS = ARCHIVE_TTL_DAYS
 
     key = models.SlugField(max_length=64, unique=True)   # e.g. "field-trials"
     label = models.CharField(max_length=120)

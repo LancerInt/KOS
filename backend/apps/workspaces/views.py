@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import viewsets
@@ -22,12 +23,12 @@ from rest_framework.views import APIView
 from apps.accounts.models import Role
 from apps.accounts.permissions import IsAdministrator
 from apps.accounts.rbac import Capability
-from apps.audit.models import AuditAction, AuditLog
+from apps.audit.models import AuditAction
 from apps.audit.services import record
 
 from .access import can_edit, effective_access, is_supervisor
 from .models import (
-    Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
+    ARCHIVE_TTL_DAYS, Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
     WorkspaceRecord, WorkspaceSection,
 )
 from .serializers import (
@@ -88,6 +89,41 @@ def purge_expired_workspaces() -> int:
         ws.delete()
         n += 1
     return n
+
+
+def purge_expired_deleted_items() -> int:
+    """Permanently remove soft-deleted projects/sections/records past the TTL.
+    Purging a project cascades its sections/records; a purged section also takes
+    the records captured under it (linked by project + category name)."""
+    cutoff = timezone.now() - timedelta(days=ARCHIVE_TTL_DAYS)
+    n = 0
+    for sec in WorkspaceSection.objects.filter(deleted_at__isnull=False, deleted_at__lt=cutoff):
+        WorkspaceRecord.objects.filter(project=sec.project, category=sec.name).delete()
+        sec.delete()
+        n += 1
+    n += WorkspaceRecord.objects.filter(deleted_at__isnull=False, deleted_at__lt=cutoff).delete()[0]
+    n += WorkspaceProject.objects.filter(deleted_at__isnull=False, deleted_at__lt=cutoff).delete()[0]
+    return n
+
+
+def _editable_workspace_keys(user):
+    """Workspace keys the user may edit, or None if they may edit everything
+    (a supervisor)."""
+    acc = effective_access(user)
+    if acc is None:
+        return None
+    return {k for k, v in acc.items() if v == "edit"}
+
+
+def _restore_name(model, row) -> str:
+    """A name that won't collide with a live sibling when restoring ``row``."""
+    base = row.name
+    clash = model.objects.filter(workspace=row.workspace, name=base, deleted_at__isnull=True)
+    if model is WorkspaceSection:
+        clash = model.objects.filter(project=row.project, name=base, deleted_at__isnull=True)
+    if clash.exclude(pk=row.pk).exists():
+        return f"{base} (restored)"[:model._meta.get_field("name").max_length]
+    return base
 
 
 def _require_edit(user, workspace):
@@ -354,7 +390,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        qs = WorkspaceProject.objects.select_related("created_by").all()
+        qs = WorkspaceProject.objects.select_related("created_by").filter(deleted_at__isnull=True)
         workspace = self.request.query_params.get("workspace")
         if workspace:
             qs = qs.filter(workspace=workspace)
@@ -371,11 +407,13 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         record(action=AuditAction.UPDATE, obj=project, new_value=_proj_val(project), request=self.request)
 
     def perform_destroy(self, instance):
+        # Soft-delete: the project (with its sections/records) stays recoverable
+        # from the Archive for the TTL, then is purged.
         _require_edit(self.request.user, instance.workspace)
-        val, oid = _proj_val(instance), str(instance.pk)
-        instance.delete()
-        record(action=AuditAction.DELETE, object_type="WorkspaceProject", object_id=oid,
-               old_value=val, request=self.request)
+        instance.deleted_at = timezone.now()
+        instance.deleted_by = self.request.user
+        instance.save(update_fields=["deleted_at", "deleted_by"])
+        record(action=AuditAction.DELETE, obj=instance, old_value=_proj_val(instance), request=self.request)
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
@@ -400,7 +438,11 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
     pagination_class = None  # small volumes; return the full list for counts + drawer
 
     def get_queryset(self):
-        qs = WorkspaceRecord.objects.select_related("created_by").all()
+        qs = (
+            WorkspaceRecord.objects.select_related("created_by")
+            .filter(deleted_at__isnull=True)
+            .exclude(project__deleted_at__isnull=False)   # ride along with a deleted project
+        )
         params = self.request.query_params
         project = params.get("project")
         category = params.get("category")
@@ -418,11 +460,12 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
         record(action=AuditAction.CREATE, obj=rec, new_value=_rec_val(rec), request=self.request)
 
     def perform_destroy(self, instance):
+        # Soft-delete → recoverable from the Archive for the TTL.
         _require_edit(self.request.user, instance.workspace)
-        val, oid = _rec_val(instance), str(instance.pk)
-        instance.delete()
-        record(action=AuditAction.DELETE, object_type="WorkspaceRecord", object_id=oid,
-               old_value=val, request=self.request)
+        instance.deleted_at = timezone.now()
+        instance.deleted_by = self.request.user
+        instance.save(update_fields=["deleted_at", "deleted_by"])
+        record(action=AuditAction.DELETE, obj=instance, old_value=_rec_val(instance), request=self.request)
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
@@ -446,11 +489,21 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        qs = WorkspaceSection.objects.select_related("created_by").all()
+        # Keep hidden/deleted sections in the list (the project page shows them as
+        # restore chips); only drop those under a deleted project.
+        qs = (
+            WorkspaceSection.objects.select_related("created_by")
+            .exclude(project__deleted_at__isnull=False)
+        )
         project = self.request.query_params.get("project")
         if project:
             qs = qs.filter(project=project)
         return _scope_to_viewable(qs, self.request.user)
+
+    def _mark_deleted(self, section):
+        section.deleted_at = timezone.now()
+        section.deleted_by = self.request.user
+        section.save(update_fields=["deleted_at", "deleted_by"])
 
     def perform_create(self, serializer):
         project = serializer.validated_data.get("project")
@@ -459,63 +512,115 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
         section = serializer.save(created_by=self.request.user, workspace=ws)
         # A section created already-hidden is a built-in being removed (deleted).
         if section.hidden:
+            self._mark_deleted(section)
             record(action=AuditAction.DELETE, obj=section, old_value=_sec_val(section), request=self.request)
         else:
             record(action=AuditAction.CREATE, obj=section, new_value=_sec_val(section), request=self.request)
 
     def perform_update(self, serializer):
-        # Hiding a section only removes it from this project's grid; its records
-        # are kept so a delete can be undone / the section restored intact.
+        # Hiding a section removes it from the grid AND files it in the Archive
+        # (deleted_at); its records are kept so a restore brings it back intact.
         _require_edit(self.request.user, serializer.instance.workspace)
         was_hidden = serializer.instance.hidden
         section = serializer.save()
         if section.hidden and not was_hidden:
+            self._mark_deleted(section)
             record(action=AuditAction.DELETE, obj=section, old_value=_sec_val(section), request=self.request)
         elif was_hidden and not section.hidden:
+            section.deleted_at = None
+            section.deleted_by = None
+            section.save(update_fields=["deleted_at", "deleted_by"])
             record(action=AuditAction.UPDATE, obj=section,
                    new_value={**_sec_val(section), "restored": True}, request=self.request)
         else:
             record(action=AuditAction.UPDATE, obj=section, new_value=_sec_val(section), request=self.request)
 
     def perform_destroy(self, instance):
-        # Removing a section also removes any records captured under it.
+        # Soft-delete: hide it and file it in the Archive, keeping its records so
+        # a restore is intact. Purged (with those records) after the TTL.
         _require_edit(self.request.user, instance.workspace)
-        val, oid = _sec_val(instance), str(instance.pk)
-        WorkspaceRecord.objects.filter(project=instance.project, category=instance.name).delete()
-        instance.delete()
-        record(action=AuditAction.DELETE, object_type="WorkspaceSection", object_id=oid,
-               old_value=val, request=self.request)
+        instance.hidden = True
+        self._mark_deleted(instance)
+        record(action=AuditAction.DELETE, obj=instance, old_value=_sec_val(instance), request=self.request)
+
+
+RESTORE_MODELS = {
+    "project": WorkspaceProject,
+    "section": WorkspaceSection,
+    "record": WorkspaceRecord,
+}
 
 
 class WorkspaceDeletedItemsView(APIView):
-    """A record of deleted workspace content — projects, sections and records.
+    """The Archive of deleted workspace content — projects, sections and records.
 
-    Everyone sees **their own** deletions (a personal archive of what they
-    removed). Supervisors (IT Team / Management / admin) see **everything**
-    deleted, with **who** deleted it and **when** — the deletion audit."""
+    Everything deleted is recoverable here for 30 days, then purged. A member
+    sees (and can restore) deletions in the workspaces they can edit, plus
+    anything they deleted themselves; supervisors (IT Team / Management / admin)
+    see everything, with **who** deleted it and **when**. POST ``{kind, id}``
+    restores an item; the same TTL/purge model as archived workspaces."""
 
     permission_classes = [IsAuthenticated]
-    WS_TYPES = ("WorkspaceProject", "WorkspaceSection", "WorkspaceRecord")
+
+    def _visible(self, user):
+        """Soft-deleted rows the user may see. Sections/records whose project is
+        itself deleted are left out — they restore together with the project."""
+        purge_expired_deleted_items()            # self-maintain whenever viewed
+        projects = WorkspaceProject.objects.filter(deleted_at__isnull=False).select_related("deleted_by")
+        sections = (WorkspaceSection.objects.filter(deleted_at__isnull=False)
+                    .exclude(project__deleted_at__isnull=False).select_related("deleted_by", "project"))
+        records = (WorkspaceRecord.objects.filter(deleted_at__isnull=False)
+                   .exclude(project__deleted_at__isnull=False).select_related("deleted_by", "project"))
+        keys = _editable_workspace_keys(user)
+        if keys is not None:                     # a member: their editable workspaces + their own deletions
+            scope = lambda qs: qs.filter(Q(workspace__in=keys) | Q(deleted_by=user))
+            projects, sections, records = scope(projects), scope(sections), scope(records)
+        return projects, sections, records
+
+    def _row(self, kind, row, name, context):
+        left = ARCHIVE_TTL_DAYS - (timezone.now() - row.deleted_at).days
+        actor = (row.deleted_by.get_full_name() or row.deleted_by.username) if row.deleted_by_id else "System"
+        return {
+            "id": row.id, "kind": kind, "name": name or "(untitled)",
+            "workspace": row.workspace, "context": context, "actor": actor,
+            "at": row.deleted_at, "days_left": max(0, left),
+        }
 
     def get(self, request):
-        supervisor = is_supervisor(request.user)
-        qs = (
-            AuditLog.objects.select_related("actor")
-            .filter(action=AuditAction.DELETE, object_type__in=self.WS_TYPES)
-            .order_by("-created_at")
-        )
-        if not supervisor:                       # a regular user: only what they deleted
-            qs = qs.filter(actor=request.user)
-        items = []
-        for log in qs[:200]:
-            ov = log.old_value or {}
-            items.append({
-                "id": log.id,
-                "kind": ov.get("kind") or log.object_type.replace("Workspace", "").lower(),
-                "name": ov.get("name") or "(untitled)",
-                "workspace": ov.get("workspace") or "",
-                "context": ov.get("context") or "",
-                "actor": (log.actor.get_full_name() or log.actor.username) if log.actor else "System",
-                "at": log.created_at,
-            })
-        return Response({"is_supervisor": supervisor, "items": items})
+        projects, sections, records = self._visible(request.user)
+        items = [self._row("project", p, p.name, "") for p in projects]
+        items += [self._row("section", s, s.name, s.project.name if s.project_id else "") for s in sections]
+        for rec in records:
+            headline = next((str(v) for v in rec.data.values() if v), "") if isinstance(rec.data, dict) else ""
+            context = f"{rec.project.name} › {rec.category}" if rec.project_id else rec.category
+            items.append(self._row("record", rec, headline or rec.category, context))
+        items.sort(key=lambda x: x["at"], reverse=True)
+        return Response({"is_supervisor": is_supervisor(request.user), "items": items})
+
+    def post(self, request):
+        """Restore a soft-deleted item back into its workspace: ``{kind, id}``."""
+        model = RESTORE_MODELS.get(request.data.get("kind"))
+        oid = request.data.get("id")
+        if not model or not oid:
+            raise ValidationError("Provide a valid kind and id.")
+        row = model.objects.filter(pk=oid, deleted_at__isnull=False).first()
+        if not row:
+            raise NotFound("That item isn't in the Archive.")
+        if not (is_supervisor(request.user) or can_edit(request.user, row.workspace)):
+            raise PermissionDenied("You don't have edit access to restore this item.")
+        fields = ["deleted_at", "deleted_by"]
+        row.deleted_at = None
+        row.deleted_by = None
+        if model in (WorkspaceProject, WorkspaceSection):
+            restored_name = _restore_name(model, row)
+            if restored_name != row.name:
+                row.name = restored_name
+                fields.append("name")
+        if model is WorkspaceSection:
+            row.hidden = False
+            fields.append("hidden")
+        row.save(update_fields=fields)
+        record(action=AuditAction.UPDATE, obj=row,
+               new_value={"workspace": row.workspace, "name": getattr(row, "name", ""),
+                          "kind": request.data.get("kind"), "restored": True}, request=request)
+        return Response({"restored": True, "kind": request.data.get("kind"), "id": row.id})
