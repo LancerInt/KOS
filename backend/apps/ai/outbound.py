@@ -37,7 +37,7 @@ from email.utils import formataddr, parseaddr
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.mail import EmailMultiAlternatives, get_connection
+from django.core.mail import EmailMultiAlternatives
 from django.core.validators import validate_email
 from django.utils import timezone
 from django.utils.html import escape
@@ -282,18 +282,33 @@ def send(email: OutboundEmail, *, connection=None) -> bool:
     if email.status == EmailStatus.SENT:
         return True
 
+    # Send through the sender's own connected account (Integrations → Email).
+    # Without one, there's nothing to send from — fail with a clear reason
+    # rather than silently dropping the message into the void.
+    from_email = settings.DEFAULT_FROM_EMAIL
+    if connection is None:
+        from apps.notifications.services import connection_for
+
+        connection, from_email = connection_for(email.sender)
+        if connection is None:
+            email.status = EmailStatus.FAILED
+            email.error = "No email account connected. Add yours under Integrations → Email to send."
+            email.attempts += 1
+            email.save(update_fields=["status", "error", "attempts", "updated_at"])
+            return False
+
     link = settings.FRONTEND_BASE_URL
     text = f"{email.body}{_footer(link)}"
 
     message = EmailMultiAlternatives(
         subject=email.subject,
         body=text,
-        from_email=settings.DEFAULT_FROM_EMAIL,
+        from_email=from_email,
         to=email.to,
         cc=email.cc,
         bcc=email.bcc,
         reply_to=[email.reply_to] if email.reply_to else None,
-        connection=connection or get_connection(),
+        connection=connection,
     )
     message.attach_alternative(_html_body(email.body, link), "text/html")
 

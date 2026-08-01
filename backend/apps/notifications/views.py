@@ -13,7 +13,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import IsAdministrator
 from apps.audit.models import AuditAction
 from apps.audit.services import record
 
@@ -109,32 +108,32 @@ class NotificationPreferenceView(APIView):
 
 
 class EmailAccountView(APIView):
-    """Configure the KOS outbound email account (Integrations → Email). Admins
-    only; the stored password is never returned."""
+    """Configure *your own* outbound email account (Integrations → Email). Every
+    user has one; the stored password is never returned."""
 
-    permission_classes = [IsAuthenticated, IsAdministrator]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request: Request) -> Response:
-        return Response(EmailAccountSerializer(EmailAccount.load()).data)
+        return Response(EmailAccountSerializer(EmailAccount.for_user(request.user)).data)
 
     def put(self, request: Request) -> Response:
-        account = EmailAccount.load()
+        account = EmailAccount.for_user(request.user)
         serializer = EmailAccountSerializer(account, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save(updated_by=request.user)
-        record(action=AuditAction.UPDATE, object_type="EmailAccount", object_id="1",
+        record(action=AuditAction.UPDATE, object_type="EmailAccount", object_id=str(account.pk),
                new_value={"username": account.username, "is_enabled": account.is_enabled}, request=request)
         return Response(EmailAccountSerializer(account).data)
 
 
 class EmailAccountTestView(APIView):
-    """Send a test email using the posted form values (falling back to the saved
-    account), so an admin can verify before saving/enabling."""
+    """Send a test email using the posted form values (falling back to your saved
+    account), so you can verify before saving/enabling."""
 
-    permission_classes = [IsAuthenticated, IsAdministrator]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request: Request) -> Response:
-        account = EmailAccount.load()
+        account = EmailAccount.for_user(request.user)
         data = request.data
         to = (data.get("to") or request.user.email or "").strip()
         if not to:

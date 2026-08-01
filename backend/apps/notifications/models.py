@@ -87,11 +87,17 @@ class NotificationPreference(models.Model):
 
 
 class EmailAccount(models.Model):
-    """The KOS outbound email account, managed in-app (Integrations) rather than
-    only in ``.env``. When enabled, notification and AI emails are sent through
-    it (from KOS to each user); otherwise the ``.env``/settings backend is used.
-    A singleton — always row pk=1."""
+    """A user's own outbound email account, managed in-app (Integrations → Email).
 
+    Per-user: each person connects their own address + app password, and KOS uses
+    that account to send *them* their reminders and to send mail they compose.
+    There is no shared organisation account — someone who hasn't connected one
+    simply gets in-app notifications only (no email)."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.CASCADE, related_name="email_account",
+    )
     host = models.CharField(max_length=200, default="smtp.gmail.com")
     port = models.PositiveIntegerField(default=587)
     use_tls = models.BooleanField(default=True)
@@ -109,7 +115,14 @@ class EmailAccount(models.Model):
         return f"EmailAccount({self.username or 'unset'})"
 
     @classmethod
+    def for_user(cls, user) -> "EmailAccount":
+        """The account belonging to ``user``, created empty on first access."""
+        obj, _ = cls.objects.get_or_create(user=user)
+        return obj
+
+    @classmethod
     def load(cls) -> "EmailAccount":
+        """Legacy singleton row (pk=1, no user) — retained only for migrations."""
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
 

@@ -27,9 +27,18 @@ from .serializers import (
 )
 
 
+# ERP integration is visible to the oversight teams, not just system admins.
+ERP_ACCESS_ROLES = ("IT Team", "Management")
+
+
 def _require_admin(user) -> None:
-    if not (user.is_superuser or user.has_capability(Capability.ADMINISTER)):
-        raise PermissionDenied("ERP integration settings are restricted to administrators.")
+    allowed = (
+        user.is_superuser
+        or user.has_capability(Capability.ADMINISTER)
+        or user.roles.filter(name__in=ERP_ACCESS_ROLES).exists()
+    )
+    if not allowed:
+        raise PermissionDenied("ERP integration is restricted to the IT and Management teams.")
 
 
 class ErpConnectionViewSet(viewsets.ModelViewSet):

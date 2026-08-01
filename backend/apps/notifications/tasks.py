@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from .models import Notification, NotificationEvent
-from .services import get_prefs, notify
+from .services import notify
 
 User = get_user_model()
 
@@ -67,28 +67,6 @@ def scan_overdue_acknowledgements() -> int:
 
 
 @shared_task
-def scan_daily_digest() -> int:
-    """AC-18: a daily digest of each user's open work (on by default)."""
-    from apps.tasks.models import Task
-    from apps.tasks.statuses import is_done
-
-    today = timezone.now().date()
-    sent = 0
-    for user in User.objects.filter(is_active=True):
-        if not get_prefs(user).daily_digest:
-            continue
-        mine = list(Task.objects.filter(owners=user).exclude(status="archived").distinct())
-        overdue = [t for t in mine if t.is_overdue]
-        due_today = [t for t in mine if t.due_date == today and not is_done(t.status)]
-        if not overdue and not due_today:
-            continue
-        notify(user, NotificationEvent.DIGEST, "Your daily KOS digest",
-               body=f"Overdue: {len(overdue)} · Due today: {len(due_today)}")
-        sent += 1
-    return sent
-
-
-@shared_task
 def run_all_scans() -> dict:
     # Later-module scans — imported lazily to avoid an app-load ordering dependency.
     from apps.automation.tasks import scan_automation
@@ -100,7 +78,6 @@ def run_all_scans() -> dict:
     return {
         "due_soon": scan_due_soon(),
         "overdue_ack": scan_overdue_acknowledgements(),
-        "digest": scan_daily_digest(),
         "doc_expiry": scan_document_expiry(),
         "sop_reviews": scan_sop_reviews(),
         "automation": scan_automation(),

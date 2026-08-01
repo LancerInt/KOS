@@ -220,7 +220,6 @@ export default function NotificationsPage() {
             <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 1 }}>Preferences</Typography>
             <Stack direction="row" spacing={3} flexWrap="wrap">
               <PrefRow label="Email notifications" checked={prefs.email_enabled} onChange={(v) => savePref({ email_enabled: v })} />
-              <PrefRow label="Daily digest" checked={prefs.daily_digest} onChange={(v) => savePref({ daily_digest: v })} />
             </Stack>
           </Paper>
         )}

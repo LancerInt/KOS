@@ -20,10 +20,13 @@ def _url_for(task, project) -> str:
     return "/"
 
 
-def email_connection():
-    """(connection, from_email) for outbound mail. Uses the in-app EmailAccount
-    when configured (Integrations); otherwise the settings/.env backend."""
-    account = EmailAccount.load()
+def connection_for(user):
+    """(connection, from_email) built from ``user``'s own connected email account,
+    or ``(None, default)`` if they haven't set one up. Per-user: everyone sends
+    through their own address — there is no shared organisation account."""
+    if user is None:
+        return None, settings.DEFAULT_FROM_EMAIL
+    account = EmailAccount.for_user(user)
     if account.is_ready:
         conn = get_connection(
             backend="django.core.mail.backends.smtp.EmailBackend",
@@ -35,9 +38,16 @@ def email_connection():
 
 
 def _send_email(recipient, title, body, url) -> None:
+    """Deliver a notification email to ``recipient`` through their own account.
+
+    KOS uses the recipient's connected email to send them their reminders. If
+    they haven't connected one, they get the in-app notification only — nothing
+    is sent, so no one is emailed against their will."""
     if not getattr(recipient, "email", ""):
         return
-    connection, from_email = email_connection()
+    connection, from_email = connection_for(recipient)
+    if connection is None:
+        return  # no connected account → in-app only
     link = f"{settings.FRONTEND_BASE_URL}{url}" if url else settings.FRONTEND_BASE_URL
     send_mail(
         subject=f"[KOS] {title}",

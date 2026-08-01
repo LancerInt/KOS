@@ -1,11 +1,12 @@
 """Duration reminders for workspace items.
 
-**Projects** get a staged reminder schedule — a heads-up 7 days and 1 day
-before the end, on the due date, and once when overdue (that one requires an
-acknowledgement, so it escalates to Management if ignored). Each stage fires
-once, guarded by ``project.reminders_sent``; offsets that fall before the start
-date are skipped (short projects just get fewer stages). If several stages are
-already past on the first scan, only the latest is sent (no retroactive burst).
+**Projects** are only chased once they run late — no pre-deadline nagging. A
+project counts as overdue **2 days after its end date**; that fires one reminder
+to the project owner. If it's still not complete a **week** later, a single
+follow-up goes out — and that's the end of it. Each stage fires once (guarded by
+``project.reminders_sent``); if both are already past on the first scan, only
+the latest is sent (no retroactive burst). The owner (creator) is the only
+recipient — no fan-out to the rest of the workspace.
 
 **Records** keep the simple single "duration complete" notice (Entomology
 step entries), guarded by ``duration_notified_at``.
@@ -25,7 +26,7 @@ from apps.notifications.models import NotificationEvent
 from apps.notifications.services import notify
 
 from .access import effective_access
-from .models import WorkspaceMember, WorkspaceProject, WorkspaceRecord
+from .models import WorkspaceProject, WorkspaceRecord
 
 User = get_user_model()
 
@@ -37,44 +38,30 @@ def _fmt(dt) -> str:
 # ---- Projects: staged reminders --------------------------------------------
 
 def _project_stages(project):
-    """(key, target_datetime, event, requires_ack) for stages on/after the start."""
+    """(key, target_datetime) for the two overdue reminders — nothing before the
+    deadline. First at end + 2 days, a single follow-up a week after that."""
     end = project.end_at
-    start = project.start_at
-    stages = [
-        ("due-7", end - timedelta(days=7), NotificationEvent.DUE_SOON, False),
-        ("due-1", end - timedelta(days=1), NotificationEvent.DUE_SOON, False),
-        ("due", end, NotificationEvent.DURATION_COMPLETE, False),
-        ("overdue", end + timedelta(days=1), NotificationEvent.OVERDUE_ACK, True),
+    return [
+        ("overdue", end + timedelta(days=2)),
+        ("overdue-week", end + timedelta(days=9)),
     ]
-    return [s for s in stages if s[1] >= start]
 
 
 def _stage_message(project, key):
     end, name = project.end_at, project.name
-    if key == "due-7":
-        return (f"1 week to go — {name}",
-                f"Your project “{name}” is due on {_fmt(end)} — about a week left. "
-                f"Wrap it up, or update the schedule if you need more time.")
-    if key == "due-1":
-        return (f"Due tomorrow — {name}",
-                f"Your project “{name}” is due tomorrow ({_fmt(end)}). Mark it complete when it's done.")
-    if key == "due":
-        return (f"Due now — {name}",
-                f"Your project “{name}” reaches its end time ({_fmt(end)}). Mark it complete.")
-    return (f"Overdue — {name}",
-            f"Your project “{name}” passed its end time ({_fmt(end)}) and isn't complete yet. "
-            f"Acknowledge with a new expected date or a reason.")
+    if key == "overdue":
+        return (f"Overdue — {name}",
+                f"Your project “{name}” passed its end time ({_fmt(end)}) two days ago and "
+                f"still isn't complete. Please finish it, or update the schedule if the date has moved.")
+    return (f"Still overdue — {name}",
+            f"Your project “{name}” has now been overdue for a week (was due {_fmt(end)}) and "
+            f"still isn't complete. This is the final reminder — please close it out or reschedule.")
 
 
-def _project_recipients(project):
-    """Everyone who should hear about a project's schedule: the members of its
-    workspace (the people responsible for it) plus its creator. Supervisors
-    (IT / Management / admin) see it in the UI and aren't pinged unless they
-    created it — otherwise every overdue project would spam them."""
-    ids = set(WorkspaceMember.objects.filter(workspace=project.workspace).values_list("user_id", flat=True))
-    if project.created_by_id:
-        ids.add(project.created_by_id)
-    return list(User.objects.filter(id__in=ids))
+def _project_owner(project):
+    """Only the project owner (its creator) is chased — no fan-out to the rest of
+    the workspace. Supervisors still see everything in the UI without being pinged."""
+    return [project.created_by] if project.created_by_id else []
 
 
 def _sync_project(project, now) -> int:
@@ -84,13 +71,13 @@ def _sync_project(project, now) -> int:
     if not reached:
         return 0
     sent = set(project.reminders_sent or [])
-    key, _target, event, ack = reached[-1]     # latest reached stage only
+    key, _target = reached[-1]     # latest reached stage only
     fired = 0
     if key not in sent:
         title, body = _stage_message(project, key)
-        for user in _project_recipients(project):
-            notify(user, event=event, title=title, body=body,
-                   url=f"/workspaces/{project.workspace}/projects/{project.id}", requires_ack=ack)
+        for user in _project_owner(project):
+            notify(user, event=NotificationEvent.OVERDUE, title=title, body=body,
+                   url=f"/workspaces/{project.workspace}/projects/{project.id}")
             fired += 1
     new_sent = sent | {s[0] for s in reached}   # mark earlier stages done too
     if new_sent != sent:

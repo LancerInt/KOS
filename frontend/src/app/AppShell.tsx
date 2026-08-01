@@ -53,7 +53,8 @@ const NAV_TOP: NavGroup = {
 const NAV_PLATFORM: NavGroup = {
   title: "Platform",
   items: [
-    { to: "/integrations", label: "Integrations", icon: <HubRoundedIcon fontSize="small" />, capability: "administer" },
+    // Everyone can connect their own email here; ERP tabs inside are IT/Management-only.
+    { to: "/integrations", label: "Integrations", icon: <HubRoundedIcon fontSize="small" /> },
     { to: "/admin/ai", label: "AI Automation", icon: <AutoAwesomeRoundedIcon fontSize="small" />, capability: "administer" },
     { to: "/admin/roles", label: "Roles & Access", icon: <AdminPanelSettingsRoundedIcon fontSize="small" />, capability: "administer" },
     // Archive is for everyone — your own deleted items; IT/Management see all deletions.

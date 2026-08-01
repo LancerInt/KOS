@@ -19,58 +19,62 @@ import {
 import {
   getEmailAccount, updateEmailAccount, testEmailAccount, type EmailAccount, type EmailAccountInput,
 } from "../features/notifications/notificationsApi";
+import { useAppSelector } from "../hooks";
 import { tokens, monoFont } from "../theme";
 
 const DSTATUS: Record<string, string> = {
   delivered: "#2FA36B", mocked: tokens.kriya, pending: "#E0A83D", failed: tokens.attn,
 };
 
-export default function IntegrationsPage() {
-  const [tab, setTab] = useState<"connections" | "deliveries" | "inbound" | "email">("connections");
-  const [forbidden, setForbidden] = useState(false);
-  const onForbidden = () => setForbidden(true);
+// ERP tabs are for the oversight teams; Email is for everyone.
+const ERP_TABS = ["connections", "deliveries", "inbound"] as const;
+type Tab = (typeof ERP_TABS)[number] | "email";
 
-  if (forbidden) {
-    return (
-      <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
-        <Typography variant="h1" sx={{ fontSize: 27, mb: 1 }}>Integrations</Typography>
-        <Typography sx={{ color: tokens.attn, fontSize: 14 }}>ERP integration settings are restricted to administrators.</Typography>
-      </Box>
-    );
-  }
+export default function IntegrationsPage() {
+  const roles = useAppSelector((s) => s.auth.user?.role_names ?? []);
+  const caps = useAppSelector((s) => s.auth.user?.effective_capabilities ?? {});
+  const privileged = useAppSelector((s) => s.auth.user?.is_privileged ?? false);
+  const canErp = privileged || "administer" in caps || roles.includes("IT Team") || roles.includes("Management");
+
+  const tabs: Tab[] = canErp ? [...ERP_TABS, "email"] : ["email"];
+  const [tab, setTab] = useState<Tab>(canErp ? "connections" : "email");
 
   return (
     <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
-      <Typography variant="h1" sx={{ fontSize: 27, mb: 0.5 }}>ERP integration</Typography>
+      <Typography variant="h1" sx={{ fontSize: 27, mb: 0.5 }}>Integrations</Typography>
       <Typography sx={{ fontSize: 13.5, color: tokens.text3, mb: 2 }}>
-        Publish events to the ERP and accept updates back — signed, logged and retried.
+        {canErp
+          ? "Connect your email, and publish events to the ERP and accept updates back — signed, logged and retried."
+          : "Connect the email account KOS uses to send you reminders and the mail you compose."}
       </Typography>
 
-      <Stack direction="row" spacing={0.5} sx={{ borderBottom: `1px solid ${tokens.line}`, mb: 2.5 }}>
-        {(["connections", "deliveries", "inbound", "email"] as const).map((t) => (
-          <Box key={t} onClick={() => setTab(t)}
-            sx={{ cursor: "pointer", px: 1.5, py: 1.1, fontSize: 13.5, fontWeight: 500, textTransform: "capitalize",
-              color: tab === t ? tokens.kriyaInk : tokens.text2,
-              borderBottom: `2px solid ${tab === t ? tokens.kriya : "transparent"}`, mb: "-1px" }}>
-            {t}
-          </Box>
-        ))}
-      </Stack>
+      {tabs.length > 1 && (
+        <Stack direction="row" spacing={0.5} sx={{ borderBottom: `1px solid ${tokens.line}`, mb: 2.5 }}>
+          {tabs.map((t) => (
+            <Box key={t} onClick={() => setTab(t)}
+              sx={{ cursor: "pointer", px: 1.5, py: 1.1, fontSize: 13.5, fontWeight: 500, textTransform: "capitalize",
+                color: tab === t ? tokens.kriyaInk : tokens.text2,
+                borderBottom: `2px solid ${tab === t ? tokens.kriya : "transparent"}`, mb: "-1px" }}>
+              {t}
+            </Box>
+          ))}
+        </Stack>
+      )}
 
-      {tab === "connections" && <ConnectionsTab onForbidden={onForbidden} />}
-      {tab === "deliveries" && <DeliveriesTab onForbidden={onForbidden} />}
-      {tab === "inbound" && <InboundTab onForbidden={onForbidden} />}
-      {tab === "email" && <EmailTab onForbidden={onForbidden} />}
+      {tab === "connections" && <ConnectionsTab />}
+      {tab === "deliveries" && <DeliveriesTab />}
+      {tab === "inbound" && <InboundTab />}
+      {tab === "email" && <EmailTab />}
     </Box>
   );
 }
 
-function ConnectionsTab({ onForbidden }: { onForbidden: () => void }) {
+function ConnectionsTab() {
   const [connections, setConnections] = useState<ErpConnection[]>([]);
   const [events, setEvents] = useState<EventOption[]>([]);
   const [editing, setEditing] = useState<ErpConnection | "new" | null>(null);
 
-  const load = () => listConnections().then(setConnections).catch((e) => { if (e?.response?.status === 403) onForbidden(); });
+  const load = () => listConnections().then(setConnections).catch(() => {});
   useEffect(() => { load(); listEvents().then(setEvents).catch(() => {}); /* eslint-disable-next-line */ }, []);
 
   const toggle = (c: ErpConnection) => updateConnection(c.id, { is_active: !c.is_active }).then(load);
@@ -206,9 +210,9 @@ function ConnectionDialog({ conn, events, onClose, onSaved }: {
   );
 }
 
-function DeliveriesTab({ onForbidden }: { onForbidden: () => void }) {
+function DeliveriesTab() {
   const [rows, setRows] = useState<WebhookDelivery[]>([]);
-  const load = () => listDeliveries().then(setRows).catch((e) => { if (e?.response?.status === 403) onForbidden(); });
+  const load = () => listDeliveries().then(setRows).catch(() => {});
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
   return (
@@ -247,10 +251,10 @@ function DeliveryRow({ d, first, onRetried }: { d: WebhookDelivery; first: boole
   );
 }
 
-function InboundTab({ onForbidden }: { onForbidden: () => void }) {
+function InboundTab() {
   const [rows, setRows] = useState<InboundEvent[]>([]);
   useEffect(() => {
-    listInbound().then(setRows).catch((e) => { if (e?.response?.status === 403) onForbidden(); });
+    listInbound().then(setRows).catch(() => {});
     // eslint-disable-next-line
   }, []);
 
@@ -281,7 +285,7 @@ function FieldLabel({ children }: { children: ReactNode }) {
   return <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 0.5 }}>{children}</Typography>;
 }
 
-function EmailTab({ onForbidden }: { onForbidden: () => void }) {
+function EmailTab() {
   const [acct, setAcct] = useState<EmailAccount | null>(null);
   const [form, setForm] = useState<EmailAccountInput>({});
   const [password, setPassword] = useState("");
@@ -293,7 +297,7 @@ function EmailTab({ onForbidden }: { onForbidden: () => void }) {
   useEffect(() => {
     getEmailAccount()
       .then((a) => { setAcct(a); setForm({ host: a.host, port: a.port, use_tls: a.use_tls, username: a.username, from_email: a.from_email, is_enabled: a.is_enabled }); })
-      .catch((e) => { if (e?.response?.status === 403) onForbidden(); });
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -328,9 +332,10 @@ function EmailTab({ onForbidden }: { onForbidden: () => void }) {
   return (
     <Box sx={{ maxWidth: 620 }}>
       <Typography sx={{ fontSize: 13.5, color: tokens.text2, mb: 2 }}>
-        The account KOS sends notification &amp; AI emails <b>from</b>. For Gmail, use your address and a
-        16‑character <b>App Password</b> (Google Account → Security → App passwords). Stored encrypted;
-        leave blank to keep the current one. If disabled, KOS falls back to the server default.
+        Your own email account. KOS uses it to send <b>you</b> overdue reminders and to send the mail you
+        compose. For Gmail, use your address and a 16‑character <b>App Password</b> (Google Account →
+        Security → App passwords). Stored encrypted; leave blank to keep the current one. Until you connect
+        one, you'll get in‑app notifications only — no email.
       </Typography>
 
       <Paper sx={{ p: 2.5, borderRadius: "6px" }}>
