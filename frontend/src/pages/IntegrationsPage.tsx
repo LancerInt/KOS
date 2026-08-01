@@ -41,7 +41,7 @@ export default function IntegrationsPage() {
 
   return (
     <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
-      <Typography variant="h1" sx={{ fontSize: 27, mb: 0.5 }}>Integrations</Typography>
+      <Typography variant="h1" sx={{ fontSize: 27, mb: 0.5 }}>{canErp ? "Integrations" : "Email Integration"}</Typography>
       <Typography sx={{ fontSize: 13.5, color: tokens.text3, mb: 2 }}>
         {canErp
           ? "Connect your email, and publish events to the ERP and accept updates back — signed, logged and retried."
