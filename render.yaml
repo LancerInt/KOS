@@ -150,9 +150,10 @@ services:
       - key: NODE_VERSION
         value: "20"
       # Baked into the bundle at build time, so changing it needs a rebuild.
-      # Correct this if Render suffixed the API's name.
+      # Render suffixed the API service (kos-backend-59gg), so this points at the
+      # real host — not the bare kos-backend.onrender.com, which doesn't exist.
       - key: VITE_API_BASE_URL
-        value: https://kos-backend.onrender.com/api
+        value: https://kos-backend-59gg.onrender.com/api
     routes:
       # SPA fallback — every unknown path serves the app shell so client-side
       # routes survive a hard refresh.
