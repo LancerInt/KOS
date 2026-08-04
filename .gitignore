@@ -8,6 +8,8 @@ venv/
 /backend/.env
 /backend/media/
 /backend/staticfiles/
+# Local DB export used to seed Render (contains user rows + password hashes)
+/backend/transfer.json
 .pytest_cache/
 
 # --- Node / Vite ---
