@@ -31,10 +31,9 @@ import type { DurationStatus } from "../features/workspaces/projectsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { useAppSelector } from "../hooks";
-import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
+import { AiActionBar } from "../features/ai/AiActionButton";
 import { useAiPageContext } from "../features/ai/AiContext";
 import DailyStandupWidget from "../features/ai/DailyStandupWidget";
-import { generateEmail } from "../features/ai/aiApi";
 import { tokens, monoFont, categoryColors } from "../theme";
 
 type Filter = "all" | DurationStatus;
@@ -227,19 +226,6 @@ export default function DashboardPage() {
       <Box sx={{ mb: 2 }}>
         <AiActionBar>
           <DailyStandupWidget />
-          <AiActionButton
-            label="Generate email" title="Draft an email"
-            fields={[
-              { name: "purpose", label: "What should the email say?", placeholder: "e.g. update my manager on where a project stands", multiline: true, required: true },
-              { name: "recipient", label: "Recipient (optional)", placeholder: "e.g. Priya, Operations Manager" },
-              { name: "to", label: "Send to (optional)", placeholder: "e.g. priya@example.com" },
-            ]}
-            run={(v) => generateEmail({ purpose: v.purpose, recipient: v.recipient })}
-            // Review the draft, then send it — with Cc and Bcc — without leaving
-            // the dialog. The "to" field above only pre-fills the compose form;
-            // nothing is sent until the user presses Send there.
-            email={{}}
-          />
         </AiActionBar>
       </Box>
 
