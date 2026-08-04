@@ -11,11 +11,6 @@ import {
   Paper,
   Stack,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
@@ -23,25 +18,22 @@ import {
 import {
   aiErrorMessage,
   getSettings,
-  getUsageStats,
-  listAutomationLogs,
-  listRequestLogs,
   updateSettings,
-  type AiAutomationLog,
-  type AiRequestLog,
   type AiSettings,
-  type AiUsageStats,
 } from "../features/ai/aiApi";
 import { monoFont, tokens } from "../theme";
 
 /**
- * AI configuration, usage and the automation audit trail.
+ * AI configuration and the automation schedule.
  *
  * Administrators only — the route is capability-gated in the sidebar and the
  * API enforces it again server-side.
  *
  * The API key is deliberately absent from this screen: it lives in the server
  * environment and the API only ever reports whether one is present.
+ *
+ * Request logs and usage statistics are still recorded server-side; they are
+ * read through Django admin and the API rather than shown here.
  */
 
 const PROVIDERS = [
@@ -51,7 +43,7 @@ const PROVIDERS = [
   { value: "mock", label: "Offline (no external calls)" },
 ];
 
-const TABS = ["Configuration", "Automation", "Automation log", "Usage"];
+const TABS = ["Configuration", "Automation"];
 
 /**
  * The escalation ladder rendered as the sequence it is. Depth of a single hue
@@ -80,22 +72,8 @@ function SectionCard({ title, description, children }: { title: string; descript
   );
 }
 
-function StatTile({ label, value }: { label: string; value: string | number }) {
-  return (
-    <Paper sx={{ p: 1.75, borderRadius: "6px", flex: 1, minWidth: 130 }}>
-      <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 24, fontWeight: 700, lineHeight: 1.2 }}>
-        {value}
-      </Typography>
-      <Typography sx={{ fontSize: 11.5, color: tokens.text2 }}>{label}</Typography>
-    </Paper>
-  );
-}
-
 export default function AiSettingsPage() {
   const [settings, setSettings] = useState<AiSettings | null>(null);
-  const [stats, setStats] = useState<AiUsageStats | null>(null);
-  const [automationLogs, setAutomationLogs] = useState<AiAutomationLog[]>([]);
-  const [requestLogs, setRequestLogs] = useState<AiRequestLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -103,13 +81,8 @@ export default function AiSettingsPage() {
   const [tab, setTab] = useState(0);
 
   useEffect(() => {
-    Promise.all([getSettings(), getUsageStats(), listAutomationLogs(), listRequestLogs()])
-      .then(([s, u, a, r]) => {
-        setSettings(s);
-        setStats(u);
-        setAutomationLogs(a);
-        setRequestLogs(r);
-      })
+    getSettings()
+      .then(setSettings)
       .catch((err) => setError(aiErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
@@ -163,7 +136,7 @@ export default function AiSettingsPage() {
         </Button>
       </Stack>
       <Typography sx={{ fontSize: 13, color: tokens.text2, mb: 2 }}>
-        Provider, automation schedule and the audit trail of every automated decision.
+        Provider and automation schedule.
       </Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -399,154 +372,6 @@ export default function AiSettingsPage() {
           </SectionCard>
         </Stack>
       )}
-
-      {/* --- automation log --- */}
-      {tab === 2 && (
-        <Paper sx={{ borderRadius: "6px", overflow: "hidden" }}>
-          {automationLogs.length === 0 ? (
-            <Box sx={{ p: 3 }}>
-              <Typography sx={{ fontSize: 13, color: tokens.text2 }}>
-                No automations have run yet. They begin once Celery Beat is running and there is work to act on.
-              </Typography>
-            </Box>
-          ) : (
-            <Box sx={{ overflowX: "auto" }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>When</TableCell>
-                    <TableCell>Event</TableCell>
-                    <TableCell>Subject</TableCell>
-                    <TableCell>Executed</TableCell>
-                    <TableCell>Result</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {automationLogs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell sx={{ fontFamily: monoFont, fontSize: 11.5, whiteSpace: "nowrap" }}>
-                        {new Date(log.created_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell sx={{ fontSize: 12.5 }}>{log.event.replace(/_/g, " ")}</TableCell>
-                      <TableCell sx={{ fontSize: 12.5, maxWidth: 240 }}>
-                        {log.task_title || log.project_name || "—"}
-                      </TableCell>
-                      <TableCell sx={{ fontSize: 11.5, fontFamily: monoFont }}>
-                        {log.executed_actions.join(", ") || "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          label={log.ok ? "ok" : "failed"}
-                          sx={{
-                            height: 20, fontSize: 11,
-                            bgcolor: "#F1F3F5",
-                            color: log.ok ? tokens.text2 : tokens.ink,
-                            fontWeight: log.ok ? 400 : 700,
-                          }}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Box>
-          )}
-        </Paper>
-      )}
-
-      {/* --- usage --- */}
-      {tab === 3 && (
-        <Stack spacing={2}>
-          {stats && (
-            <>
-              <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
-                <StatTile label={`Calls (${stats.window_days}d)`} value={stats.calls} />
-                <StatTile label="Failures" value={stats.failures} />
-                <StatTile label="Prompt tokens" value={stats.prompt_tokens.toLocaleString()} />
-                <StatTile label="Completion tokens" value={stats.completion_tokens.toLocaleString()} />
-                <StatTile label="Avg latency" value={`${stats.avg_latency_ms} ms`} />
-              </Stack>
-
-              {stats.by_action.length > 0 && (
-                <SectionCard title="Most used actions">
-                  <Stack spacing={0.5}>
-                    {stats.by_action.map((row) => (
-                      <Stack key={row.action} direction="row" justifyContent="space-between">
-                        <Typography sx={{ fontSize: 13 }}>{row.action.replace(/_/g, " ")}</Typography>
-                        <Typography sx={{ fontSize: 13, fontFamily: monoFont, color: tokens.text2 }}>
-                          {row.count}
-                        </Typography>
-                      </Stack>
-                    ))}
-                  </Stack>
-                </SectionCard>
-              )}
-            </>
-          )}
-
-          <Paper sx={{ borderRadius: "6px", overflow: "hidden" }}>
-            <Box sx={{ px: 2.5, pt: 2 }}>
-              <Typography sx={{ fontFamily: '"Manrope Variable"', fontWeight: 600, fontSize: 15 }}>
-                Recent requests
-              </Typography>
-            </Box>
-            <Box sx={{ overflowX: "auto", mt: 1 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>When</TableCell>
-                    <TableCell>Action</TableCell>
-                    <TableCell>Provider</TableCell>
-                    <TableCell>User</TableCell>
-                    <TableCell align="right">Tokens</TableCell>
-                    <TableCell align="right">Latency</TableCell>
-                    <TableCell>Result</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {requestLogs.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} sx={{ fontSize: 13, color: tokens.text2 }}>
-                        No AI requests recorded yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {requestLogs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell sx={{ fontFamily: monoFont, fontSize: 11.5, whiteSpace: "nowrap" }}>
-                        {new Date(log.created_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell sx={{ fontSize: 12.5 }}>{log.action.replace(/_/g, " ")}</TableCell>
-                      <TableCell sx={{ fontSize: 12.5 }}>{log.provider}</TableCell>
-                      <TableCell sx={{ fontSize: 12.5 }}>{log.user_name || "system"}</TableCell>
-                      <TableCell align="right" sx={{ fontFamily: monoFont, fontSize: 11.5 }}>
-                        {log.total_tokens || "—"}
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: monoFont, fontSize: 11.5 }}>
-                        {log.latency_ms} ms
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          label={log.ok ? "ok" : "error"}
-                          sx={{
-                            height: 20, fontSize: 11,
-                            bgcolor: "#F1F3F5",
-                            color: log.ok ? tokens.text2 : tokens.ink,
-                            fontWeight: log.ok ? 400 : 700,
-                          }}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Box>
-          </Paper>
-        </Stack>
-      )}
-
     </Box>
   );
 }

@@ -88,47 +88,6 @@ export interface AiConversation {
   updated_at: string;
 }
 
-export interface AiAutomationLog {
-  id: number;
-  event: string;
-  task: number | null;
-  task_title: string;
-  project: number | null;
-  project_name: string;
-  ai_response: Record<string, unknown>;
-  executed_actions: string[];
-  ok: boolean;
-  message: string;
-  created_at: string;
-}
-
-export interface AiRequestLog {
-  id: number;
-  action: string;
-  provider: string;
-  model: string;
-  user_name: string;
-  ok: boolean;
-  error: string;
-  structured: boolean;
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-  latency_ms: number;
-  response_preview: string;
-  created_at: string;
-}
-
-export interface AiUsageStats {
-  window_days: number;
-  calls: number;
-  failures: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  avg_latency_ms: number;
-  by_action: { action: string; count: number }[];
-}
-
 export interface AiReport {
   id: number;
   period: "daily" | "weekly" | "monthly";
@@ -643,21 +602,6 @@ export function generateReport(period: "daily" | "weekly" | "monthly", projectId
 export async function listReports(): Promise<AiReport[]> {
   const { data } = await api.get<Paginated<AiReport>>("/ai/reports/");
   return data.results ?? [];
-}
-
-export async function listAutomationLogs(): Promise<AiAutomationLog[]> {
-  const { data } = await api.get<Paginated<AiAutomationLog>>("/ai/automation-logs/");
-  return data.results ?? [];
-}
-
-export async function listRequestLogs(): Promise<AiRequestLog[]> {
-  const { data } = await api.get<Paginated<AiRequestLog>>("/ai/logs/");
-  return data.results ?? [];
-}
-
-export async function getUsageStats(): Promise<AiUsageStats> {
-  const { data } = await api.get<AiUsageStats>("/ai/logs/stats/");
-  return data;
 }
 
 // --- daily stand-up -------------------------------------------------------- //
