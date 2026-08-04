@@ -6,8 +6,11 @@
  * - Non-GET (mutations): never handled here — they hit the network directly, and
  *   the app's offline queue captures them when the network is unavailable.
  */
-const CACHE = "kos-shell-v1";
-const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "kos-shell-v2";
+const SHELL = [
+  "/", "/index.html", "/manifest.webmanifest",
+  "/icon.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
