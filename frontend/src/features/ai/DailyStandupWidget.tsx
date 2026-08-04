@@ -350,6 +350,18 @@ export default function DailyStandupWidget() {
           {standup && !standup.ai_ok && (
             <Alert severity="info" sx={{ mt: 2, fontSize: 12.5 }}>
               The AI provider was unavailable, so this stand-up was assembled from your figures directly.
+              {/* The provider's own words. "Unavailable" alone cannot tell a
+                  wrong key from an unpaid account from a rate limit, and the
+                  three need different fixes — so say which it was rather than
+                  making someone open Django admin to find out. */}
+              {standup.error && (
+                <Box
+                  component="span"
+                  sx={{ display: "block", mt: 0.75, fontFamily: monoFont, fontSize: 11.5, color: tokens.text2 }}
+                >
+                  {standup.error}
+                </Box>
+              )}
             </Alert>
           )}
           {standup && status?.offline_fallback && standup.ai_ok && (
