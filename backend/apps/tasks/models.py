@@ -110,9 +110,14 @@ class Task(TimeStampedModel):
 
     @property
     def is_overdue(self) -> bool:
-        if not self.due_date or is_done(self.status):
+        due = self.due_date
+        if not due or is_done(self.status):
             return False
-        return self.due_date < date.today()
+        # A freshly-created/assigned instance can hold the date as a string
+        # (Django only coerces on DB read), which would crash the comparison.
+        if isinstance(due, str):
+            due = date.fromisoformat(due)
+        return due < date.today()
 
     @property
     def checklist_done(self) -> int:

@@ -7,6 +7,8 @@ that already powers documents and SOPs, pointed at a regulated-product process.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -79,10 +81,21 @@ class RegulatoryRegistration(TimeStampedModel):
 
     @property
     def is_expired(self) -> bool:
-        return self.expiry_date is not None and self.expiry_date < timezone.now().date()
+        exp = self._expiry()
+        return exp is not None and exp < timezone.now().date()
 
     @property
     def expires_in_days(self) -> int | None:
-        if self.expiry_date is None:
+        exp = self._expiry()
+        if exp is None:
             return None
-        return (self.expiry_date - timezone.now().date()).days
+        return (exp - timezone.now().date()).days
+
+    def _expiry(self) -> date | None:
+        """expiry_date as a real date. A just-created/assigned instance can hold
+        it as a string (Django only coerces on DB read), which would otherwise
+        crash the date comparisons above."""
+        exp = self.expiry_date
+        if isinstance(exp, str):
+            return date.fromisoformat(exp)
+        return exp

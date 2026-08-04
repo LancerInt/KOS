@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -139,7 +140,11 @@ class ApprovalRequestViewSet(viewsets.ModelViewSet):
         elif ar.kind == ApprovalKind.DEADLINE_CHANGE and decision == "approve" and task:
             new_due = ar.payload.get("new_due_date")
             old = task.due_date
-            task.due_date = new_due
+            # payload comes from JSON, so new_due is a string — parse it to a real
+            # date. Assigning the raw string leaves the in-memory task holding a
+            # str, which then crashes any date comparison (e.g. is_overdue in the
+            # automation signal that fires on save).
+            task.due_date = parse_date(new_due) if isinstance(new_due, str) else new_due
             task.save(update_fields=["due_date"])
             record(action=AuditAction.DEADLINE_CHANGE, obj=task,
                    old_value={"due_date": str(old)}, new_value={"due_date": new_due}, request=request)
