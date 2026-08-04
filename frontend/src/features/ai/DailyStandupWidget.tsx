@@ -365,7 +365,14 @@ export default function DailyStandupWidget() {
               <Button
                 size="small"
                 variant={standup ? "text" : "contained"}
-                onClick={() => void run(false)}
+                // With nothing stored yet, pressing this must force. The server
+                // declines a stand-up for a quiet day (has_anything_to_say), and
+                // `force` is the override it provides for exactly this case —
+                // without it the button returns the same empty state it started
+                // from, which reads as a dead button. Once a stand-up exists the
+                // unforced call is right: it hands back the stored one for free,
+                // and Regenerate is there to spend a provider call.
+                onClick={() => void run(!standup)}
                 disabled={busy || aiOff}
                 startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 15 }} />}
               >
