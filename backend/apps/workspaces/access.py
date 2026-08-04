@@ -15,7 +15,7 @@ Workspace permissions).
 """
 from __future__ import annotations
 
-from .models import WorkspaceMember, WorkspacePermission
+from .models import WorkspaceMember, WorkspacePermission, WorkspaceUserAccess
 
 _RANK = {"": 0, None: 0, "view": 1, "edit": 2}
 
@@ -44,12 +44,12 @@ def is_supervisor(user) -> bool:
     return user.roles.filter(name__in=SUPERVISOR_ROLE_NAMES).exists()
 
 
-def effective_access(user) -> dict[str, str] | None:
-    """{workspace: 'view'|'edit'} for this user, or None meaning 'all workspaces, edit'.
+def base_access(user) -> dict[str, str] | None:
+    """Role + team-membership grants, *before* per-user admin overrides.
 
     Two additive sources, highest access wins: the user's own ``WorkspaceMember``
     rows, and the workspaces granted to any of their roles in the
-    ``WorkspacePermission`` grid.
+    ``WorkspacePermission`` grid. ``None`` means a supervisor (all workspaces).
     """
     if is_supervisor(user):
         return None
@@ -65,11 +65,25 @@ def effective_access(user) -> dict[str, str] | None:
         grant(m["workspace"], m["access"])
     role_ids = list(user.roles.values_list("id", flat=True))
     if role_ids:
-        for p in WorkspacePermission.objects.filter(
-            role_id__in=role_ids
-        ).values("workspace", "access"):
+        for p in WorkspacePermission.objects.filter(role_id__in=role_ids).values("workspace", "access"):
             grant(p["workspace"], p["access"])
     return out
+
+
+def effective_access(user) -> dict[str, str] | None:
+    """Final per-workspace access: :func:`base_access` with the per-user
+    overrides from :class:`WorkspaceUserAccess` applied on top. An explicit
+    override wins over role/membership, and ``hidden`` denies a workspace
+    outright. ``None`` still means a supervisor (all workspaces)."""
+    base = base_access(user)
+    if base is None:
+        return None
+    for o in WorkspaceUserAccess.objects.filter(user=user).values("workspace", "access"):
+        if o["access"] == WorkspaceUserAccess.HIDDEN:
+            base.pop(o["workspace"], None)
+        else:
+            base[o["workspace"]] = o["access"]
+    return base
 
 
 def can_view(user, workspace: str) -> bool:

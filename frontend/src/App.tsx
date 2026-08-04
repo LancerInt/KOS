@@ -25,6 +25,7 @@ import RegulatoryPage from "./pages/RegulatoryPage";
 import WorkspacePage from "./pages/WorkspacePage";
 import WorkspaceProjectPage from "./pages/WorkspaceProjectPage";
 import WorkspacePermissionsPage from "./pages/WorkspacePermissionsPage";
+import UserWorkspaceAccessPage from "./pages/UserWorkspaceAccessPage";
 import AiSettingsPage from "./pages/AiSettingsPage";
 import LastLoginsPage from "./pages/LastLoginsPage";
 import ArchivePage from "./pages/ArchivePage";
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="/email" element={<EmailPage />} />
             <Route path="/admin/roles" element={<RolesPage />} />
             <Route path="/admin/permissions" element={<WorkspacePermissionsPage />} />
+            <Route path="/admin/user-access" element={<UserWorkspaceAccessPage />} />
             <Route path="/admin/last-logins" element={<LastLoginsPage />} />
             <Route path="/admin/ai" element={<AiSettingsPage />} />
             <Route path="/archive" element={<ArchivePage />} />

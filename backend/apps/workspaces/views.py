@@ -26,10 +26,10 @@ from apps.accounts.rbac import Capability
 from apps.audit.models import AuditAction
 from apps.audit.services import record
 
-from .access import can_edit, effective_access, is_supervisor
+from .access import base_access, can_edit, effective_access, is_supervisor
 from .models import (
     ARCHIVE_TTL_DAYS, Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
-    WorkspaceRecord, WorkspaceSection,
+    WorkspaceRecord, WorkspaceSection, WorkspaceUserAccess,
 )
 from .serializers import (
     WorkspaceMemberSerializer, WorkspacePermissionSerializer, WorkspaceProjectSerializer,
@@ -309,6 +309,62 @@ class WorkspacePermissionViewSet(viewsets.ModelViewSet):
         ]
         WorkspacePermission.objects.bulk_create(objs)
         return Response({"saved": len(objs)})
+
+
+class WorkspaceUserAccessView(APIView):
+    """Per-**user** workspace access — the "who sees what" grid, by person.
+
+    Administrators only. Sits on top of role + team-membership grants:
+
+    * ``GET ?user=<id>`` → ``{"user", "is_supervisor", "access": {ws: level}}``
+      where ``access`` is the person's effective, post-override access (anything
+      absent is hidden).
+    * ``POST {user, permissions:[{workspace, access}]}`` with access in
+      ``view | edit | hidden``. An override row is stored only where the choice
+      differs from what the person already gets from their role/membership — so
+      ``hidden`` genuinely denies, and redundant rows are never created.
+    """
+
+    permission_classes = [IsAdministrator]
+
+    def _target(self, request):
+        uid = request.query_params.get("user") or request.data.get("user")
+        user = User.objects.filter(pk=uid).first()
+        if user is None:
+            raise NotFound("User not found.")
+        return user
+
+    def get(self, request):
+        user = self._target(request)
+        acc = effective_access(user)
+        return Response({
+            "user": user.id,
+            "is_supervisor": acc is None,
+            "access": {} if acc is None else acc,
+        })
+
+    def post(self, request):
+        user = self._target(request)
+        base = base_access(user) or {}
+        valid = {WorkspaceUserAccess.HIDDEN, WorkspaceUserAccess.VIEW, WorkspaceUserAccess.EDIT}
+        saved = 0
+        for p in request.data.get("permissions", []):
+            ws = p.get("workspace")
+            desired = p.get("access")
+            if not ws or desired not in valid:
+                continue
+            if desired == base.get(ws, WorkspaceUserAccess.HIDDEN):
+                # Matches what role/membership already grants → no override needed.
+                WorkspaceUserAccess.objects.filter(user=user, workspace=ws).delete()
+            else:
+                WorkspaceUserAccess.objects.update_or_create(
+                    user=user, workspace=ws,
+                    defaults={"access": desired, "updated_by": request.user},
+                )
+            saved += 1
+        record(action=AuditAction.PERMISSION_CHANGE, obj=user,
+               new_value={"kind": "workspace_user_access", "changed": saved}, request=request)
+        return Response({"saved": saved, "access": effective_access(user)})
 
 
 class WorkspaceMemberViewSet(viewsets.ModelViewSet):

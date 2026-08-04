@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import ManageAccountsRoundedIcon from "@mui/icons-material/ManageAccountsRounded";
 import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
@@ -109,7 +110,10 @@ export default function RolesPage() {
               Last logins
             </Button>
             <Button variant="outlined" size="small" startIcon={<TuneRoundedIcon sx={{ fontSize: 17 }} />} onClick={() => navigate("/admin/permissions")}>
-              Permissions
+              Role access
+            </Button>
+            <Button variant="outlined" size="small" startIcon={<ManageAccountsRoundedIcon sx={{ fontSize: 17 }} />} onClick={() => navigate("/admin/user-access")}>
+              Person access
             </Button>
             <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={() => setEditingRole("new")}>
               New role

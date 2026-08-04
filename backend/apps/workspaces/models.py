@@ -191,6 +191,45 @@ class WorkspaceMember(models.Model):
         return f"{self.user_id}@{self.workspace}={self.access}"
 
 
+class WorkspaceUserAccess(models.Model):
+    """Admin per-**user** override of workspace access, layered on top of the
+    role and team-membership grants resolved in ``access.py``.
+
+    * ``view`` / ``edit`` — force an exact level for this one person.
+    * ``hidden``          — explicitly deny a workspace they would otherwise see
+                            (through their role or a team membership).
+
+    Managed from the per-user *Workspace access* screen (administrators only).
+    A row is stored only where the admin's choice differs from what the person
+    already gets from their role/membership, so this table stays small and a
+    ``hidden`` row genuinely means "deny", not merely "no grant"."""
+
+    HIDDEN = "hidden"
+    VIEW = "view"
+    EDIT = "edit"
+    ACCESS_CHOICES = [(HIDDEN, "Hidden"), (VIEW, "View"), (EDIT, "Edit")]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="workspace_overrides",
+    )
+    workspace = models.CharField(max_length=64)   # e.g. "amazon-usa"
+    access = models.CharField(max_length=8, choices=ACCESS_CHOICES)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("user_id", "workspace")
+        constraints = [
+            models.UniqueConstraint(fields=["user", "workspace"], name="uniq_user_workspace_override"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}~{self.workspace}={self.access}"
+
+
 class WorkspaceRecord(models.Model):
     project = models.ForeignKey(
         WorkspaceProject, null=True, blank=True,
@@ -331,3 +370,4 @@ class Workspace(models.Model):
         WorkspaceProject.objects.filter(workspace=self.key).delete()
         WorkspacePermission.objects.filter(workspace=self.key).delete()
         WorkspaceMember.objects.filter(workspace=self.key).delete()
+        WorkspaceUserAccess.objects.filter(workspace=self.key).delete()

@@ -3,7 +3,8 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     WorkspaceDeletedItemsView, WorkspaceMemberViewSet, WorkspacePermissionViewSet,
-    WorkspaceProjectViewSet, WorkspaceRecordViewSet, WorkspaceSectionViewSet, WorkspaceViewSet,
+    WorkspaceProjectViewSet, WorkspaceRecordViewSet, WorkspaceSectionViewSet,
+    WorkspaceUserAccessView, WorkspaceViewSet,
 )
 
 router = DefaultRouter()
@@ -17,5 +18,6 @@ router.register("workspace-sections", WorkspaceSectionViewSet, basename="workspa
 urlpatterns = [
     # Before the router so it isn't captured by the workspaces/<key>/ detail route.
     path("workspaces/deleted-items/", WorkspaceDeletedItemsView.as_view(), name="workspace-deleted-items"),
+    path("workspace-user-access/", WorkspaceUserAccessView.as_view(), name="workspace-user-access"),
     *router.urls,
 ]
