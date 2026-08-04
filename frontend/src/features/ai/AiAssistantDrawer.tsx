@@ -47,7 +47,6 @@ interface ChatTurn {
 const GENERAL_PROMPTS = [
   "What should I focus on today?",
   "Summarise my overdue work",
-  "Draft a status update email",
 ];
 
 /** Offered when the page did register context. */
