@@ -28,6 +28,17 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 
 // Register the service worker for offline app-shell caching (production builds).
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  // When a freshly deployed service worker takes control, reload every open tab
+  // once so it picks up the new build automatically instead of sitting on a
+  // stale shell. Guarded so it only fires on an *update* (a controller already
+  // existed) — never on the first-ever install, and never in a loop.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing || !hadController) return;
+    refreshing = true;
+    window.location.reload();
+  });
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {
       /* offline caching is a progressive enhancement — ignore failures */
