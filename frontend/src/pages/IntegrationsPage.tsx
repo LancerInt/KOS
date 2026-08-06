@@ -330,14 +330,8 @@ function EmailTab() {
   if (!acct) return <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>;
 
   return (
-    <Box sx={{ maxWidth: 620 }}>
-      <Typography sx={{ fontSize: 13.5, color: tokens.text2, mb: 2 }}>
-        Your own email account. KOS uses it to send <b>you</b> overdue reminders and to send the mail you
-        compose. For Gmail, use your address and a 16‑character <b>App Password</b> (Google Account →
-        Security → App passwords). Stored encrypted; leave blank to keep the current one. Until you connect
-        one, you'll get in‑app notifications only — no email.
-      </Typography>
-
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) minmax(0, 340px)" },
+      gap: 3, alignItems: "start", maxWidth: 1100, mx: "auto" }}>
       <Paper sx={{ p: 2.5, borderRadius: "6px" }}>
         <Stack spacing={2}>
           <FormControlLabel
@@ -398,6 +392,13 @@ function EmailTab() {
           </Stack>
         </Stack>
       </Paper>
+
+      <Typography sx={{ fontSize: 13.5, color: tokens.text2, order: { xs: -1, md: 0 }, lineHeight: 1.6 }}>
+        Your own email account. KOS uses it to send <b>you</b> overdue reminders and to send the mail you
+        compose. For Gmail, use your address and a 16‑character <b>App Password</b> (Google Account →
+        Security → App passwords). Stored encrypted; leave blank to keep the current one. Until you connect
+        one, you'll get in‑app notifications only — no email.
+      </Typography>
     </Box>
   );
 }
