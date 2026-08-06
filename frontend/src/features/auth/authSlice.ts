@@ -1,6 +1,7 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 import { tokenStore } from "../../api/client";
+import { clearMyAccessCache } from "../workspaces/access";
 import { fetchMe, loginRequest, logoutRequest } from "./authApi";
 import type { CurrentUser } from "./types";
 
@@ -27,6 +28,11 @@ export const login = createAsyncThunk(
       const result = await loginRequest(creds.username, creds.password, creds.otp);
       if (result.mfa_required) return { mfaRequired: true } as const;
       if (result.access) tokenStore.set(result.access, result.refresh);
+      // Drop any workspace-access map cached for a previously signed-in user, so
+      // the new user's sidebar is filtered by *their* access from the first
+      // render — not the last person's (which briefly showed every workspace
+      // until a hard refresh cleared the module-level cache).
+      clearMyAccessCache();
       return {
         mfaRequired: false as const,
         user: result.user ?? null,
@@ -59,6 +65,7 @@ export const logout = createAsyncThunk("auth/logout", async () => {
     }
   }
   tokenStore.clear();
+  clearMyAccessCache();
 });
 
 const authSlice = createSlice({
