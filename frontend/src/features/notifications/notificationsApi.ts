@@ -42,6 +42,15 @@ export async function markAllRead(): Promise<void> {
   await api.post("/notifications/mark_all_read/");
 }
 
+export async function dismissNotification(id: number): Promise<void> {
+  await api.delete(`/notifications/${id}/`);
+}
+
+export async function clearRead(): Promise<{ deleted: number }> {
+  const { data } = await api.post("/notifications/clear_read/");
+  return data;
+}
+
 export async function acknowledge(id: number, message: string): Promise<Notification> {
   const { data } = await api.post<Notification>(`/notifications/${id}/acknowledge/`, { message });
   return data;

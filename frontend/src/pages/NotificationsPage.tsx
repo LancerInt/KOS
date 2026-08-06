@@ -7,11 +7,12 @@ import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import DoneAllRoundedIcon from "@mui/icons-material/DoneAllRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 import {
-  acknowledge, getPreferences, listNotifications, markAllRead, markRead,
-  updatePreferences, type Notification, type Preferences,
+  acknowledge, clearRead, dismissNotification, getPreferences, listNotifications,
+  markAllRead, markRead, updatePreferences, type Notification, type Preferences,
 } from "../features/notifications/notificationsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { workspaceAccent } from "../features/workspaces/accent";
@@ -87,6 +88,9 @@ export default function NotificationsPage() {
     acknowledge(id, msg).then(() => { setAckDraft((d) => ({ ...d, [id]: "" })); load(); }).catch(() => {});
   };
 
+  const dismiss = (id: number) => { dismissNotification(id).then(load).catch(() => {}); };
+  const doClearRead = () => { clearRead().then(load).catch(() => {}); };
+
   const openTarget = (n: Notification): string | null => {
     const key = workspaceKeyOf(n);
     if (key) return `/workspaces/${key}`;
@@ -113,6 +117,7 @@ export default function NotificationsPage() {
             <Segmented value={dense ? "compact" : "comfortable"} onChange={(v) => setDensity(v === "compact")}
               options={[{ key: "comfortable", label: "Comfortable" }, { key: "compact", label: "Compact" }]} />
             {updates.some((n) => !n.is_read) && <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>}
+            {updates.some((n) => n.is_read) && <Button size="small" color="inherit" onClick={doClearRead}>Clear read</Button>}
           </Stack>
         </Stack>
 
@@ -227,6 +232,11 @@ export default function NotificationsPage() {
                           </IconButton>
                         </Tooltip>
                       )}
+                      <Tooltip title="Dismiss">
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); dismiss(n.id); }} sx={{ flexShrink: 0 }}>
+                          <CloseRoundedIcon sx={{ fontSize: 15, color: tokens.text3 }} />
+                        </IconButton>
+                      </Tooltip>
                     </Stack>
                   );
                 })}

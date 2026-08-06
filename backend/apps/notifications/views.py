@@ -28,7 +28,12 @@ User = get_user_model()
 ACK_OVERSIGHT_ROLES = ["Management", "IT Team"]
 
 
-class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class NotificationViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ["is_read", "event", "requires_acknowledgement"]
@@ -42,6 +47,14 @@ class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         except Exception:
             pass
         return Notification.objects.filter(recipient=self.request.user)
+
+    def perform_destroy(self, instance):
+        # A 48-hour acknowledgement item can't be dismissed to make it go away —
+        # it has to be acknowledged. Once acknowledged (or if it never needed
+        # one), deleting it is just tidying up.
+        if instance.requires_acknowledgement and instance.acknowledged_at is None:
+            raise ValidationError("Acknowledge this before dismissing it.")
+        instance.delete()
 
     @action(detail=False, methods=["get"])
     def unread_count(self, request):
@@ -62,6 +75,18 @@ class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
     def mark_all_read(self, request):
         self.get_queryset().filter(is_read=False).update(is_read=True)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["post"])
+    def clear_read(self, request):
+        """Delete every already-read notification, so the list keeps only what
+        still matters. An unread item — or one awaiting acknowledgement — is
+        never removed here; that would hide work the user hasn't dealt with."""
+        deleted, _ = (
+            self.get_queryset()
+            .filter(is_read=True, requires_acknowledgement=False)
+            .delete()
+        )
+        return Response({"deleted": deleted})
 
     @action(detail=True, methods=["post"])
     def acknowledge(self, request, pk=None):
