@@ -67,7 +67,15 @@ export default function NotificationsPage() {
     localStorage.setItem("kos_notif_density", compact ? "compact" : "comfortable");
   };
 
-  const load = () => listNotifications().then(setItems).catch(() => setItems([]));
+  const load = () =>
+    listNotifications()
+      .then((rows) => {
+        setItems(rows);
+        // Tell the sidebar badge to re-read — reading here doesn't change the
+        // route, so it would otherwise stay stale until the next navigation.
+        window.dispatchEvent(new Event("kos:notifications-changed"));
+      })
+      .catch(() => setItems([]));
   useEffect(() => { load(); getPreferences().then(setPrefs).catch(() => {}); }, []);
 
   const savePref = (patch: Partial<Preferences>) => { updatePreferences(patch).then(setPrefs).catch(() => {}); };
@@ -89,8 +97,8 @@ export default function NotificationsPage() {
   const unread = updates.filter((n) => !n.is_read).length;
 
   return (
-    <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
-      <Box sx={{ maxWidth: 760 }}>
+    <Box sx={{ maxWidth: 860, mx: "auto", px: 3, py: 3 }}>
+      <Box>
         <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mb: 2.5 }} gap={2} flexWrap="wrap">
           <Box>
             <Typography variant="h1" sx={{ fontSize: 28 }}>Notifications</Typography>

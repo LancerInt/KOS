@@ -119,7 +119,26 @@ export default function AppShell() {
 
   const [unread, setUnread] = useState(0);
   useEffect(() => {
-    unreadCount().then((r) => setUnread(r.unread)).catch(() => {});
+    let active = true;
+    const refresh = () => { unreadCount().then((r) => { if (active) setUnread(r.unread); }).catch(() => {}); };
+    refresh();
+    // Keep the sidebar badge honest without a full navigation: the Notifications
+    // page marks items read in place (no route change), other tabs/devices add
+    // new ones. Re-read on focus, on an explicit change event the page fires,
+    // and on a slow interval as a backstop.
+    const onChanged = () => refresh();
+    const onFocus = () => { if (document.visibilityState !== "hidden") refresh(); };
+    window.addEventListener("kos:notifications-changed", onChanged);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    const timer = window.setInterval(refresh, 60000);
+    return () => {
+      active = false;
+      window.removeEventListener("kos:notifications-changed", onChanged);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+      window.clearInterval(timer);
+    };
   }, [location.pathname]);
 
   const [markError, setMarkError] = useState(false);

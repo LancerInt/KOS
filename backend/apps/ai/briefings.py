@@ -266,7 +266,11 @@ def generate_standup(
             record.save(update_fields=["generation_count", "updated_at"])
 
     actions = [f"schedule:{trigger}", f"duration_ms:{duration_ms}", f"ai:{'ok' if ai_ok else 'fallback'}"]
-    if deliver_it:
+    # Only the automated morning run rings the bell / sends the email. A manual
+    # "Generate" or "Regenerate" from the dashboard shows the stand-up in the
+    # dialog the user is already looking at — a notification about it would be
+    # pure noise, and every Regenerate would add another duplicate to the bell.
+    if deliver_it and trigger == GenerationTrigger.SCHEDULED:
         try:
             actions += deliver_standup(record, config=config)
         except Exception as exc:  # a broken mail host must not lose the stand-up

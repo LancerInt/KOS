@@ -46,6 +46,11 @@ export const theme = createTheme({
     divider: tokens.line,
   },
   shape: { borderRadius: 12 },
+  // Density — every sx padding/margin/gap and Stack/Grid spacing multiplies this
+  // unit, so trimming it from MUI's default 8 to 7 compacts every page uniformly
+  // (a page's `py: 4` becomes 28px instead of 32, section gaps tighten to match)
+  // without having to touch each page's layout by hand.
+  spacing: 7,
   typography: {
     fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
     // Give every heading variant a little more line-height than MUI's tight
