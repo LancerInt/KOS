@@ -98,7 +98,7 @@ export default function NotificationsPage() {
   const unread = updates.filter((n) => !n.is_read).length;
 
   return (
-    <Box sx={{ maxWidth: 860, mx: "auto", px: 3, py: 3 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <Box>
         <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mb: 2.5 }} gap={2} flexWrap="wrap">
           <Box>

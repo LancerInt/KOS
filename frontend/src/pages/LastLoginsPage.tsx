@@ -20,7 +20,7 @@ export default function LastLoginsPage() {
   }, []);
 
   return (
-    <Box sx={{ maxWidth: 780, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <Button size="small" startIcon={<ArrowBackRoundedIcon sx={{ fontSize: 17 }} />}
         onClick={() => navigate("/admin/roles")} sx={{ color: tokens.text2, mb: 1, ml: -0.5 }}>
         Roles &amp; Access

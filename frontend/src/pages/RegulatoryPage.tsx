@@ -36,7 +36,7 @@ export default function RegulatoryPage() {
   useEffect(() => { load(); }, []);
 
   return (
-    <Box sx={{ maxWidth: 940, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mb: 0.5 }}>
         <Typography variant="h1" sx={{ fontSize: 27 }}>Regulatory</Typography>
         {canWrite && <Button size="small" variant="contained" startIcon={<AddRoundedIcon />} onClick={() => setOpen(true)}>New registration</Button>}

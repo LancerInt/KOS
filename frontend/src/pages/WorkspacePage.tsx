@@ -74,13 +74,13 @@ export default function WorkspacePage() {
     // A user-added workspace may still be loading — don't flash "not found".
     if (!dynamicWorkspacesReady()) {
       return (
-        <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+        <Box sx={{ px: 3, py: 2.5 }}>
           <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>
         </Box>
       );
     }
     return (
-      <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+      <Box sx={{ px: 3, py: 2.5 }}>
         <Typography variant="h1" sx={{ fontSize: 26, mb: 0.5 }}>Workspace not found</Typography>
         <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>Pick a workspace from the sidebar.</Typography>
       </Box>
@@ -168,7 +168,7 @@ export default function WorkspacePage() {
 
   if (accessLoading) {
     return (
-      <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+      <Box sx={{ px: 3, py: 2.5 }}>
         {header}
         <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>
       </Box>
@@ -177,7 +177,7 @@ export default function WorkspacePage() {
 
   if (level === "none") {
     return (
-      <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+      <Box sx={{ px: 3, py: 2.5 }}>
         {header}
         <Paper sx={{ p: 5, textAlign: "center", borderRadius: "6px", mt: 2 }}>
           <LockRoundedIcon sx={{ fontSize: 30, color: tokens.text3, mb: 1 }} />
@@ -191,7 +191,7 @@ export default function WorkspacePage() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       {header}
 
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 2.5, mb: 1.75 }}>

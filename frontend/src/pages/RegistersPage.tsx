@@ -44,7 +44,7 @@ export default function RegistersPage() {
   const projectId = Number(id);
 
   return (
-    <Box sx={{ maxWidth: 940, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <Stack direction="row" alignItems="center" spacing={0.5} onClick={() => navigate(`/projects/${id}`)}
         sx={{ cursor: "pointer", color: tokens.text2, width: "fit-content", "&:hover": { color: tokens.kriyaInk } }}>
         <ArrowBackRoundedIcon sx={{ fontSize: 17 }} /><Typography sx={{ fontSize: 13 }}>Back to project</Typography>

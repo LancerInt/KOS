@@ -23,7 +23,7 @@ export default function HomePage() {
   const caps = user?.effective_capabilities ?? {};
 
   return (
-    <Box sx={{ maxWidth: 980, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <Typography variant="h1" sx={{ fontSize: 28 }}>
         Welcome, {user?.first_name || user?.username}
       </Typography>

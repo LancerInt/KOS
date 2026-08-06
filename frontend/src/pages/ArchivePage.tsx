@@ -47,7 +47,7 @@ export default function ArchivePage() {
   const wsLabel = (key: string) => getWorkspace(key)?.label ?? key;
 
   return (
-    <Box sx={{ maxWidth: 820, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <Typography variant="h1" sx={{ fontSize: 28, mb: 0.5 }}>Archive</Typography>
       <Typography color="text.secondary" sx={{ mb: 3, fontSize: 13.5 }}>
         {isSup

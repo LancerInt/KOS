@@ -101,7 +101,7 @@ export default function RolesPage() {
   };
 
   return (
-    <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={2} flexWrap="wrap" sx={{ mb: 0.5 }}>
         <Typography variant="h1" sx={{ fontSize: 28 }}>Roles &amp; Access</Typography>
         {!forbidden && (

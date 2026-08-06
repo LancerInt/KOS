@@ -209,7 +209,7 @@ export default function DashboardPage() {
   const dateStr = new Date().toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).replace(",", " ·");
 
   return (
-    <Box sx={{ maxWidth: 1180, mx: "auto", px: 3, py: 3.5 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       {/* head */}
       <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
         <Box>

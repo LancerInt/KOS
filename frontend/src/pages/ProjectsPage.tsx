@@ -25,7 +25,7 @@ export default function ProjectsPage() {
   useEffect(load, []);
 
   return (
-    <Box sx={{ maxWidth: 1100, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mb: 3 }}>
         <Box>
           <Typography variant="h1" sx={{ fontSize: 28 }}>Projects</Typography>

@@ -96,13 +96,13 @@ export default function WorkspaceProjectPage() {
   if (!ws) {
     if (!dynamicWorkspacesReady()) {
       return (
-        <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+        <Box sx={{ px: 3, py: 2.5 }}>
           <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>
         </Box>
       );
     }
     return (
-      <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+      <Box sx={{ px: 3, py: 2.5 }}>
         <Typography variant="h1" sx={{ fontSize: 26, mb: 0.5 }}>Workspace not found</Typography>
         <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>Pick a workspace from the sidebar.</Typography>
       </Box>
@@ -176,7 +176,7 @@ export default function WorkspaceProjectPage() {
 
   if (accessLoading) {
     return (
-      <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+      <Box sx={{ px: 3, py: 2.5 }}>
         {backBtn}
         <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress size={26} /></Stack>
       </Box>
@@ -184,7 +184,7 @@ export default function WorkspaceProjectPage() {
   }
   if (level === "none") {
     return (
-      <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+      <Box sx={{ px: 3, py: 2.5 }}>
         {backBtn}
         <Paper sx={{ p: 5, textAlign: "center", borderRadius: "6px", mt: 1 }}>
           <LockRoundedIcon sx={{ fontSize: 30, color: tokens.text3, mb: 1 }} />
@@ -198,7 +198,7 @@ export default function WorkspaceProjectPage() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1080, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       {/* breadcrumb back to the workspace's project list */}
       {backBtn}
 

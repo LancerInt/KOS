@@ -80,7 +80,7 @@ export default function ProjectDetailPage() {
 
   if (error) {
     return (
-      <Box sx={{ maxWidth: 900, mx: "auto", px: 3, py: 4 }}>
+      <Box sx={{ px: 3, py: 2.5 }}>
         <BackLink onClick={() => navigate("/projects")} />
         <Typography sx={{ color: tokens.attn, mt: 2 }}>{error}</Typography>
       </Box>
@@ -93,7 +93,7 @@ export default function ProjectDetailPage() {
   const projectMilestones = project.milestones.filter((m) => m.epic === null);
 
   return (
-    <Box sx={{ maxWidth: 980, mx: "auto", px: 3, py: 4 }}>
+    <Box sx={{ px: 3, py: 2.5 }}>
       <BackLink onClick={() => navigate("/projects")} />
 
       {/* header */}
