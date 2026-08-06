@@ -6,7 +6,7 @@
  * - Non-GET (mutations): never handled here — they hit the network directly, and
  *   the app's offline queue captures them when the network is unavailable.
  */
-const CACHE = "kos-shell-v3";
+const CACHE = "kos-shell-v4";
 const SHELL = [
   "/", "/index.html", "/manifest.webmanifest",
   "/icon.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png",
@@ -17,11 +17,23 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    // A leftover cache from an older version means a previous worker was
+    // running: this activation is an *update*, not a brand-new first install.
+    const isUpdate = keys.some((k) => k !== CACHE);
+    await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+    await self.clients.claim();
+    // Force every open tab onto the new build. The worker we just replaced may
+    // be an old cache-first one whose page can't reload itself (its bundle
+    // predates the in-app controllerchange handler), so the reload has to be
+    // driven from here. Skipped on first install so a brand-new visitor to the
+    // site isn't bounced with an immediate reload.
+    if (isUpdate) {
+      const windows = await self.clients.matchAll({ type: "window" });
+      await Promise.all(windows.map((c) => c.navigate(c.url).catch(() => {})));
+    }
+  })());
 });
 
 self.addEventListener("fetch", (event) => {

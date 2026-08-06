@@ -11,7 +11,7 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 import {
-  acknowledge, clearRead, dismissNotification, getPreferences, listNotifications,
+  acknowledge, dismissNotification, getPreferences, listNotifications,
   markAllRead, markRead, updatePreferences, type Notification, type Preferences,
 } from "../features/notifications/notificationsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
@@ -89,7 +89,6 @@ export default function NotificationsPage() {
   };
 
   const dismiss = (id: number) => { dismissNotification(id).then(load).catch(() => {}); };
-  const doClearRead = () => { clearRead().then(load).catch(() => {}); };
 
   const openTarget = (n: Notification): string | null => {
     const key = workspaceKeyOf(n);
@@ -117,7 +116,6 @@ export default function NotificationsPage() {
             <Segmented value={dense ? "compact" : "comfortable"} onChange={(v) => setDensity(v === "compact")}
               options={[{ key: "comfortable", label: "Comfortable" }, { key: "compact", label: "Compact" }]} />
             {updates.some((n) => !n.is_read) && <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>}
-            {updates.some((n) => n.is_read) && <Button size="small" color="inherit" onClick={doClearRead}>Clear read</Button>}
           </Stack>
         </Stack>
 
