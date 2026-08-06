@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, Switch, TextField, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, Switch, TextField, Tooltip, Typography } from "@mui/material";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import DoneAllRoundedIcon from "@mui/icons-material/DoneAllRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
@@ -205,14 +206,26 @@ export default function NotificationsPage() {
                       </Box>
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography sx={{ fontSize: 13, fontWeight: n.is_read ? 500 : 700, color: tokens.text }} noWrap>{n.title}</Typography>
+                        {n.body && (
+                          <Typography sx={{ fontSize: 11.5, color: tokens.text3, mt: 0.1, lineHeight: 1.35 }} noWrap>{n.body}</Typography>
+                        )}
                       </Box>
                       <WsChip n={n} />
                       {n.acknowledged_at && <Chip label="acknowledged" size="small" sx={{ height: 19, fontSize: 10, bgcolor: "#E7F4EC", color: "#1E7A50" }} />}
                       <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3, flexShrink: 0 }}>{timeAgo(n.created_at)}</Typography>
+                      {!n.is_read && (
+                        <Tooltip title="Mark as read">
+                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); markRead(n.id).then(load); }} sx={{ flexShrink: 0 }}>
+                            <DoneAllRoundedIcon sx={{ fontSize: 16, color: tokens.text3 }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                       {target && (
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); navigate(target); }} sx={{ flexShrink: 0 }}>
-                          <LaunchRoundedIcon sx={{ fontSize: 15, color: tokens.text3 }} />
-                        </IconButton>
+                        <Tooltip title="Open">
+                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); navigate(target); }} sx={{ flexShrink: 0 }}>
+                            <LaunchRoundedIcon sx={{ fontSize: 15, color: tokens.text3 }} />
+                          </IconButton>
+                        </Tooltip>
                       )}
                     </Stack>
                   );
