@@ -276,7 +276,13 @@ function FieldPreview({ field }: { field: FieldDef }) {
   if (field.type === "paragraph") control = <TextField size="small" fullWidth multiline minRows={2} placeholder={field.placeholder} sx={sx} />;
   else if (field.type === "number") control = <TextField size="small" fullWidth type="number" placeholder={field.placeholder || "0"} sx={sx} />;
   else if (field.type === "date") control = <TextField size="small" fullWidth type="date" sx={sx} />;
-  else if (field.type === "file") control = <TextField size="small" fullWidth placeholder="Attach a file…" sx={sx} />;
+  else if (field.type === "file")
+    control = (
+      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.6,
+        border: `1px solid ${tokens.line}`, borderRadius: "8px", fontSize: 12.5, color: tokens.text2, bgcolor: "#FCFCFB" }}>
+        <AttachFileRoundedIcon sx={{ fontSize: 15 }} /> Attach file
+      </Box>
+    );
   else if (field.type === "dropdown")
     control = <Select size="small" fullWidth displayEmpty value="" sx={{ fontSize: 12.5, bgcolor: "#FCFCFB" }}>
       <MenuItem value="" sx={{ fontSize: 12.5 }}>Select…</MenuItem>
@@ -619,7 +625,11 @@ function RecordInput({ field, value, autoFocus, onChange }: {
       </Box>
     );
   }
-  // text (and file falls back to the attach control elsewhere)
+  // A file field has no inline text input — the shared "Attach file" button
+  // below the fields handles the single per-record attachment. Rendering a text
+  // box here just looked broken (it accepted typing but saved nothing).
+  if (field.type === "file") return null;
+  // text
   return <TextField size="small" fullWidth label={field.label} required={req} autoFocus={autoFocus}
     placeholder={field.placeholder} value={value} onChange={(e) => onChange(e.target.value)} helperText={field.help || undefined} />;
 }
