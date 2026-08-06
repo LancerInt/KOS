@@ -86,6 +86,39 @@ def effective_access(user) -> dict[str, str] | None:
     return base
 
 
+def workspace_members(workspace: str) -> list:
+    """Active users with **explicit** view/edit access to ``workspace``.
+
+    The reverse of :func:`effective_access`, scoped to one workspace: members,
+    role grants and per-user overrides, with ``hidden`` removing a user. This is
+    the workspace's *assigned team* — it deliberately excludes supervisors'
+    implicit see-everything access, so an overdue reminder reaches the people the
+    workspace belongs to without pinging every admin about every workspace.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    granted: dict[int, str] = {}
+
+    def grant(uid: int, access: str) -> None:
+        if _RANK.get(access, 0) > _RANK.get(granted.get(uid), 0):
+            granted[uid] = access
+
+    for m in WorkspaceMember.objects.filter(workspace=workspace).values("user_id", "access"):
+        grant(m["user_id"], m["access"])
+    for rp in WorkspacePermission.objects.filter(workspace=workspace).values("role_id", "access"):
+        for uid in User.objects.filter(roles__id=rp["role_id"], is_active=True).values_list("id", flat=True):
+            grant(uid, rp["access"])
+    for o in WorkspaceUserAccess.objects.filter(workspace=workspace).values("user_id", "access"):
+        if o["access"] == WorkspaceUserAccess.HIDDEN:
+            granted.pop(o["user_id"], None)
+        else:
+            grant(o["user_id"], o["access"])
+
+    ids = [uid for uid, level in granted.items() if _RANK.get(level, 0) >= 1]
+    return list(User.objects.filter(id__in=ids, is_active=True))
+
+
 def can_view(user, workspace: str) -> bool:
     acc = effective_access(user)
     return acc is None or acc.get(workspace) in ("view", "edit")

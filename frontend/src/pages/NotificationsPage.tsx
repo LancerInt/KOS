@@ -20,6 +20,7 @@ import { tokens, monoFont } from "../theme";
 
 interface EventMeta { Icon: SvgIconComponent; fg: string; bg: string; label: string; }
 const EVENT_META: Record<string, EventMeta> = {
+  overdue: { Icon: WarningAmberRoundedIcon, fg: tokens.attn, bg: tokens.attnWash, label: "Overdue" },
   overdue_ack: { Icon: WarningAmberRoundedIcon, fg: tokens.attn, bg: tokens.attnWash, label: "Needs acknowledgement" },
   duration_complete: { Icon: NotificationsActiveRoundedIcon, fg: "#9A6A16", bg: "#FBF2DF", label: "Duration complete" },
   due_soon: { Icon: AccessTimeRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Due soon" },
