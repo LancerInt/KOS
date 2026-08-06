@@ -40,6 +40,7 @@ import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
 import { applySubtasks, task as taskAi, type SubtaskSuggestion } from "../features/ai/aiApi";
 import { PRIORITY_COLOR } from "../features/projects/display";
 import MentionComposer, { renderWithMentions } from "../features/tasks/MentionComposer";
+import TimeSection from "../features/tasks/TimeSection";
 import { listPeople, type Person } from "../features/email/emailsApi";
 import { useAppSelector } from "../hooks";
 import { tokens, monoFont } from "../theme";
@@ -475,6 +476,11 @@ export default function TaskDrawer({ taskId, open, onClose, onChanged }: Props) 
                 {canEdit && <Button size="small" variant="outlined" onClick={submitForApproval}>Submit for approval</Button>}
                 <Button size="small" onClick={requestDeadlineChange}>Request deadline change</Button>
               </Stack>
+            </Section>
+
+            {/* time tracking */}
+            <Section title="Time">
+              <TimeSection task={task} onChanged={load} />
             </Section>
 
             {/* comments */}

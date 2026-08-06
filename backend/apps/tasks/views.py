@@ -23,7 +23,7 @@ from apps.notifications.models import NotificationEvent
 from apps.notifications.services import notify, notify_many
 from apps.workflows.resolver import resolve
 
-from .models import Activity, ChecklistItem, Comment, Subtask, Task
+from .models import Activity, ChecklistItem, Comment, Subtask, Task, TimeEntry
 from .permissions import CommentPermission, TaskChildPermission, TaskPermission
 from .serializers import (
     ActivitySerializer,
@@ -33,6 +33,7 @@ from .serializers import (
     TaskDetailSerializer,
     TaskListSerializer,
     TaskWriteSerializer,
+    TimeEntrySerializer,
 )
 from .statuses import (
     COMPLETED_STATUS,
@@ -301,3 +302,78 @@ class CommentViewSet(viewsets.ModelViewSet):
             if mentioned.id != self.request.user.id:
                 notify(mentioned, NotificationEvent.MENTION, f"You were mentioned on: {task.title}",
                        body=comment.body[:200], task=task, project=task.project)
+
+
+class TimeEntryViewSet(viewsets.ModelViewSet):
+    """Log and review time against tasks, and roll it up per person (workload)."""
+
+    queryset = TimeEntry.objects.select_related("task", "user").all()
+    serializer_class = TimeEntrySerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ["task", "user"]
+
+    def get_queryset(self):
+        return self.queryset.filter(task__in=_visible_tasks(self.request.user))
+
+    def perform_create(self, serializer):
+        task = serializer.validated_data["task"]
+        if not visible_projects(self.request.user, Project.objects.filter(pk=task.project_id)).exists():
+            raise PermissionDenied("You do not have access to that task.")
+        if serializer.validated_data.get("minutes", 0) <= 0:
+            raise ValidationError({"minutes": "Log a positive number of minutes."})
+        entry = serializer.save(user=self.request.user)
+        task.last_activity_at = timezone.now()
+        task.save(update_fields=["last_activity_at"])
+        record(action=AuditAction.CREATE, obj=entry,
+               new_value={"minutes": entry.minutes, "task": task.id}, request=self.request)
+
+    def perform_destroy(self, instance):
+        if instance.user_id != self.request.user.id and not self.request.user.is_superuser:
+            raise PermissionDenied("You can only remove your own time entries.")
+        instance.delete()
+
+    @action(detail=False, methods=["get"])
+    def workload(self, request):
+        """Per-person load over a date range (default this week): time logged,
+        plus open assigned tasks and their planned estimate."""
+        from datetime import timedelta
+
+        from django.db.models import Count, Sum
+        from django.utils.dateparse import parse_date
+
+        from apps.accounts.models import User
+
+        today = timezone.now().date()
+        start = parse_date(request.query_params.get("start", "")) or today - timedelta(days=today.weekday())
+        end = parse_date(request.query_params.get("end", "")) or start + timedelta(days=6)
+
+        visible = _visible_tasks(request.user)
+        logged = (
+            TimeEntry.objects.filter(task__in=visible, spent_on__gte=start, spent_on__lte=end)
+            .values("user").annotate(total=Sum("minutes"))
+        )
+        logged_map = {r["user"]: r["total"] or 0 for r in logged}
+
+        done_like = [s for s, c in STATUS_CATEGORY.items()
+                     if c in (StatusCategory.DONE, StatusCategory.CANCELLED)]
+        open_per_owner = (
+            visible.exclude(status__in=done_like).filter(owners__isnull=False)
+            .values("owners").annotate(cnt=Count("id", distinct=True), est=Sum("estimate_minutes"))
+        )
+        open_map = {r["owners"]: (r["cnt"], r["est"] or 0) for r in open_per_owner}
+
+        rows = []
+        for u in User.objects.filter(is_active=True):
+            cnt, est = open_map.get(u.id, (0, 0))
+            logged_min = logged_map.get(u.id, 0)
+            if not (logged_min or cnt):
+                continue  # skip people with no load in this window
+            rows.append({
+                "user_id": u.id,
+                "user_name": u.get_full_name() or u.username,
+                "logged_minutes": logged_min,
+                "open_tasks": cnt,
+                "open_estimate_minutes": est,
+            })
+        rows.sort(key=lambda r: (-r["logged_minutes"], -r["open_tasks"]))
+        return Response({"start": start, "end": end, "rows": rows})

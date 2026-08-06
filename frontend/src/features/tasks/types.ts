@@ -68,6 +68,17 @@ export interface Activity {
   created_at: string;
 }
 
+export interface TimeEntry {
+  id: number;
+  task: number;
+  user: number | null;
+  user_detail: UserMini | null;
+  minutes: number;
+  spent_on: string;
+  note: string;
+  created_at: string;
+}
+
 export interface TaskDetail extends TaskListItem {
   description: string;
   deliverable: string;
@@ -78,9 +89,12 @@ export interface TaskDetail extends TaskListItem {
   reviewer: number | null;
   reviewer_detail: UserMini | null;
   collaborators_detail: UserMini[];
+  estimate_minutes: number | null;
+  logged_minutes: number;
   subtasks: Subtask[];
   checklist_items: ChecklistItem[];
   comments: Comment[];
   activities: Activity[];
+  time_entries: TimeEntry[];
   blocking_reasons: string[];
 }
