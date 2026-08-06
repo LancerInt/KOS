@@ -50,7 +50,7 @@ export async function toggleChecklistItem(id: number, isDone: boolean): Promise<
   await api.patch(`/checklist-items/${id}/`, { is_done: isDone });
 }
 
-export async function addComment(task: number, body: string): Promise<Comment> {
-  const { data } = await api.post<Comment>("/comments/", { task, body });
+export async function addComment(task: number, body: string, mentions: number[] = []): Promise<Comment> {
+  const { data } = await api.post<Comment>("/comments/", { task, body, mentions });
   return data;
 }

@@ -39,6 +39,8 @@ import { FlowRail, CATEGORY_COLOR, STATUSES, StatusChip } from "../features/task
 import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
 import { applySubtasks, task as taskAi, type SubtaskSuggestion } from "../features/ai/aiApi";
 import { PRIORITY_COLOR } from "../features/projects/display";
+import MentionComposer, { renderWithMentions } from "../features/tasks/MentionComposer";
+import { listPeople, type Person } from "../features/email/emailsApi";
 import { useAppSelector } from "../hooks";
 import { tokens, monoFont } from "../theme";
 
@@ -58,11 +60,17 @@ export default function TaskDrawer({ taskId, open, onClose, onChanged }: Props) 
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [wf, setWf] = useState<ResolvedWorkflow | null>(null);
   const [statusError, setStatusError] = useState<string[] | null>(null);
-  const [comment, setComment] = useState("");
+  const [people, setPeople] = useState<Person[]>([]);
 
   const load = () => {
     if (taskId) getTask(taskId).then(setTask);
   };
+
+  // People for the @mention picker — fetched once when the drawer first opens.
+  useEffect(() => {
+    if (open && people.length === 0) listPeople().then(setPeople).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     setTask(null);
@@ -186,11 +194,9 @@ export default function TaskDrawer({ taskId, open, onClose, onChanged }: Props) 
     }
   };
 
-  const postComment = async () => {
-    if (!task || !comment.trim()) return;
-    const body = comment.trim();
-    const res = await addCommentSafe(task.id, body);
-    setComment("");
+  const postComment = async (body: string, mentionIds: number[]) => {
+    if (!task || !body.trim()) return;
+    const res = await addCommentSafe(task.id, body, mentionIds);
     if (res.queued) {
       // Optimistic: show the pending comment until it syncs.
       const optimistic = {
@@ -199,7 +205,7 @@ export default function TaskDrawer({ taskId, open, onClose, onChanged }: Props) 
         author: null,
         author_detail: { full_name: "You (pending sync)", username: "you" } as unknown as UserMini,
         body,
-        mentions: [],
+        mentions: mentionIds,
         created_at: new Date().toISOString(),
       };
       setTask((t) => (t ? { ...t, comments: [...t.comments, optimistic] } : t));
@@ -474,21 +480,23 @@ export default function TaskDrawer({ taskId, open, onClose, onChanged }: Props) 
             {/* comments */}
             <Section title="Comments">
               <Stack spacing={1.25} sx={{ mb: 1.5 }}>
-                {task.comments.map((c) => (
-                  <Box key={c.id}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>{c.author_detail?.full_name || c.author_detail?.username}</Typography>
-                      <Typography sx={{ fontSize: 11, color: tokens.text3, fontFamily: monoFont }}>{c.created_at.slice(0, 16).replace("T", " ")}</Typography>
-                    </Stack>
-                    <Typography sx={{ fontSize: 13.5, whiteSpace: "pre-wrap" }}>{c.body}</Typography>
-                  </Box>
-                ))}
+                {task.comments.map((c) => {
+                  const names = (c.mentions ?? [])
+                    .map((id) => people.find((p) => p.id === id)?.name)
+                    .filter((n): n is string => Boolean(n));
+                  return (
+                    <Box key={c.id}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>{c.author_detail?.full_name || c.author_detail?.username}</Typography>
+                        <Typography sx={{ fontSize: 11, color: tokens.text3, fontFamily: monoFont }}>{c.created_at.slice(0, 16).replace("T", " ")}</Typography>
+                      </Stack>
+                      <Typography sx={{ fontSize: 13.5, whiteSpace: "pre-wrap" }}>{renderWithMentions(c.body, names)}</Typography>
+                    </Box>
+                  );
+                })}
                 {task.comments.length === 0 && <Typography sx={{ fontSize: 12.5, color: tokens.text3 }}>No comments yet.</Typography>}
               </Stack>
-              <Stack direction="row" spacing={1}>
-                <TextField value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add a comment…" size="small" fullWidth multiline maxRows={4} />
-                <Button variant="contained" onClick={postComment} disabled={!comment.trim()}>Post</Button>
-              </Stack>
+              <MentionComposer people={people} onSubmit={postComment} />
             </Section>
 
             {/* activity */}

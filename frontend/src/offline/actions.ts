@@ -14,15 +14,17 @@ const isNetworkError = (e: unknown): boolean =>
 
 export interface OfflineResult { queued: boolean; }
 
-export async function addCommentSafe(taskId: number, body: string): Promise<OfflineResult> {
+export async function addCommentSafe(taskId: number, body: string, mentions: number[] = []): Promise<OfflineResult> {
   if (navigator.onLine) {
     try {
-      await addComment(taskId, body);
+      await addComment(taskId, body, mentions);
       return { queued: false };
     } catch (e) {
       if (!isNetworkError(e)) throw e;
     }
   }
+  // Offline replay goes through /sync/ which only carries the body; mentions are
+  // an online-only nicety (the comment still posts, just without notifying).
   enqueue({ kind: "add_comment", task: taskId, body });
   return { queued: true };
 }
