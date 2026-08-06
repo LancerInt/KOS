@@ -63,12 +63,8 @@ export default function NotificationsPage() {
   const [items, setItems] = useState<Notification[] | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [ackDraft, setAckDraft] = useState<Record<number, string>>({});
-  // Density — Compact by default so a long list doesn't run far down the page.
-  const [dense, setDense] = useState<boolean>(() => (localStorage.getItem("kos_notif_density") ?? "compact") === "compact");
-  const setDensity = (compact: boolean) => {
-    setDense(compact);
-    localStorage.setItem("kos_notif_density", compact ? "compact" : "comfortable");
-  };
+  // Always compact — a long list stays readable without running far down the page.
+  const dense = true;
 
   const load = () =>
     listNotifications()
@@ -114,8 +110,6 @@ export default function NotificationsPage() {
             </Typography>
           </Box>
           <Stack direction="row" alignItems="center" spacing={1}>
-            <Segmented value={dense ? "compact" : "comfortable"} onChange={(v) => setDensity(v === "compact")}
-              options={[{ key: "comfortable", label: "Comfortable" }, { key: "compact", label: "Compact" }]} />
             {updates.some((n) => !n.is_read) && <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>}
           </Stack>
         </Stack>
@@ -255,24 +249,6 @@ export default function NotificationsPage() {
         )}
       </Box>
     </Box>
-  );
-}
-
-function Segmented({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { key: string; label: string }[] }) {
-  return (
-    <Stack direction="row" sx={{ p: 0.35, borderRadius: 2, bgcolor: "#EEF0F3", border: `1px solid ${tokens.line}` }}>
-      {options.map((o) => {
-        const active = o.key === value;
-        return (
-          <Box key={o.key} onClick={() => onChange(o.key)}
-            sx={{ px: 1.25, py: 0.4, borderRadius: 1.5, cursor: "pointer", fontSize: 12, fontWeight: 600,
-              color: active ? tokens.kriyaInk : tokens.text2, bgcolor: active ? "#fff" : "transparent",
-              boxShadow: active ? "0 1px 2px rgba(20,22,29,.12)" : "none", transition: "background-color .14s" }}>
-            {o.label}
-          </Box>
-        );
-      })}
-    </Stack>
   );
 }
 

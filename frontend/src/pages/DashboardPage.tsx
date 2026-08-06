@@ -140,7 +140,8 @@ export default function DashboardPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"urgency" | "end" | "name" | "workspace">("urgency");
-  const [dense, setDense] = useState(false);
+  // Always compact — the density toggle was removed in favour of one tight layout.
+  const dense = true;
 
   const reload = () => listAllProjects().then(setProjects).catch(() => setProjects([]));
   useEffect(() => { reload(); }, []);
@@ -269,8 +270,6 @@ export default function DashboardPage() {
               <MenuItem value="name" sx={{ fontSize: 13 }}>Sort: Name</MenuItem>
               <MenuItem value="workspace" sx={{ fontSize: 13 }}>Sort: Workspace</MenuItem>
             </Select>
-            <Segmented value={dense ? "compact" : "comfortable"} onChange={(v) => setDense(v === "compact")}
-              options={[{ key: "comfortable", label: "Comfortable" }, { key: "compact", label: "Compact" }]} />
             <Box sx={{ flex: 1 }} />
             <Segmented value={layout} onChange={(v) => setLayout(v as "list" | "board")}
               options={[
@@ -531,7 +530,7 @@ function ProjectCard({ p, dense, canEdit, onOpen, onComplete }: {
           <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: tokens.text3 }} />
           <Typography sx={{ fontSize: 11.5, color: tokens.text3, fontFamily: monoFont }}>{p.record_count} record{p.record_count === 1 ? "" : "s"}</Typography>
         </Stack>
-        {!dense && <Box sx={{ mt: 1.1 }}><StageRail status={p.duration.status} progress={progressPct(p)} /></Box>}
+        <Box sx={{ mt: dense ? 0.85 : 1.1 }}><StageRail status={p.duration.status} progress={progressPct(p)} /></Box>
       </Box>
       <Stack alignItems="flex-end" justifyContent="space-between">
         <Stack direction="row" alignItems="center">
