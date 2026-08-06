@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, Switch, TextField, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
@@ -110,6 +110,13 @@ export default function NotificationsPage() {
             </Typography>
           </Box>
           <Stack direction="row" alignItems="center" spacing={1}>
+            {prefs && (
+              <Segmented
+                value={prefs.email_enabled ? "on" : "off"}
+                onChange={(v) => savePref({ email_enabled: v === "on" })}
+                options={[{ key: "on", label: "Email on" }, { key: "off", label: "Email off" }]}
+              />
+            )}
             {updates.some((n) => !n.is_read) && <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>}
           </Stack>
         </Stack>
@@ -238,25 +245,25 @@ export default function NotificationsPage() {
           </>
         )}
 
-        {/* ---------- preferences ---------- */}
-        {prefs && (
-          <Paper sx={{ p: 2, borderRadius: "10px", mt: 3.5 }}>
-            <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 1 }}>Preferences</Typography>
-            <Stack direction="row" spacing={3} flexWrap="wrap">
-              <PrefRow label="Email notifications" checked={prefs.email_enabled} onChange={(v) => savePref({ email_enabled: v })} />
-            </Stack>
-          </Paper>
-        )}
       </Box>
     </Box>
   );
 }
 
-function PrefRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Segmented({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { key: string; label: string }[] }) {
   return (
-    <Stack direction="row" alignItems="center" spacing={0.5}>
-      <Switch checked={checked} onChange={(e) => onChange(e.target.checked)} size="small" />
-      <Typography sx={{ fontSize: 13.5 }}>{label}</Typography>
+    <Stack direction="row" sx={{ p: 0.35, borderRadius: 2, bgcolor: "#EEF0F3", border: `1px solid ${tokens.line}` }}>
+      {options.map((o) => {
+        const active = o.key === value;
+        return (
+          <Box key={o.key} onClick={() => onChange(o.key)}
+            sx={{ px: 1.25, py: 0.4, borderRadius: 1.5, cursor: "pointer", fontSize: 12, fontWeight: 600,
+              color: active ? tokens.kriyaInk : tokens.text2, bgcolor: active ? "#fff" : "transparent",
+              boxShadow: active ? "0 1px 2px rgba(20,22,29,.12)" : "none", transition: "background-color .14s" }}>
+            {o.label}
+          </Box>
+        );
+      })}
     </Stack>
   );
 }
