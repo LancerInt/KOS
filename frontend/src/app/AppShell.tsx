@@ -12,6 +12,7 @@ import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import QueryStatsRoundedIcon from "@mui/icons-material/QueryStatsRounded";
+import TimelineRoundedIcon from "@mui/icons-material/TimelineRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 
 import { useAppDispatch, useAppSelector } from "../hooks";
@@ -47,6 +48,7 @@ const NAV_TOP: NavGroup = {
   items: [
     { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
     { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
+    { to: "/timeline", label: "Timeline", icon: <TimelineRoundedIcon fontSize="small" /> },
     { to: "/workload", label: "Workload", icon: <QueryStatsRoundedIcon fontSize="small" /> },
   ],
 };

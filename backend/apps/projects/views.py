@@ -18,6 +18,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.permissions import HasCapability
 from apps.accounts.rbac import Capability, ProjectRole
@@ -243,3 +244,63 @@ class ProjectTemplateViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ProjectTemplate.objects.filter(is_active=True)
     serializer_class = ProjectTemplateSerializer
     permission_classes = [IsAuthenticated]
+
+
+class TimelineView(APIView):
+    """Gantt / roadmap data (visibility-scoped).
+
+    ``GET /api/timeline/`` → a roadmap of every visible project (start → target).
+    ``GET /api/timeline/?project=<id>`` → that project's dated tasks, milestones
+    and task→task dependencies, for a detailed Gantt.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Q
+
+        from apps.dependencies.models import Dependency
+        from apps.tasks.models import Task
+        from apps.tasks.statuses import category_for
+
+        visible = visible_projects(request.user, Project.objects.all())
+        pid = request.query_params.get("project")
+
+        if not pid:
+            return Response({"projects": [
+                {"id": p.id, "name": p.name, "code": p.code, "status": p.status,
+                 "health": p.health, "start_date": p.start_date, "end_date": p.target_date}
+                for p in visible.order_by("target_date", "name")
+            ]})
+
+        project = get_object_or_404(visible, pk=pid)
+        tasks = list(
+            Task.objects.filter(project=project)
+            .filter(Q(start_date__isnull=False) | Q(due_date__isnull=False))
+            .select_related("primary_owner")
+        )
+        task_ids = {t.id for t in tasks}
+        deps = Dependency.objects.filter(
+            successor__project=project, predecessor_task__isnull=False
+        ).values("successor_id", "predecessor_task_id")
+
+        return Response({
+            "project": {"id": project.id, "name": project.name, "code": project.code,
+                        "start_date": project.start_date, "end_date": project.target_date},
+            "tasks": [
+                {"id": t.id, "title": t.title, "status": t.status,
+                 "category": category_for(t.status),
+                 "start_date": t.start_date, "due_date": t.due_date,
+                 "owner": (t.primary_owner.get_full_name() or t.primary_owner.username) if t.primary_owner else None}
+                for t in tasks
+            ],
+            "milestones": [
+                {"id": m.id, "title": m.title, "due_date": m.due_date, "status": m.status}
+                for m in project.milestones.filter(due_date__isnull=False)
+            ],
+            "dependencies": [
+                {"successor": d["successor_id"], "predecessor": d["predecessor_task_id"]}
+                for d in deps
+                if d["predecessor_task_id"] in task_ids and d["successor_id"] in task_ids
+            ],
+        })

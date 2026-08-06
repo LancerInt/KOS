@@ -1,3 +1,4 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
@@ -7,6 +8,7 @@ from .views import (
     PortfolioViewSet,
     ProjectTemplateViewSet,
     ProjectViewSet,
+    TimelineView,
 )
 
 router = DefaultRouter()
@@ -17,4 +19,7 @@ router.register("memberships", MembershipViewSet, basename="membership")
 router.register("portfolios", PortfolioViewSet, basename="portfolio")
 router.register("project-templates", ProjectTemplateViewSet, basename="project-template")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("timeline/", TimelineView.as_view(), name="timeline"),
+    *router.urls,
+]

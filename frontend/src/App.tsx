@@ -18,6 +18,7 @@ import DocumentsPage from "./pages/DocumentsPage";
 import SOPsPage from "./pages/SOPsPage";
 import DashboardPage from "./pages/DashboardPage";
 import WorkloadPage from "./pages/WorkloadPage";
+import TimelinePage from "./pages/TimelinePage";
 import SearchPage from "./pages/SearchPage";
 import AutomationPage from "./pages/AutomationPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="/reports" element={<Navigate to="/" replace />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/workload" element={<WorkloadPage />} />
+            <Route path="/timeline" element={<TimelinePage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/projects/:id/workflow" element={<WorkflowPage />} />
