@@ -46,7 +46,9 @@ def compute_duration_state(start_at, end_at, completed_at, now=None) -> dict:
     coarse day counts kept for the existing progress rails.
     """
     if not start_at or not end_at:
-        return {"status": "none"}
+        # A start with no end isn't a countable duration (nothing to count down
+        # to), but the start is still carried so the UI can show and re-edit it.
+        return {"status": "none", **({"start_at": start_at.isoformat()} if start_at else {})}
     if now is None:
         now = timezone.now()
     total = (end_at - start_at).total_seconds() or 1.0
