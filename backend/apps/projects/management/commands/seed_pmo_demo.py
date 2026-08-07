@@ -13,8 +13,9 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from apps.accounts.rbac import ProjectRole
 from apps.dependencies.models import Dependency, DependencyType
-from apps.projects.models import Milestone, Project, ProjectHealth, ProjectStatus
+from apps.projects.models import Membership, Milestone, Project, ProjectHealth, ProjectStatus
 from apps.tasks.models import Task, TimeEntry
 
 CODE = "DEMO-PMO"
@@ -51,6 +52,16 @@ class Command(BaseCommand):
             target_date=today + timedelta(days=25),
             status=ProjectStatus.ACTIVE, health=ProjectHealth.ON_TRACK,
         )
+
+        # Visibility is membership-based — without this only superusers would see
+        # the demo. Make every active user a member so anyone can explore it.
+        for u in users:
+            role = (ProjectRole.OWNER if u == owner
+                    else ProjectRole.MANAGER if u == project.manager
+                    else ProjectRole.CONTRIBUTOR)
+            Membership.objects.get_or_create(
+                user=u, project=project, defaults={"project_role": role, "added_by": owner},
+            )
 
         def mk(title, start_off, due_off, status, est_hours, owner_i):
             person = users[owner_i % len(users)]
