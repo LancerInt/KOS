@@ -60,8 +60,9 @@ export function DurationBar({ duration }: { duration: Duration }) {
   );
 }
 
+const fmtDateTime = (s: string) => new Date(s).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+
 export function durationText(d: Duration, completedAt?: string | null): string {
-  const fmtDateTime = (s: string) => new Date(s).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   const end = d.end_label ?? (d.end_at ? fmtDateTime(d.end_at) : "");
   if (d.status === "completed") return completedAt ? `Completed ${fmtDateTime(completedAt)}` : "Completed";
   if (d.status === "due") return `Ended ${end} · awaiting completion`;
@@ -79,6 +80,9 @@ function toLocalInput(iso?: string | null): string {
  * A self-contained duration control: shows status + progress + Mark complete
  * when a duration is set, or a "Set duration" prompt when it isn't (and the
  * user may set one). Durations are to the hour. Manages its own set/edit dialog.
+ *
+ * The end is optional — a start may be saved on its own (there's just nothing
+ * to count down to, so no progress or reminders until an end is added).
  */
 export function DurationPanel({
   duration, completedAt, canEdit, allowSet, onSet, onToggleComplete,
@@ -87,7 +91,7 @@ export function DurationPanel({
   completedAt?: string | null;
   canEdit: boolean;
   allowSet: boolean;
-  onSet: (startAt: string, endAt: string) => Promise<unknown> | void;
+  onSet: (startAt: string, endAt: string | null) => Promise<unknown> | void;
   onToggleComplete: () => Promise<unknown> | void;
 }) {
   const [open, setOpen] = useState(false);
@@ -95,9 +99,12 @@ export function DurationPanel({
   const [end, setEnd] = useState("");
   const [busy, setBusy] = useState(false);
   const hasDur = duration.status !== "none";
-  if (!hasDur && !(canEdit && allowSet)) return null;
+  const startOnly = !hasDur && !!duration.start_at;
+  if (!hasDur && !startOnly && !(canEdit && allowSet)) return null;
 
-  const valid = !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
+  // The end is optional; when given it must fall after the start.
+  const endBeforeStart = !!start && !!end && new Date(end).getTime() <= new Date(start).getTime();
+  const valid = !!start && !endBeforeStart;
   const openDialog = () => {
     setStart(toLocalInput(duration.start_at));
     setEnd(duration.end_at ? toLocalInput(duration.end_at) : "");
@@ -106,7 +113,10 @@ export function DurationPanel({
   const save = async () => {
     if (!valid) return;
     setBusy(true);
-    try { await onSet(new Date(start).toISOString(), new Date(end).toISOString()); setOpen(false); } finally { setBusy(false); }
+    try {
+      await onSet(new Date(start).toISOString(), end ? new Date(end).toISOString() : null);
+      setOpen(false);
+    } finally { setBusy(false); }
   };
   const toggle = async () => { setBusy(true); try { await onToggleComplete(); } finally { setBusy(false); } };
 
@@ -133,6 +143,20 @@ export function DurationPanel({
             </Button>
           )}
         </Stack>
+      ) : startOnly ? (
+        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
+          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+            <Typography sx={{ fontSize: 13, color: tokens.text2 }}>
+              Starts {fmtDateTime(duration.start_at!)} · no end set
+            </Typography>
+            {canEdit && allowSet && (
+              <Box component="button" onClick={openDialog}
+                sx={{ border: "none", background: "transparent", p: 0, cursor: "pointer", fontSize: 11.5, color: tokens.kriyaInk, fontWeight: 600 }}>
+                Edit
+              </Box>
+            )}
+          </Stack>
+        </Stack>
       ) : (
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Typography sx={{ fontSize: 13, color: tokens.text2 }}>Set a duration to be notified when the time is up.</Typography>
@@ -146,9 +170,10 @@ export function DurationPanel({
           <Stack spacing={1.5} sx={{ mt: 0.5 }}>
             <TextField size="small" type="datetime-local" label="Starts" InputLabelProps={{ shrink: true }}
               value={start} onChange={(e) => setStart(e.target.value)} fullWidth />
-            <TextField size="small" type="datetime-local" label="Ends" InputLabelProps={{ shrink: true }}
-              value={end} onChange={(e) => setEnd(e.target.value)} fullWidth />
-            <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>Set the date and time. You'll get reminders as the end nears, and if it's overdue.</Typography>
+            <TextField size="small" type="datetime-local" label="Ends (optional)" InputLabelProps={{ shrink: true }}
+              value={end} onChange={(e) => setEnd(e.target.value)} fullWidth
+              error={endBeforeStart} helperText={endBeforeStart ? "The end must be after the start." : ""} />
+            <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>Set the date and time. The end is optional — add one to get reminders as it nears, and if it's overdue.</Typography>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

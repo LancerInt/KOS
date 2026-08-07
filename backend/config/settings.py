@@ -136,7 +136,12 @@ DATABASES = {
 # ready yet" into an unexplained deploy that hangs rather than an error anyone
 # can act on. Ten seconds is far longer than a healthy connect and short enough
 # that the health endpoint still answers.
-DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = 10
+#
+# Only PostgreSQL understands this option — SQLite (used for local development
+# when no Postgres is provisioned) rejects it outright, so it is applied per
+# engine rather than unconditionally.
+if "postgresql" in DATABASES["default"].get("ENGINE", ""):
+    DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = 10
 
 # --------------------------------------------------------------------------- #
 # Cache / Celery (Redis) — PRD §31.4

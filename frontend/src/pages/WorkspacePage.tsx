@@ -106,8 +106,15 @@ export default function WorkspacePage() {
     setCreating(true);
     setNewErr("");
     try {
-      const valid = newStart && newEnd && new Date(newEnd).getTime() > new Date(newStart).getTime();
-      const extra = valid ? { start_at: new Date(newStart).toISOString(), end_at: new Date(newEnd).toISOString() } : undefined;
+      // The end is optional — a start on its own is kept; an end before the
+      // start is not a window, so the whole thing is dropped.
+      const endOk = !newEnd || new Date(newEnd).getTime() > new Date(newStart).getTime();
+      const extra = newStart && endOk
+        ? {
+            start_at: new Date(newStart).toISOString(),
+            ...(newEnd ? { end_at: new Date(newEnd).toISOString() } : {}),
+          }
+        : undefined;
       const created = await createProject(ws.key, name, extra);
       setNewName("");
       setNewOpen(false);
@@ -315,10 +322,10 @@ export default function WorkspacePage() {
               onKeyDown={(e) => { if (e.key === "Enter") saveProject(); }} />
             <TextField size="small" type="datetime-local" label="Starts" InputLabelProps={{ shrink: true }}
               value={newStart} onChange={(e) => setNewStart(e.target.value)} fullWidth />
-            <TextField size="small" type="datetime-local" label="Ends" InputLabelProps={{ shrink: true }}
+            <TextField size="small" type="datetime-local" label="Ends (optional)" InputLabelProps={{ shrink: true }}
               value={newEnd} onChange={(e) => setNewEnd(e.target.value)} fullWidth />
             <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>
-              Set a date &amp; time. You'll get reminders as the end nears, and if it's overdue.
+              Set a date &amp; time. The end is optional — add one to get reminders as it nears, and if it's overdue.
             </Typography>
             {newErr && <Typography sx={{ fontSize: 12.5, color: tokens.attn }}>{newErr}</Typography>}
           </Stack>
