@@ -1,11 +1,15 @@
-"""Core endpoints — health check and API root."""
+"""Core endpoints — health check, API root, and per-user saved views."""
 from __future__ import annotations
 
 from django.db import connection
-from rest_framework.permissions import AllowAny
+from rest_framework import viewsets
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from .models import SavedView
+from .serializers import SavedViewSerializer
 
 
 class HealthView(APIView):
@@ -31,3 +35,21 @@ class HealthView(APIView):
                 "version": "0.1.0",
             }
         )
+
+
+class SavedViewViewSet(viewsets.ModelViewSet):
+    """Per-user saved filter/sort/layout presets for a screen.
+
+    Always scoped to the authenticated user — one user can neither see nor touch
+    another's presets. Filter by ``?surface=dashboard`` to fetch one screen's set.
+    """
+
+    serializer_class = SavedViewSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = SavedView.objects.filter(owner=self.request.user)
+        surface = self.request.query_params.get("surface")
+        if surface:
+            qs = qs.filter(surface=surface)
+        return qs

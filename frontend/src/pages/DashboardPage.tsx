@@ -11,10 +11,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Avatar, Box, Button, InputAdornment, MenuItem, Paper, Select, Stack,
+  Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
+  InputAdornment, MenuItem, Paper, Select, Stack,
   Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
 } from "@mui/material";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import BookmarkBorderRoundedIcon from "@mui/icons-material/BookmarkBorderRounded";
+import BookmarkAddRoundedIcon from "@mui/icons-material/BookmarkAddRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import FolderRoundedIcon from "@mui/icons-material/FolderRounded";
@@ -28,6 +31,7 @@ import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 
 import { listAllProjects, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
+import { listSavedViews, createSavedView, deleteSavedView, type SavedView } from "../features/views/savedViewsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { useAppSelector } from "../hooks";
@@ -37,6 +41,12 @@ import DailyStandupWidget from "../features/ai/DailyStandupWidget";
 import { tokens, monoFont, categoryColors } from "../theme";
 
 type Filter = "all" | DurationStatus;
+type SortKey = "urgency" | "end" | "name" | "workspace";
+type Layout = "list" | "board";
+
+/** The Dashboard state a saved view captures. Stored verbatim as the view config. */
+type DashConfig = { filter: Filter; query: string; sort: SortKey; layout: Layout };
+const VIEW_SURFACE = "dashboard";
 
 // Every status colour is drawn from the app theme — brand teal for "in progress",
 // the single coral for "overdue", canonical categoryColors for the rest.
@@ -139,12 +149,52 @@ export default function DashboardPage() {
   const [layout, setLayout] = useState<"list" | "board">("list");
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<"urgency" | "end" | "name" | "workspace">("urgency");
+  const [sort, setSort] = useState<SortKey>("urgency");
   // Always compact — the density toggle was removed in favour of one tight layout.
   const dense = true;
 
+  // Saved views — per-user filter/sort/layout presets for this screen.
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saveErr, setSaveErr] = useState("");
+
   const reload = () => listAllProjects().then(setProjects).catch(() => setProjects([]));
-  useEffect(() => { reload(); }, []);
+  const loadViews = () => listSavedViews(VIEW_SURFACE).then(setSavedViews).catch(() => setSavedViews([]));
+  useEffect(() => { reload(); loadViews(); }, []);
+
+  const applyView = (v: SavedView) => {
+    const c = v.config as Partial<DashConfig>;
+    setFilter((c.filter as Filter) ?? "all");
+    setQuery(typeof c.query === "string" ? c.query : "");
+    setSort((c.sort as SortKey) ?? "urgency");
+    setLayout((c.layout as Layout) ?? "list");
+  };
+
+  const isActiveView = (v: SavedView) => {
+    const c = v.config as Partial<DashConfig>;
+    return (c.filter ?? "all") === filter && (c.query ?? "") === query
+      && (c.sort ?? "urgency") === sort && (c.layout ?? "list") === layout;
+  };
+
+  const saveCurrent = async () => {
+    const name = saveName.trim();
+    if (!name) { setSaveErr("Give the view a name."); return; }
+    const config: DashConfig = { filter, query, sort, layout };
+    try {
+      await createSavedView(VIEW_SURFACE, name, config);
+      setSaveOpen(false); setSaveName(""); setSaveErr("");
+      loadViews();
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { name?: string[]; detail?: string } } })?.response?.data;
+      setSaveErr(d?.name?.[0] || d?.detail || "Could not save the view.");
+    }
+  };
+
+  const removeView = (v: SavedView) => {
+    if (!window.confirm(`Delete the view "${v.name}"?`)) return;
+    deleteSavedView(v.id).then(loadViews).catch(() => {});
+  };
 
   const canEdit = (p: WorkspaceProject) => accessLevel(mine, p.workspace) === "edit";
 
@@ -259,6 +309,36 @@ export default function DashboardPage() {
 
       {projects && view === "work" && (
         <>
+          {/* Saved views — per-user filter/sort/layout presets */}
+          <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1.5, flexWrap: "wrap" }} useFlexGap>
+            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: tokens.text3, pr: 0.25 }}>
+              <BookmarkBorderRoundedIcon sx={{ fontSize: 16 }} />
+              <Typography sx={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em" }}>Views</Typography>
+            </Stack>
+            {savedViews.map((v) => {
+              const active = isActiveView(v);
+              return (
+                <Chip key={v.id} label={v.name} size="small"
+                  onClick={() => applyView(v)} onDelete={() => removeView(v)}
+                  variant={active ? "filled" : "outlined"}
+                  sx={{ height: 26, fontSize: 12, fontWeight: 500, borderRadius: "6px",
+                    ...(active
+                      ? { bgcolor: tokens.kriyaWash, color: tokens.kriyaInk, border: `1px solid ${tokens.kriya}`,
+                          "& .MuiChip-deleteIcon": { color: tokens.kriyaInk } }
+                      : { color: tokens.text2, borderColor: tokens.line, "& .MuiChip-deleteIcon": { color: tokens.text3 } }),
+                    "& .MuiChip-deleteIcon:hover": { color: tokens.attn } }} />
+              );
+            })}
+            {savedViews.length === 0 && (
+              <Typography sx={{ fontSize: 12, color: tokens.text3 }}>None yet — tune the filters below, then save them.</Typography>
+            )}
+            <Button size="small" variant="text" startIcon={<BookmarkAddRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => { setSaveName(""); setSaveErr(""); setSaveOpen(true); }}
+              sx={{ fontSize: 12, textTransform: "none", color: tokens.kriyaInk, minWidth: 0 }}>
+              Save current
+            </Button>
+          </Stack>
+
           {/* C · command strip + B · view toggle */}
           <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mb: 2, flexWrap: "wrap" }} useFlexGap>
             <TextField size="small" placeholder="Find a project…" value={query} onChange={(e) => setQuery(e.target.value)}
@@ -392,11 +472,40 @@ export default function DashboardPage() {
           </Paper>
         </Box>
       )}
+
+      {/* Save-view dialog */}
+      <Dialog open={saveOpen} onClose={() => setSaveOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontFamily: '"Manrope Variable"', fontSize: 18 }}>Save this view</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 12.5, color: tokens.text3, mb: 1.5 }}>
+            Captures the current filter, search, sort and layout. It'll appear as a chip you can click to re-apply.
+          </Typography>
+          <TextField autoFocus fullWidth size="small" label="View name" value={saveName}
+            onChange={(e) => { setSaveName(e.target.value); setSaveErr(""); }}
+            onKeyDown={(e) => { if (e.key === "Enter") saveCurrent(); }}
+            placeholder="e.g. Overdue this week" error={Boolean(saveErr)} helperText={saveErr || " "} />
+          <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", mt: 0.5 }} useFlexGap>
+            <ViewChipHint label={`Status: ${filter === "all" ? "All" : STATUS_UI[filter as DurationStatus].label}`} />
+            {query.trim() && <ViewChipHint label={`Search: "${query.trim()}"`} />}
+            <ViewChipHint label={`Sort: ${sort}`} />
+            <ViewChipHint label={`Layout: ${layout}`} />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={saveCurrent}>Save view</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
 
 /* ---------- small pieces ---------- */
+function ViewChipHint({ label }: { label: string }) {
+  return (
+    <Box sx={{ px: 0.85, py: 0.3, borderRadius: "5px", bgcolor: "#F1F3F6", fontSize: 11, color: tokens.text2 }}>{label}</Box>
+  );
+}
 function CircularProgressDot() {
   return <Box sx={{ width: 26, height: 26, borderRadius: "50%", border: `3px solid ${tokens.line}`, borderTopColor: tokens.kriya, animation: "spin 0.8s linear infinite", "@keyframes spin": { to: { transform: "rotate(360deg)" } } }} />;
 }
