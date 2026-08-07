@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from apps.accounts.models import User
 
-from .models import Activity, ChecklistItem, Comment, Subtask, Task, TimeEntry
+from .models import Activity, ChecklistItem, Comment, Subtask, Task
 from .statuses import STATUS_LABEL, category_for
 
 
@@ -36,15 +36,6 @@ class CommentSerializer(serializers.ModelSerializer):
         model = Comment
         fields = ("id", "task", "author", "author_detail", "body", "mentions", "created_at")
         read_only_fields = ("author",)
-
-
-class TimeEntrySerializer(serializers.ModelSerializer):
-    user_detail = UserMiniSerializer(source="user", read_only=True)
-
-    class Meta:
-        model = TimeEntry
-        fields = ("id", "task", "user", "user_detail", "minutes", "spent_on", "note", "created_at")
-        read_only_fields = ("user",)
 
 
 class ActivitySerializer(serializers.ModelSerializer):
@@ -99,8 +90,6 @@ class TaskDetailSerializer(TaskListSerializer):
     checklist_items = ChecklistItemSerializer(many=True, read_only=True)
     comments = CommentSerializer(many=True, read_only=True)
     activities = ActivitySerializer(many=True, read_only=True)
-    time_entries = TimeEntrySerializer(many=True, read_only=True)
-    logged_minutes = serializers.IntegerField(read_only=True)
     blocking_reasons = serializers.SerializerMethodField()
 
     class Meta(TaskListSerializer.Meta):
@@ -108,8 +97,8 @@ class TaskDetailSerializer(TaskListSerializer):
             "description", "deliverable", "definition_of_done", "tags",
             "risk_level", "reminder_lead_days", "reviewer", "reviewer_detail",
             "collaborators", "collaborators_detail", "watchers",
-            "actual_start_date", "completed_at", "estimate_minutes", "logged_minutes",
-            "subtasks", "checklist_items", "comments", "activities", "time_entries", "blocking_reasons",
+            "actual_start_date", "completed_at",
+            "subtasks", "checklist_items", "comments", "activities", "blocking_reasons",
         )
 
     def get_blocking_reasons(self, obj: Task) -> list[str]:
@@ -126,7 +115,7 @@ class TaskWriteSerializer(serializers.ModelSerializer):
             "id", "title", "project", "epic", "milestone", "description",
             "task_type", "owners", "primary_owner", "collaborators", "reviewer",
             "watchers", "priority", "risk_level", "start_date", "due_date",
-            "estimate_minutes", "deliverable", "definition_of_done", "tags", "reminder_lead_days",
+            "deliverable", "definition_of_done", "tags", "reminder_lead_days",
         )
 
     def validate(self, attrs):

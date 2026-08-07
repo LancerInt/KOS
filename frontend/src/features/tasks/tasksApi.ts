@@ -28,7 +28,6 @@ export interface CreateTaskPayload {
   deliverable?: string;
   description?: string;
   task_type?: string;
-  estimate_minutes?: number | null;
 }
 
 export async function createTask(payload: CreateTaskPayload): Promise<TaskDetail> {

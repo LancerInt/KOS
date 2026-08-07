@@ -76,9 +76,6 @@ class Task(TimeStampedModel):
     start_date = models.DateField(null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)
 
-    # Planned effort in minutes — compared against logged time (see TimeEntry).
-    estimate_minutes = models.PositiveIntegerField(null=True, blank=True)
-
     deliverable = models.TextField(blank=True, help_text="What 'done' produces (§11.1).")
     definition_of_done = models.TextField(blank=True, help_text="Task-level completion criteria.")
 
@@ -129,10 +126,6 @@ class Task(TimeStampedModel):
     @property
     def checklist_total(self) -> int:
         return self.checklist_items.count()
-
-    @property
-    def logged_minutes(self) -> int:
-        return self.time_entries.aggregate(total=models.Sum("minutes"))["total"] or 0
 
     @property
     def open_blocker(self):
@@ -239,26 +232,3 @@ class Activity(models.Model):
 
     def __str__(self) -> str:
         return f"{self.actor} {self.verb} {self.task_id}"
-
-
-class TimeEntry(TimeStampedModel):
-    """A logged block of work on a task — who did it, how long (minutes), and on
-    which day. Rolled up per task (planned vs actual) and per person (workload)."""
-
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="time_entries")
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="time_entries"
-    )
-    minutes = models.PositiveIntegerField()
-    spent_on = models.DateField()
-    note = models.CharField(max_length=300, blank=True)
-
-    class Meta:
-        ordering = ("-spent_on", "-created_at")
-        indexes = [
-            models.Index(fields=["user", "spent_on"]),
-            models.Index(fields=["task"]),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.minutes}m by {self.user_id} on {self.task_id}"
