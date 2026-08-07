@@ -79,7 +79,8 @@ export default function BuildWithAiDialog({ open, onClose, workspace, workspaceL
           if (f.options?.length) fd.options = f.options;
           return fd;
         });
-        await createSection(project.id, s.name.trim(), s.blurb ?? "", fields);
+        // The scaffold contract is flat, so every generated section is top-level.
+        await createSection({ project: project.id, name: s.name.trim(), blurb: s.blurb ?? "", fields });
       }
       onCreated(project.id);
       reset();

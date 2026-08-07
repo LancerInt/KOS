@@ -93,14 +93,24 @@ def purge_expired_workspaces() -> int:
 
 def purge_expired_deleted_items() -> int:
     """Permanently remove soft-deleted projects/sections/records past the TTL.
-    Purging a project cascades its sections/records; a purged section also takes
-    the records captured under it (linked by project + category name)."""
+    Purging a project cascades its sections/records; purging a section takes its
+    whole subtree, and every record under it, via the database cascade."""
     cutoff = timezone.now() - timedelta(days=ARCHIVE_TTL_DAYS)
     n = 0
-    for sec in WorkspaceSection.objects.filter(deleted_at__isnull=False, deleted_at__lt=cutoff):
-        WorkspaceRecord.objects.filter(project=sec.project, category=sec.name).delete()
-        sec.delete()
-        n += 1
+    expired = list(WorkspaceSection.objects.filter(deleted_at__isnull=False, deleted_at__lt=cutoff))
+    expired_ids = {s.pk for s in expired}
+    # Only purge subtree roots: a child section, its records and their
+    # attachments all ride down on the parent's cascade.
+    for sec in [s for s in expired if s.parent_id not in expired_ids]:
+        subtree = sec.descendants(include_self=True)
+        # Records still linked only by name — written against a built-in section
+        # that had no row when they were created.
+        WorkspaceRecord.objects.filter(
+            project=sec.project, section__isnull=True,
+            category__in=[s.name for s in subtree],
+        ).delete()
+        sec.delete()          # cascades child sections + their records + attachments
+        n += len(subtree)
     n += WorkspaceRecord.objects.filter(deleted_at__isnull=False, deleted_at__lt=cutoff).delete()[0]
     n += WorkspaceProject.objects.filter(deleted_at__isnull=False, deleted_at__lt=cutoff).delete()[0]
     return n
@@ -120,7 +130,11 @@ def _restore_name(model, row) -> str:
     base = row.name
     clash = model.objects.filter(workspace=row.workspace, name=base, deleted_at__isnull=True)
     if model is WorkspaceSection:
+        # Sibling-scoped, matching the uniqueness constraints: a name only
+        # clashes with sections sharing this one's parent.
         clash = model.objects.filter(project=row.project, name=base, deleted_at__isnull=True)
+        clash = (clash.filter(parent__isnull=True) if row.parent_id is None
+                 else clash.filter(parent_id=row.parent_id))
     if clash.exclude(pk=row.pk).exists():
         return f"{base} (restored)"[:model._meta.get_field("name").max_length]
     return base
@@ -140,15 +154,22 @@ def _proj_val(project) -> dict:
 
 
 def _sec_val(section) -> dict:
+    # Context carries the whole trail, so a nested section reads as
+    # "Project › Parent › Sub" rather than just its project.
+    trail = " › ".join(a.name for a in reversed(section.ancestors()))
+    context = section.project.name if section.project_id else ""
+    if trail:
+        context = f"{context} › {trail}" if context else trail
     return {"workspace": section.workspace, "name": section.name, "kind": "section",
-            "context": section.project.name if section.project_id else ""}
+            "context": context}
 
 
 def _rec_val(rec) -> dict:
     headline = ""
     if isinstance(rec.data, dict):
         headline = next((str(v) for v in rec.data.values() if v), "")
-    context = f"{rec.project.name} › {rec.category}" if rec.project_id else rec.category
+    trail = rec.section.path_label() if rec.section_id else rec.category
+    context = f"{rec.project.name} › {trail}" if rec.project_id else trail
     return {"workspace": rec.workspace, "name": headline or rec.category, "kind": "record", "context": context}
 
 
@@ -495,16 +516,22 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = (
-            WorkspaceRecord.objects.select_related("created_by").prefetch_related("attachments")
+            WorkspaceRecord.objects.select_related("created_by", "section")
+            .prefetch_related("attachments")
             .filter(deleted_at__isnull=True)
             .exclude(project__deleted_at__isnull=False)   # ride along with a deleted project
         )
         params = self.request.query_params
         project = params.get("project")
         category = params.get("category")
+        section = params.get("section")
         if project:
             qs = qs.filter(project=project)
+        if section:
+            qs = qs.filter(section=section)
         if category:
+            # Legacy filter — ambiguous once sections nest, since two in
+            # different branches may share a name. New clients send ?section=.
             qs = qs.filter(category=category)
         return _scope_to_viewable(qs, self.request.user)
 
@@ -551,7 +578,7 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
         # Keep hidden/deleted sections in the list (the project page shows them as
         # restore chips); only drop those under a deleted project.
         qs = (
-            WorkspaceSection.objects.select_related("created_by")
+            WorkspaceSection.objects.select_related("created_by", "parent")
             .exclude(project__deleted_at__isnull=False)
         )
         project = self.request.query_params.get("project")
@@ -560,15 +587,28 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
         return _scope_to_viewable(qs, self.request.user)
 
     def _mark_deleted(self, section):
+        # `hidden` is persisted here too. It used to be set in memory by
+        # perform_destroy and then dropped by this update_fields list, so a
+        # DELETEd section stayed hidden=False in the database and kept
+        # rendering on the project grid.
+        section.hidden = True
         section.deleted_at = timezone.now()
         section.deleted_by = self.request.user
-        section.save(update_fields=["deleted_at", "deleted_by"])
+        section.save(update_fields=["hidden", "deleted_at", "deleted_by"])
 
     def perform_create(self, serializer):
         project = serializer.validated_data.get("project")
         ws = project.workspace if project else ""
         _require_edit(self.request.user, ws)
         section = serializer.save(created_by=self.request.user, workspace=ws)
+        # Adoption backfill. A built-in section only becomes a row the first time
+        # someone customises or deletes it, so records written before that carry
+        # its name with no FK behind them. Claim them now — from here on this row
+        # owns them, and a later rename can no longer strand them.
+        if project is not None and section.parent_id is None:
+            WorkspaceRecord.objects.filter(
+                project=project, section__isnull=True, category__iexact=section.name,
+            ).update(section=section, category=section.name)
         # A section created already-hidden is a built-in being removed (deleted).
         if section.hidden:
             self._mark_deleted(section)
@@ -579,9 +619,17 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # Hiding a section removes it from the grid AND files it in the Archive
         # (deleted_at); its records are kept so a restore brings it back intact.
+        # Descendants are deliberately left alone — a sub-section is effectively
+        # hidden whenever an ancestor is, so a restore returns the subtree exactly
+        # as the user left it (a child they deleted separately stays deleted).
         _require_edit(self.request.user, serializer.instance.workspace)
         was_hidden = serializer.instance.hidden
+        was_name = serializer.instance.name
         section = serializer.save()
+        if section.name != was_name:
+            # Keep the denormalised mirror true. Before records carried a FK, a
+            # plain rename orphaned every record under the section.
+            section.records.update(category=section.name)
         if section.hidden and not was_hidden:
             self._mark_deleted(section)
             record(action=AuditAction.DELETE, obj=section, old_value=_sec_val(section), request=self.request)
@@ -623,11 +671,14 @@ class WorkspaceDeletedItemsView(APIView):
 
     def _visible(self, user):
         """Soft-deleted rows the user may see. Sections/records whose project is
-        itself deleted are left out — they restore together with the project."""
+        itself deleted are left out — they restore together with the project, and
+        so does a sub-section under a deleted parent."""
         purge_expired_deleted_items()            # self-maintain whenever viewed
         projects = WorkspaceProject.objects.filter(deleted_at__isnull=False).select_related("deleted_by")
         sections = (WorkspaceSection.objects.filter(deleted_at__isnull=False)
-                    .exclude(project__deleted_at__isnull=False).select_related("deleted_by", "project"))
+                    .exclude(project__deleted_at__isnull=False)
+                    .exclude(parent__deleted_at__isnull=False)
+                    .select_related("deleted_by", "project", "parent"))
         records = (WorkspaceRecord.objects.filter(deleted_at__isnull=False)
                    .exclude(project__deleted_at__isnull=False).select_related("deleted_by", "project"))
         keys = _editable_workspace_keys(user)
@@ -648,10 +699,11 @@ class WorkspaceDeletedItemsView(APIView):
     def get(self, request):
         projects, sections, records = self._visible(request.user)
         items = [self._row("project", p, p.name, "") for p in projects]
-        items += [self._row("section", s, s.name, s.project.name if s.project_id else "") for s in sections]
+        items += [self._row("section", s, s.name, _sec_val(s)["context"]) for s in sections]
         for rec in records:
             headline = next((str(v) for v in rec.data.values() if v), "") if isinstance(rec.data, dict) else ""
-            context = f"{rec.project.name} › {rec.category}" if rec.project_id else rec.category
+            trail = rec.section.path_label() if rec.section_id else rec.category
+            context = f"{rec.project.name} › {trail}" if rec.project_id else trail
             items.append(self._row("record", rec, headline or rec.category, context))
         items.sort(key=lambda x: x["at"], reverse=True)
         return Response({"is_supervisor": is_supervisor(request.user), "items": items})
@@ -667,6 +719,9 @@ class WorkspaceDeletedItemsView(APIView):
             raise NotFound("That item isn't in the Archive.")
         if not (is_supervisor(request.user) or can_edit(request.user, row.workspace)):
             raise PermissionDenied("You don't have edit access to restore this item.")
+        if model is WorkspaceSection and row.parent_id and row.parent.deleted_at is not None:
+            # Restoring into a deleted parent would put it somewhere invisible.
+            raise ValidationError("Restore the parent section first.")
         fields = ["deleted_at", "deleted_by"]
         row.deleted_at = None
         row.deleted_by = None
@@ -679,6 +734,10 @@ class WorkspaceDeletedItemsView(APIView):
             row.hidden = False
             fields.append("hidden")
         row.save(update_fields=fields)
+        if model is WorkspaceSection:
+            # A collision may have renamed it. The records hold a FK so they
+            # survive that, but their `category` mirror has to follow.
+            row.records.update(category=row.name)
         record(action=AuditAction.UPDATE, obj=row,
                new_value={"workspace": row.workspace, "name": getattr(row, "name", ""),
                           "kind": request.data.get("kind"), "restored": True}, request=request)
