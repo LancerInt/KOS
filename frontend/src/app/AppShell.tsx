@@ -1,11 +1,10 @@
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Avatar, Box, InputAdornment, Stack, TextField, Tooltip, Typography } from "@mui/material";
+import { Avatar, Box, Stack, Tooltip, Typography } from "@mui/material";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
 import HubRoundedIcon from "@mui/icons-material/HubRounded";
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
@@ -75,27 +74,6 @@ const RAIL = {
   header: "rgba(255,255,255,.45)",
   brand: "#FFFFFF",
 };
-
-function GlobalSearchBar() {
-  const navigate = useNavigate();
-  const [q, setQ] = useState("");
-  const submit = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && q.trim().length >= 2) navigate(`/search?q=${encodeURIComponent(q.trim())}`);
-  };
-  return (
-    <Box sx={{ position: "sticky", top: 0, zIndex: 5, bgcolor: "rgba(251,250,246,.85)", backdropFilter: "blur(6px)",
-      borderBottom: `1px solid ${tokens.line}`, px: 3, py: 1.1 }}>
-      <TextField
-        size="small" placeholder="Search everything…  (press Enter)" value={q}
-        onChange={(e) => setQ(e.target.value)} onKeyDown={submit}
-        InputProps={{ startAdornment: (
-          <InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 18, color: tokens.text3 }} /></InputAdornment>
-        ) }}
-        sx={{ width: "100%", maxWidth: 460, "& .MuiOutlinedInput-root": { bgcolor: tokens.surface, borderRadius: 2 } }}
-      />
-    </Box>
-  );
-}
 
 export default function AppShell() {
   const dispatch = useAppDispatch();
@@ -311,7 +289,6 @@ export default function AppShell() {
       {/* main */}
       <Box sx={{ bgcolor: "background.default", overflowY: "auto", minWidth: 0 }}>
         <OfflineBanner />
-        <GlobalSearchBar />
         <Outlet />
       </Box>
 
