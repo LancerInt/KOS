@@ -11,9 +11,9 @@ import DragIndicatorRoundedIcon from "@mui/icons-material/DragIndicatorRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
-import type { WorkspaceCategory } from "./workspaces";
 import type { WorkspaceRecord } from "./recordsApi";
 import { createRecord, deleteRecord, completeRecord } from "./recordsApi";
+import { ancestorTrail, type SectionNode } from "./sectionTree";
 import {
   FIELD_GROUPS, FIELD_TYPES, TYPE_ORDER, newField, primaryField, isDurationField,
   type FieldDef, type FieldType,
@@ -21,77 +21,173 @@ import {
 import { DurationChip, durationText } from "./durationDisplay";
 import { tokens, monoFont } from "../../theme";
 
-type Tab = "fields" | "records";
+type Tab = "fields" | "records" | "children";
 
+/**
+ * One section, at any depth. The drawer walks the tree in place: the breadcrumb
+ * climbs back out and the Sub-sections tab descends, so unlimited nesting never
+ * needs a second navigation surface.
+ */
 export function SectionDrawer({
-  category, project, records, canEdit, showDuration, initialTab,
-  onClose, onRecordsChanged, onSaveFields, onDeleteSection,
+  node, projectName, project, records, canEdit, showDuration, initialTab,
+  onClose, onOpenNode, onAddChild, onRestoreChild,
+  onRecordsChanged, onSaveFields, onDeleteSection,
 }: {
-  category: WorkspaceCategory;
+  node: SectionNode;
+  projectName: string;
   project: number;
   records: WorkspaceRecord[];
   canEdit: boolean;
   showDuration: boolean;
   initialTab: Tab;
   onClose: () => void;
+  onOpenNode: (key: string) => void;
+  onAddChild: () => void;
+  onRestoreChild: (id: number) => void;
   onRecordsChanged: () => void;
   onSaveFields: (fields: FieldDef[]) => Promise<void>;
   onDeleteSection?: () => void;
 }) {
-  const savedFields = category.fieldDefs ?? [];
+  const savedFields = node.fieldDefs;
   const [tab, setTab] = useState<Tab>(canEdit ? initialTab : "records");
+  const trail = ancestorTrail(node).slice(0, -1);      // ancestors, not the node
+
+  const TABS: Tab[] = canEdit ? ["records", "fields", "children"] : ["records", "children"];
+  const tabLabel = (t: Tab) =>
+    t === "records" ? "Records"
+      : t === "fields" ? "Fields"
+      : `Sub-sections${node.children.length ? ` (${node.children.length})` : ""}`;
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* header */}
       <Box sx={{ px: 3, pt: 2.5, pb: 1.75, borderBottom: `1px solid ${tokens.line}` }}>
+        {/* breadcrumb — the way back up out of a nested section */}
+        <Stack direction="row" alignItems="center" flexWrap="wrap" sx={{ mb: 0.5 }}>
+          <Crumb onClick={onClose}>{projectName}</Crumb>
+          {trail.map((a) => (
+            <Box key={a.key} sx={{ display: "inline-flex", alignItems: "center" }}>
+              <Sep />
+              <Crumb onClick={() => onOpenNode(a.key)}>{a.name}</Crumb>
+            </Box>
+          ))}
+        </Stack>
         <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
           <Box sx={{ minWidth: 0 }}>
-            <Typography variant="h3" sx={{ fontSize: 19, lineHeight: 1.3 }}>{category.name}</Typography>
-            <Typography sx={{ fontSize: 12.5, color: tokens.text3, mt: 0.25 }}>{category.blurb}</Typography>
+            <Typography variant="h3" sx={{ fontSize: 19, lineHeight: 1.3 }}>{node.name}</Typography>
+            <Typography sx={{ fontSize: 12.5, color: tokens.text3, mt: 0.25 }}>{node.blurb}</Typography>
           </Box>
           <IconButton size="small" onClick={onClose}><CloseRoundedIcon sx={{ fontSize: 18 }} /></IconButton>
         </Stack>
-        {canEdit && (
-          <Box sx={{ display: "inline-flex", mt: 1.75, p: "3px", borderRadius: "9px", bgcolor: "#EEF0F3", border: `1px solid ${tokens.line}` }}>
-            {(["records", "fields"] as Tab[]).map((t) => (
-              <Box key={t} component="button" onClick={() => setTab(t)}
-                sx={{ border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: 12.5,
-                  px: 1.75, py: 0.75, borderRadius: "7px",
-                  color: tab === t ? tokens.kriyaInk : tokens.text2,
-                  bgcolor: tab === t ? "#fff" : "transparent",
-                  boxShadow: tab === t ? "0 1px 2px rgba(20,22,29,.12)" : "none" }}>
-                {t === "records" ? "Records" : "Fields"}
-              </Box>
-            ))}
-          </Box>
-        )}
+        <Box sx={{ display: "inline-flex", mt: 1.75, p: "3px", borderRadius: "9px", bgcolor: "#EEF0F3", border: `1px solid ${tokens.line}` }}>
+          {TABS.map((t) => (
+            <Box key={t} component="button" onClick={() => setTab(t)}
+              sx={{ border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: 12.5,
+                px: 1.75, py: 0.75, borderRadius: "7px", whiteSpace: "nowrap",
+                color: tab === t ? tokens.kriyaInk : tokens.text2,
+                bgcolor: tab === t ? "#fff" : "transparent",
+                boxShadow: tab === t ? "0 1px 2px rgba(20,22,29,.12)" : "none" }}>
+              {tabLabel(t)}
+            </Box>
+          ))}
+        </Box>
       </Box>
 
       {/* body */}
       <Box sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.25 }}>
         {tab === "fields" && canEdit ? (
-          <FieldBuilder key={category.sectionId ?? category.name} initial={savedFields} onSave={onSaveFields} />
+          <FieldBuilder key={node.key} initial={savedFields} onSave={onSaveFields} />
+        ) : tab === "children" ? (
+          <SubSectionsTab node={node} canEdit={canEdit} onOpenNode={onOpenNode}
+            onAddChild={onAddChild} onRestoreChild={onRestoreChild} />
         ) : (
           <RecordsTab
-            category={category} project={project} records={records} fields={savedFields}
+            node={node} project={project} records={records} fields={savedFields}
             canEdit={canEdit} showDuration={showDuration} onChanged={onRecordsChanged}
           />
         )}
 
-        {onDeleteSection && (
+        {onDeleteSection && tab !== "children" && (
           <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${tokens.line}` }}>
             <Button size="small" color="error" startIcon={<DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />}
               onClick={onDeleteSection}>
               Delete this section
             </Button>
             <Typography sx={{ fontSize: 11, color: tokens.text3, mt: 0.5 }}>
-              Hides it from this project — records are kept, and you can restore it or Undo.
+              Hides it from this project — records and sub-sections are kept, and you can
+              restore it or Undo.
             </Typography>
           </Box>
         )}
       </Box>
     </Box>
+  );
+}
+
+const Sep = () => (
+  <Typography component="span" sx={{ fontSize: 12, color: tokens.text3, mx: 0.5 }}>›</Typography>
+);
+
+function Crumb({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <Box component="button" onClick={onClick}
+      sx={{ border: "none", background: "transparent", p: 0, cursor: "pointer", fontFamily: "inherit",
+        fontSize: 12, color: tokens.text3, "&:hover": { color: tokens.kriyaInk, textDecoration: "underline" } }}>
+      {children}
+    </Box>
+  );
+}
+
+/* ---------------------------- Sub-sections tab ---------------------------- */
+
+function SubSectionsTab({ node, canEdit, onOpenNode, onAddChild, onRestoreChild }: {
+  node: SectionNode;
+  canEdit: boolean;
+  onOpenNode: (key: string) => void;
+  onAddChild: () => void;
+  onRestoreChild: (id: number) => void;
+}) {
+  return (
+    <Stack spacing={1.25}>
+      {node.children.length === 0 && (
+        <Typography sx={{ fontSize: 13, color: tokens.text3 }}>
+          No sub-sections yet. A sub-section is a full section — its own fields, its own records.
+        </Typography>
+      )}
+      {node.children.map((c) => (
+        <Box key={c.key} onClick={() => onOpenNode(c.key)}
+          sx={{ p: 1.25, borderRadius: "6px", border: `1px solid ${tokens.line}`, cursor: "pointer",
+            transition: "border-color .16s, background-color .16s",
+            "&:hover": { borderColor: tokens.kriya, bgcolor: "rgba(15,122,139,.04)" } }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{c.name}</Typography>
+          <Typography sx={{ fontSize: 11.5, color: tokens.text3, mt: 0.25 }}>
+            {c.ownCount ? `${c.ownCount} record${c.ownCount === 1 ? "" : "s"}` : "No records yet"}
+            {c.children.length ? ` · ${c.children.length} sub-section${c.children.length === 1 ? "" : "s"}` : ""}
+          </Typography>
+        </Box>
+      ))}
+
+      {canEdit && (
+        <Button size="small" variant="outlined" startIcon={<AddRoundedIcon sx={{ fontSize: 17 }} />}
+          onClick={onAddChild} sx={{ alignSelf: "flex-start" }}>
+          Add sub-section
+        </Button>
+      )}
+
+      {canEdit && node.hiddenChildren.length > 0 && (
+        <Box sx={{ mt: 1, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.75 }}>
+          <Typography sx={{ fontSize: 11, color: tokens.text3, mr: 0.25 }}>Hidden:</Typography>
+          {node.hiddenChildren.map((h) => (
+            <Box key={h.key} onClick={() => h.id != null && onRestoreChild(h.id)}
+              sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, px: 1, py: 0.375, borderRadius: "999px",
+                border: `1px dashed ${tokens.line}`, color: tokens.text2, cursor: "pointer", fontSize: 11.5,
+                "&:hover": { borderColor: tokens.kriya, color: tokens.kriyaInk, bgcolor: "rgba(15,122,139,.06)" } }}>
+              {h.name}
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Stack>
   );
 }
 
@@ -400,8 +496,8 @@ function TypePicker({ onPick, onDone, onDragType, onDragEnd }: {
 
 /* ------------------------------ Records tab ------------------------------ */
 
-function RecordsTab({ category, project, records, fields, canEdit, showDuration, onChanged }: {
-  category: WorkspaceCategory;
+function RecordsTab({ node, project, records, fields, canEdit, showDuration, onChanged }: {
+  node: SectionNode;
   project: number;
   records: WorkspaceRecord[];
   fields: FieldDef[];
@@ -411,7 +507,7 @@ function RecordsTab({ category, project, records, fields, canEdit, showDuration,
 }) {
   // Duration steps replace their "Duration" field with real start/end inputs.
   const formFields = useMemo(() => fields.filter((f) => !(showDuration && isDurationField(f))), [fields, showDuration]);
-  const hasFileField = category.allowFiles || fields.some((f) => f.type === "file");
+  const hasFileField = node.allowFiles || fields.some((f) => f.type === "file");
   const primary = primaryField(formFields);
   const headField = primary?.label ?? "";
 
@@ -450,7 +546,10 @@ function RecordsTab({ category, project, records, fields, canEdit, showDuration,
       const schedule = showDuration && durValid
         ? { start_at: new Date(durStart).toISOString(), end_at: new Date(durEnd).toISOString() }
         : undefined;
-      await createRecord(project, category.name, data, hasFileField ? files : null, schedule);
+      // `section` is the real link; `category` rides along as the name mirror and
+      // is all an unadopted built-in can offer (the backend resolves that case).
+      await createRecord(project, { section: node.id, category: node.name }, data,
+                         hasFileField ? files : null, schedule);
       reset();
       onChanged();
     } finally {
@@ -465,7 +564,7 @@ function RecordsTab({ category, project, records, fields, canEdit, showDuration,
     <Box>
       {canEdit && (!adding ? (
         <Button variant="contained" size="small" startIcon={<AddRoundedIcon />} onClick={startAdding} sx={{ mb: 2 }}>
-          Add {category.name.toLowerCase()}
+          Add {node.name.toLowerCase()}
         </Button>
       ) : (
         <Paper sx={{ p: 2, borderRadius: "10px", mb: 2, bgcolor: tokens.paper }}>

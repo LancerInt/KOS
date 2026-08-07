@@ -23,6 +23,12 @@ from django.utils import timezone
 # from the Archive for this many days, then permanently purged.
 ARCHIVE_TTL_DAYS = 30
 
+# How deep sub-sections may nest (a top-level section is depth 0). Nesting is
+# unlimited in spirit; the bound exists so ancestor walks, breadcrumbs and
+# cascades stay finite, and so a corrupted parent chain fails fast instead of
+# hanging a request.
+MAX_SECTION_DEPTH = 10
+
 
 def _left_label(seconds: float) -> str:
     """A compact "time remaining" string: "2d 5h", "5h 20m", "45m", "Ended"."""
@@ -238,7 +244,15 @@ class WorkspaceRecord(models.Model):
         on_delete=models.CASCADE, related_name="records",
     )
     workspace = models.CharField(max_length=64)   # e.g. "amazon-usa" (mirrors project.workspace)
-    category = models.CharField(max_length=80)     # e.g. "Product"
+    # The section this record belongs to. ``category`` is a denormalised mirror
+    # of ``section.name``, kept for search, notifications and the admin — the FK
+    # is the source of truth. Two sections in different branches of the tree may
+    # share a name, so the name alone can no longer identify one.
+    section = models.ForeignKey(
+        "WorkspaceSection", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="records",
+    )
+    category = models.CharField(max_length=120)    # e.g. "Product" (mirrors section.name)
     data = models.JSONField(default=dict)          # {field label: value}
     # Optional attachment (document / poster / PPT), for categories that allow it.
     attachment = models.FileField(upload_to="workspace_records/", null=True, blank=True)
@@ -301,11 +315,23 @@ class WorkspaceRecordAttachment(models.Model):
 class WorkspaceSection(models.Model):
     """A user-created section within a project, added on top of the built-in
     ones defined on the frontend. Each behaves like a category with a single
-    Description field."""
+    Description field.
+
+    Sections nest: a section may hold sub-sections to any depth, and a
+    sub-section is a section in every respect — its own field schema, its own
+    records, its own delete/restore. A section keeps its own records *and* its
+    children at the same time; nesting never displaces what is already there."""
 
     project = models.ForeignKey(
         WorkspaceProject, null=True, blank=True,
         on_delete=models.CASCADE, related_name="sections",
+    )
+    # Self-reference builds the tree. CASCADE is deliberate: the only hard
+    # delete is the Archive purge, and a purge must take the whole subtree with
+    # it. Soft deletes never reach this — see the note on ``hidden`` below.
+    parent = models.ForeignKey(
+        "self", null=True, blank=True,
+        on_delete=models.CASCADE, related_name="children",
     )
     workspace = models.CharField(max_length=64)    # mirrors project.workspace
     name = models.CharField(max_length=120)
@@ -319,6 +345,11 @@ class WorkspaceSection(models.Model):
     # off this project's grid. A deleted section is also hidden — ``deleted_at``
     # marks it for the Archive (restore within the TTL, else purge). Records are
     # kept until purge so a restore brings the section back intact.
+    #
+    # Hiding does NOT touch descendants. A sub-section is *effectively* hidden
+    # whenever an ancestor is, which is what lets a restore return the subtree
+    # exactly as the user left it — a child they had separately deleted stays
+    # deleted, and nothing has to remember which rows a cascade touched.
     hidden = models.BooleanField(default=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -335,14 +366,77 @@ class WorkspaceSection(models.Model):
     class Meta:
         ordering = ("created_at",)
         constraints = [
+            # Uniqueness is per *sibling group*, not per project: "Documents"
+            # may exist under two different parents. Two partial constraints
+            # rather than one on (project, parent, name), because SQL treats
+            # NULLs as distinct — a single constraint would never fire for
+            # top-level sections, where parent IS NULL. (Postgres 15+ can say
+            # NULLS NOT DISTINCT, but SQLite — which development runs on —
+            # cannot, and a constraint that exists in only one environment is
+            # worse than none.)
             models.UniqueConstraint(
-                fields=["project", "name"], condition=Q(deleted_at__isnull=True),
-                name="uniq_project_section_active",
+                fields=["project", "name"],
+                condition=Q(deleted_at__isnull=True, parent__isnull=True),
+                name="uniq_project_root_section_active",
+            ),
+            models.UniqueConstraint(
+                fields=["project", "parent", "name"],
+                condition=Q(deleted_at__isnull=True, parent__isnull=False),
+                name="uniq_project_child_section_active",
             ),
         ]
 
     def __str__(self) -> str:
         return f"{self.workspace}/{self.name}"
+
+    def ancestors(self) -> list["WorkspaceSection"]:
+        """This section's parents, nearest first. Walks with a visited set so a
+        cycle that somehow reached the database cannot hang the process."""
+        chain, seen, node = [], {self.pk}, self.parent
+        while node is not None and node.pk not in seen:
+            chain.append(node)
+            seen.add(node.pk)
+            node = node.parent
+        return chain
+
+    @property
+    def depth(self) -> int:
+        """0 for a top-level section, 1 for its children, and so on."""
+        return len(self.ancestors())
+
+    def path_label(self) -> str:
+        """"Product › Variants › EU" — the trail from the root, for audit."""
+        return " › ".join([s.name for s in reversed(self.ancestors())] + [self.name])
+
+    def is_effectively_hidden(self) -> bool:
+        """True when this section or any ancestor is hidden or deleted."""
+        if self.hidden or self.deleted_at:
+            return True
+        return any(a.hidden or a.deleted_at for a in self.ancestors())
+
+    def descendants(self, include_self: bool = False) -> list["WorkspaceSection"]:
+        """The whole subtree, from a single query over the project's sections."""
+        kids: dict[int, list] = {}
+        for row in WorkspaceSection.objects.filter(project_id=self.project_id):
+            kids.setdefault(row.parent_id, []).append(row)
+        out = [self] if include_self else []
+        stack = list(kids.get(self.pk, []))
+        while stack:
+            node = stack.pop()
+            out.append(node)
+            stack.extend(kids.get(node.pk, []))
+        return out
+
+    def subtree_height(self) -> int:
+        """1 for a leaf — how many levels this section carries with it if moved."""
+        by_parent: dict[int, list] = {}
+        for row in self.descendants(include_self=True):
+            by_parent.setdefault(row.parent_id, []).append(row)
+        height, level = 0, [self]
+        while level and height <= MAX_SECTION_DEPTH + 1:
+            height += 1
+            level = [k for n in level for k in by_parent.get(n.pk, [])]
+        return height
 
 
 class Workspace(models.Model):

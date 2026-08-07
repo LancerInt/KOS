@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, Paper, Snackbar, Stack, TextField, Typography } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
@@ -7,11 +7,12 @@ import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
-import { getWorkspace, useWorkspaces, dynamicWorkspacesReady, type WorkspaceCategory } from "../features/workspaces/workspaces";
+import { getWorkspace, useWorkspaces, dynamicWorkspacesReady } from "../features/workspaces/workspaces";
 import { getProject, updateProject, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import { listRecords, type WorkspaceRecord } from "../features/workspaces/recordsApi";
-import { listSections, createSection, updateSection } from "../features/workspaces/sectionsApi";
-import { stringsToFields, toFieldDefs, type FieldDef } from "../features/workspaces/fields";
+import { listSections, createSection, updateSection, type WorkspaceSection } from "../features/workspaces/sectionsApi";
+import { buildSectionTree, recordIn, type SectionNode } from "../features/workspaces/sectionTree";
+import { stringsToFields, type FieldDef } from "../features/workspaces/fields";
 import { SectionDrawer } from "../features/workspaces/SectionDrawer";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { DurationPanel } from "../features/workspaces/durationDisplay";
@@ -31,11 +32,12 @@ export default function WorkspaceProjectPage() {
   const { mine, loading: accessLoading } = useMyAccess();
 
   const [project, setProject] = useState<WorkspaceProject | null>(null);
-  const [selectedName, setSelectedName] = useState<string | null>(null);
-  const [selectedTab, setSelectedTab] = useState<"fields" | "records">("records");
+  const [params, setParams] = useSearchParams();
+  const [selectedTab, setSelectedTab] = useState<"fields" | "records" | "children">("records");
   const [records, setRecords] = useState<WorkspaceRecord[]>([]);
-  const [sections, setSections] = useState<{ id: number; name: string; blurb: string; fields: FieldDef[]; hidden: boolean }[]>([]);
+  const [rows, setRows] = useState<WorkspaceSection[]>([]);
   const [newOpen, setNewOpen] = useState(false);
+  const [newParent, setNewParent] = useState<SectionNode | null>(null);
   const [newName, setNewName] = useState("");
   const [newBlurb, setNewBlurb] = useState("");
   const [newErr, setNewErr] = useState("");
@@ -46,52 +48,45 @@ export default function WorkspaceProjectPage() {
     if (!pid) { setRecords([]); return; }
     listRecords(pid).then(setRecords).catch(() => setRecords([]));
   };
-  const refreshSections = () =>
-    listSections(pid).then((rows) => setSections(rows.map((s) => ({ id: s.id, name: s.name, blurb: s.blurb, fields: toFieldDefs(s.fields), hidden: !!s.hidden }))));
+  const refreshSections = () => listSections(pid).then(setRows);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    setSelectedName(null);
     if (pid) getProject(pid).then(setProject).catch(() => setProject(null));
     load();
-    refreshSections().catch(() => setSections([]));
+    refreshSections().catch(() => setRows([]));
   }, [projectId]);
 
-  const countByCategory = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const r of records) m[r.category] = (m[r.category] ?? 0) + 1;
-    return m;
-  }, [records]);
+  // Built-in categories merged with the project's section rows, assembled into a
+  // tree. Only *top-level* rows may claim a built-in's identity, which is what
+  // lets two sub-sections in different branches share a name.
+  const tree = useMemo(
+    () => buildSectionTree(ws?.categories ?? [], rows, records),
+    [ws, rows, records],
+  );
 
-  // Merge built-in categories (from config) with the project's section rows.
-  // A row that shares a built-in's name customises that built-in's fields (and,
-  // when hidden, drops it from this project); remaining rows are custom sections.
-  const { cats: allCats, hiddenSections } = useMemo(() => {
-    const builtins = ws?.categories ?? [];
-    const builtinNames = new Set(builtins.map((c) => c.name.toLowerCase()));
-    const rowByName = new Map(sections.map((s) => [s.name.toLowerCase(), s]));
-    const merged: WorkspaceCategory[] = builtins.map((c) => {
-      const row = rowByName.get(c.name.toLowerCase());
-      const fieldDefs = row && row.fields.length ? row.fields : stringsToFields(c.fields);
-      return { ...c, fieldDefs, sectionId: row?.id, isCustom: false, hidden: !!row?.hidden };
-    });
-    const custom: WorkspaceCategory[] = sections
-      .filter((s) => !builtinNames.has(s.name.toLowerCase()) && !s.hidden)
-      .map((s) => ({
-        name: s.name,
-        blurb: s.blurb || "Custom section.",
-        fields: ["Description"],
-        fieldDefs: s.fields.length ? s.fields : stringsToFields(["Description"]),
-        sectionId: s.id,
-        isCustom: true,
-      }));
-    // Every hidden row (built-in or custom) can be restored via a chip.
-    const hidden = sections.filter((s) => s.hidden).map((s) => ({ name: s.name, sectionId: s.id }));
-    return { cats: [...merged.filter((m) => !m.hidden), ...custom], hiddenSections: hidden };
-  }, [ws, sections]);
+  // The open section rides in the URL, so a refresh or a pasted link lands in
+  // the same place. Selection used to be component state and was lost on reload.
+  const currentKey = params.get("section");
+  const selected = currentKey ? tree.byKey.get(currentKey) ?? null : null;
+  const selectedRecords = selected ? records.filter((r) => recordIn(r, selected)) : [];
 
-  const selected = selectedName ? allCats.find((c) => c.name === selectedName) ?? null : null;
-  const selectedRecords = selected ? records.filter((r) => r.category === selected.name) : [];
+  // A key that no longer resolves (deleted elsewhere, or a stale link) drops
+  // back to the grid rather than showing an empty drawer.
+  useEffect(() => {
+    if (currentKey && rows.length && !tree.byKey.has(currentKey)) {
+      setParams((p) => { const n = new URLSearchParams(p); n.delete("section"); return n; }, { replace: true });
+    }
+  }, [currentKey, rows.length, tree, setParams]);
+
+  const openNode = (key: string | null, tab: "fields" | "records" | "children" = "records") => {
+    setSelectedTab(tab);
+    setParams((p) => {
+      const n = new URLSearchParams(p);
+      if (key) n.set("section", key); else n.delete("section");
+      return n;
+    }, { replace: true });
+  };
 
   if (!ws) {
     if (!dynamicWorkspacesReady()) {
@@ -114,17 +109,30 @@ export default function WorkspaceProjectPage() {
   const canEdit = level === "edit";
   const isEnt = ws.key === "entomology";
 
-  const openSection = (name: string, tab: "fields" | "records" = "records") => {
-    setSelectedTab(tab);
-    setSelectedName(name);
+  /** A built-in section has no row until it is customised. Anything that needs
+   *  an id — saving a schema, adding a sub-section — adopts it first. */
+  const ensureRow = async (node: SectionNode): Promise<number> => {
+    if (node.id != null) return node.id;
+    try {
+      // parent stays null: a built-in only keeps its identity at root level.
+      const row = await createSection({
+        project: pid, name: node.name, blurb: node.blurb, fields: node.fieldDefs, parent: null,
+      });
+      return row.id;
+    } catch (e) {
+      // A 400 means something adopted it first (a double-click, a second tab).
+      // Re-read and reuse that row rather than surfacing a confusing error.
+      const fresh = await listSections(pid);
+      setRows(fresh);
+      const found = fresh.find(
+        (r) => r.parent == null && r.name.trim().toLowerCase() === node.name.trim().toLowerCase());
+      if (found) return found.id;
+      throw e;
+    }
   };
 
-  const saveFields = async (cat: WorkspaceCategory, fields: FieldDef[]) => {
-    if (cat.sectionId) {
-      await updateSection(cat.sectionId, { fields });
-    } else {
-      await createSection(pid, cat.name, cat.blurb, fields);
-    }
+  const saveFields = async (node: SectionNode, fields: FieldDef[]) => {
+    await updateSection(await ensureRow(node), { fields });
     await refreshSections();
   };
 
@@ -134,30 +142,48 @@ export default function WorkspaceProjectPage() {
     setCreating(true);
     setNewErr("");
     try {
-      const created = await createSection(pid, name, newBlurb.trim(), stringsToFields(["Description"]));
+      const parent = newParent ? await ensureRow(newParent) : null;
+      const created = await createSection({
+        project: pid, parent, name, blurb: newBlurb.trim(), fields: stringsToFields(["Description"]),
+      });
       setNewName("");
       setNewBlurb("");
       setNewOpen(false);
+      setNewParent(null);
       await refreshSections();
-      openSection(created.name, "fields");
+      openNode(String(created.id), "fields");
     } catch (e) {
       const detail = (e as { response?: { data?: { name?: string[] } } }).response?.data?.name?.[0];
       setNewErr(detail ?? "Could not create section.");
+      // The parent may have been adopted before the child failed; keep the tree
+      // honest either way.
+      refreshSections().catch(() => {});
     } finally {
       setCreating(false);
     }
   };
 
+  const openNewSection = (parent: SectionNode | null) => {
+    setNewErr("");
+    setNewName("");
+    setNewBlurb("");
+    setNewParent(parent);
+    setNewOpen(true);
+  };
+
   // Delete works on every section and is reversible: the section is hidden for
   // this project (its records are kept), so it can be undone or restored intact.
-  const deleteSectionCat = async (cat: WorkspaceCategory) => {
-    // A built-in section not yet in the DB is adopted as a hidden row first.
-    const id = cat.sectionId ?? (await createSection(pid, cat.name, cat.blurb, cat.fieldDefs ?? [], true)).id;
-    if (cat.sectionId) await updateSection(id, { hidden: true });
-    setSelectedName(null);
+  // Sub-sections are left alone — they are hidden by their ancestor, so a
+  // restore brings the subtree back exactly as it was.
+  const deleteSectionNode = async (node: SectionNode) => {
+    const id = node.id ?? (await createSection({
+      project: pid, name: node.name, blurb: node.blurb, fields: node.fieldDefs, hidden: true,
+    })).id;
+    if (node.id) await updateSection(id, { hidden: true });
+    openNode(node.parent ? node.parent.key : null);
     await refreshSections();
     load();
-    setSnack({ msg: `"${cat.name}" deleted`, undo: () => restoreSection(id) });
+    setSnack({ msg: `"${node.name}" deleted`, undo: () => restoreSection(id) });
   };
 
   const restoreSection = async (id: number) => {
@@ -240,18 +266,16 @@ export default function WorkspaceProjectPage() {
       </Stack>
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(3, 1fr)", md: "repeat(4, 1fr)" }, gap: 1 }}>
-        {allCats.map((c) => {
-          const count = countByCategory[c.name] ?? 0;
-          return (
-            <SectionTag key={c.name} name={c.name}
-              subtitle={count ? `${count} record${count === 1 ? "" : "s"}` : "No records yet"}
-              subtleSub={!count} onClick={() => openSection(c.name)}
-              onDelete={canEdit ? () => deleteSectionCat(c) : undefined} />
-          );
-        })}
+        {tree.roots.map((n) => (
+          <SectionTag key={n.key} name={n.name}
+            subtitle={n.ownCount ? `${n.ownCount} record${n.ownCount === 1 ? "" : "s"}` : "No records yet"}
+            subtleSub={!n.ownCount} childCount={n.children.length} totalCount={n.totalCount}
+            onClick={() => openNode(n.key)}
+            onDelete={canEdit ? () => deleteSectionNode(n) : undefined} />
+        ))}
         {/* Add-a-section tile — editors only */}
         {canEdit && (
-          <Box onClick={() => { setNewErr(""); setNewOpen(true); }}
+          <Box onClick={() => openNewSection(null)}
             sx={{ minHeight: 78, borderRadius: "3px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0.5,
               border: "1.5px dashed #C9BCA6", color: tokens.text2, cursor: "pointer", textAlign: "center",
               transition: "border-color .16s, background-color .16s, color .16s",
@@ -262,12 +286,14 @@ export default function WorkspaceProjectPage() {
         )}
       </Box>
 
-      {/* Restore sections that were deleted (hidden) for this project */}
-      {canEdit && hiddenSections.length > 0 && (
+      {/* Restore top-level sections that were deleted (hidden) for this project.
+          A deleted sub-section is restored from inside its parent, which is
+          where it was deleted. */}
+      {canEdit && tree.hiddenRoots.length > 0 && (
         <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.75 }}>
           <Typography sx={{ fontSize: 11, color: tokens.text3, mr: 0.25 }}>Hidden:</Typography>
-          {hiddenSections.map((h) => (
-            <Box key={h.name} onClick={() => restoreSection(h.sectionId)}
+          {tree.hiddenRoots.map((h) => (
+            <Box key={h.key} onClick={() => h.id != null && restoreSection(h.id)}
               sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, px: 1, py: 0.375, borderRadius: "999px",
                 border: `1px dashed ${tokens.line}`, color: tokens.text2, cursor: "pointer", fontSize: 11.5,
                 "&:hover": { borderColor: tokens.kriya, color: tokens.kriyaInk, bgcolor: "rgba(15,122,139,.06)" } }}>
@@ -278,29 +304,35 @@ export default function WorkspaceProjectPage() {
         </Box>
       )}
 
-      {/* Section drawer — Fields builder + generated Records form */}
-      <Drawer anchor="right" open={!!selected} onClose={() => setSelectedName(null)}
+      {/* Section drawer — sub-sections, Fields builder, generated Records form */}
+      <Drawer anchor="right" open={!!selected} onClose={() => openNode(null)}
         PaperProps={{ sx: { width: { xs: "100%", sm: 480 }, maxWidth: "96vw", overflow: "hidden" } }}>
         {selected && (
           <SectionDrawer
-            key={selected.name}
-            category={selected}
+            key={selected.key}
+            node={selected}
+            projectName={project?.name ?? "Project"}
             project={pid}
             records={selectedRecords}
             canEdit={canEdit}
             showDuration={isEnt}
             initialTab={selectedTab}
-            onClose={() => setSelectedName(null)}
+            onClose={() => openNode(null)}
+            onOpenNode={(key) => openNode(key)}
+            onAddChild={() => openNewSection(selected)}
+            onRestoreChild={(id) => restoreSection(id)}
             onRecordsChanged={load}
             onSaveFields={(fields) => saveFields(selected, fields)}
-            onDeleteSection={canEdit ? () => deleteSectionCat(selected) : undefined}
+            onDeleteSection={canEdit ? () => deleteSectionNode(selected) : undefined}
           />
         )}
       </Drawer>
 
-      {/* New section dialog */}
+      {/* New section / sub-section dialog */}
       <Dialog open={newOpen} onClose={() => setNewOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontFamily: '"Manrope Variable"', fontSize: 19 }}>New section</DialogTitle>
+        <DialogTitle sx={{ fontFamily: '"Manrope Variable"', fontSize: 19 }}>
+          {newParent ? `New sub-section in ${newParent.name}` : "New section"}
+        </DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 0.5 }}>
             <TextField size="small" label="Section name" value={newName} autoFocus fullWidth
@@ -334,15 +366,26 @@ export default function WorkspaceProjectPage() {
   );
 }
 
-function SectionTag({ name, subtitle, subtleSub, onClick, onDelete }: {
-  name: string; subtitle: string; subtleSub?: boolean; onClick?: () => void; onDelete?: () => void;
+export function SectionTag({ name, subtitle, subtleSub, childCount = 0, totalCount = 0, onClick, onDelete }: {
+  name: string; subtitle: string; subtleSub?: boolean; childCount?: number; totalCount?: number;
+  onClick?: () => void; onDelete?: () => void;
 }) {
+  const hasChildren = childCount > 0;
   return (
     <Box onClick={onClick}
-      sx={{ position: "relative", bgcolor: SECTION_BG, color: SECTION_TEXT, border: `1px solid ${SECTION_BORDER}`, borderRadius: "3px", minHeight: 78, px: 1.25, py: 1.25,
+      sx={{ position: "relative", bgcolor: SECTION_BG, color: SECTION_TEXT, border: `1px solid ${SECTION_BORDER}`, borderRadius: "3px", minHeight: hasChildren ? 92 : 78, px: 1.25, py: 1.25,
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center",
         cursor: onClick ? "pointer" : "default", transition: "background-color .16s, box-shadow .16s, transform .16s",
         ...(onClick ? { "&:hover": { bgcolor: "#E3D9C6", boxShadow: "0 4px 12px rgba(20,22,29,.1)", transform: "translateY(-1px)" } } : {}),
+        // A stacked-paper edge reads as "there's more inside" without spending a
+        // new colour or an icon on it.
+        ...(hasChildren ? {
+          "&::after": {
+            content: '""', position: "absolute", inset: 0, zIndex: -1,
+            transform: "translate(4px, 4px)", borderRadius: "3px",
+            bgcolor: SECTION_BG, border: `1px solid ${SECTION_BORDER}`,
+          },
+        } : {}),
         "&:hover .sec-del": { opacity: 1 } }}>
       {onDelete && (
         <IconButton className="sec-del" size="small" title="Delete section"
@@ -354,6 +397,12 @@ function SectionTag({ name, subtitle, subtleSub, onClick, onDelete }: {
       )}
       <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 13.5, fontWeight: 700, lineHeight: 1.25 }}>{name}</Typography>
       <Typography sx={{ fontSize: 10.5, color: subtleSub ? "#A79E8C" : "#8A8270", mt: 0.25 }}>{subtitle}</Typography>
+      {hasChildren && (
+        <Typography sx={{ fontSize: 10, color: "#8A8270", mt: 0.4 }}>
+          {childCount} sub-section{childCount === 1 ? "" : "s"}
+          {totalCount > 0 ? ` · ${totalCount} total` : ""}
+        </Typography>
+      )}
     </Box>
   );
 }

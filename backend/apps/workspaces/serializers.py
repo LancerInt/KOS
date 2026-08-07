@@ -8,8 +8,8 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
-    Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
-    WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection,
+    MAX_SECTION_DEPTH, Workspace, WorkspaceMember, WorkspacePermission,
+    WorkspaceProject, WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection,
 )
 
 
@@ -100,7 +100,9 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
         return (user.get_full_name() or user.username) if user else ""
 
     def get_section_count(self, obj) -> int:
-        return obj.sections.count()
+        # Live, visible sections at every depth. (This used to count hidden and
+        # soft-deleted rows too, which over-reported on the project cards.)
+        return obj.sections.filter(deleted_at__isnull=True, hidden=False).count()
 
     def get_record_count(self, obj) -> int:
         return obj.records.count()
@@ -143,18 +145,51 @@ class WorkspaceRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkspaceRecord
         fields = (
-            "id", "project", "workspace", "category", "data",
+            "id", "project", "workspace", "section", "category", "data",
             "attachment", "attachment_name", "attachments",
             "start_at", "end_at", "completed_at", "duration",
             "created_by", "created_by_name", "created_at", "updated_at",
         )
         read_only_fields = ("workspace", "completed_at", "created_by", "created_at", "updated_at")
+        # `category` is derived in validate() — from the section when one is
+        # given, otherwise from the legacy name payload. A client sending
+        # `section` alone must not be rejected for omitting the mirror.
+        extra_kwargs = {"category": {"required": False}}
 
     def get_duration(self, obj) -> dict:
         return obj.duration_state()
 
     def validate(self, attrs):
         instance = self.instance
+        project = attrs.get("project", getattr(instance, "project", None))
+        section = attrs["section"] if "section" in attrs else getattr(instance, "section", None)
+
+        if section is not None:
+            if project is None:
+                attrs["project"] = project = section.project
+            elif section.project_id != project.pk:
+                raise serializers.ValidationError({"section": "That section isn't available."})
+            # `category` mirrors the section's name — never set independently.
+            attrs["category"] = section.name
+        else:
+            category = (attrs.get("category") if "category" in attrs
+                        else getattr(instance, "category", "")) or ""
+            category = category.strip()
+            if category and project is not None:
+                # Legacy path: the client sent a name and no section. A bare name
+                # is ambiguous once sections nest, so it resolves against
+                # *top-level* sections only. No match means a built-in section
+                # nobody has customised yet — leave section null and keep
+                # resolving by name, exactly as before.
+                match = WorkspaceSection.objects.filter(
+                    project=project, name__iexact=category,
+                    deleted_at__isnull=True, parent__isnull=True,
+                ).first()
+                if match is not None:
+                    attrs["section"] = match
+                    category = match.name
+            attrs["category"] = category
+
         start_at = attrs.get("start_at", getattr(instance, "start_at", None))
         end_at = attrs.get("end_at", getattr(instance, "end_at", None))
         if start_at and end_at and end_at <= start_at:
@@ -183,7 +218,8 @@ class WorkspaceRecordSerializer(serializers.ModelSerializer):
 class WorkspaceSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkspaceSection
-        fields = ("id", "project", "workspace", "name", "blurb", "fields", "hidden", "created_by", "created_at")
+        fields = ("id", "project", "parent", "workspace", "name", "blurb", "fields",
+                  "hidden", "created_by", "created_at")
         read_only_fields = ("workspace", "created_by", "created_at")
 
     def validate_fields(self, value):
@@ -204,6 +240,7 @@ class WorkspaceSectionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = self.instance
         project = attrs.get("project") or (instance.project if instance else None)
+        parent = attrs["parent"] if "parent" in attrs else (instance.parent if instance else None)
         # On a partial update (e.g. saving only the field schema) name isn't in
         # the payload — fall back to the existing name instead of erroring.
         provided_name = "name" in attrs
@@ -211,11 +248,54 @@ class WorkspaceSectionSerializer(serializers.ModelSerializer):
         name = name.strip()
         if not name:
             raise serializers.ValidationError({"name": "A section name is required."})
-        qs = WorkspaceSection.objects.filter(project=project, name__iexact=name)
+
+        # A section never changes project: moving a subtree across projects would
+        # break record scoping and sibling uniqueness in a single step.
+        if instance is not None and project is not None and instance.project_id != project.pk:
+            raise serializers.ValidationError(
+                {"project": "A section can't be moved to another project."})
+
+        if parent is not None:
+            if instance is not None and parent.pk == instance.pk:
+                raise serializers.ValidationError({"parent": "A section can't be inside itself."})
+            # Neutral wording — don't confirm whether an id exists elsewhere.
+            if parent.project_id != (project.pk if project else None):
+                raise serializers.ValidationError({"parent": "That parent section isn't available."})
+            if parent.deleted_at is not None or parent.hidden:
+                raise serializers.ValidationError(
+                    {"parent": "You can't add a sub-section to a deleted section."})
+
+            if instance is not None:
+                # Cycle guard: walk up from the *proposed* parent. Meeting the
+                # section being moved means the move would make it its own
+                # ancestor, which would strand the whole subtree.
+                node, hops, seen = parent, 0, set()
+                while node is not None and hops <= MAX_SECTION_DEPTH + 1:
+                    if node.pk == instance.pk:
+                        raise serializers.ValidationError(
+                            {"parent": "A section can't be moved inside one of its own sub-sections."})
+                    if node.pk in seen:
+                        raise serializers.ValidationError(
+                            {"parent": "That parent section isn't available."})
+                    seen.add(node.pk)
+                    node, hops = node.parent, hops + 1
+
+            height = instance.subtree_height() if instance is not None else 1
+            if parent.depth + 1 + height > MAX_SECTION_DEPTH + 1:
+                raise serializers.ValidationError(
+                    {"parent": f"Sections can only be nested {MAX_SECTION_DEPTH} levels deep."})
+
+        # Uniqueness is per sibling group, matching the two database constraints:
+        # "Documents" may exist under two different parents. Live rows only — a
+        # deleted section no longer reserves its name for the retention window.
+        qs = WorkspaceSection.objects.filter(
+            project=project, name__iexact=name, deleted_at__isnull=True)
+        qs = qs.filter(parent__isnull=True) if parent is None else qs.filter(parent=parent)
         if instance:
             qs = qs.exclude(pk=instance.pk)
         if qs.exists():
-            raise serializers.ValidationError({"name": "A section with this name already exists."})
+            raise serializers.ValidationError(
+                {"name": "A section with this name already exists here."})
         if provided_name:
             attrs["name"] = name
         return attrs

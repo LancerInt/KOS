@@ -11,6 +11,11 @@ export interface WorkspaceRecord {
   id: number;
   project: number;
   workspace: string;
+  /** The section this record belongs to. Null for records written against a
+   *  built-in section that has no row yet — those still resolve by `category`. */
+  section: number | null;
+  /** Denormalised mirror of the section's name. Kept for search and display;
+   *  `section` is the real link, since nested sections may share a name. */
   category: string;
   data: Record<string, string>;
   attachment: string | null;
@@ -26,14 +31,21 @@ export interface WorkspaceRecord {
   updated_at: string;
 }
 
-export const listRecords = (project: number, category?: string) =>
+export const listRecords = (project: number, opts?: { category?: string; section?: number }) =>
   api
-    .get<WorkspaceRecord[]>("/workspace-records/", { params: { project, category } })
+    .get<WorkspaceRecord[]>("/workspace-records/", { params: { project, ...(opts ?? {}) } })
     .then((r) => r.data);
+
+/** Where a new record goes. `section` is the real link; `category` rides along
+ *  as the name mirror, and is the only thing an unadopted built-in can offer. */
+export interface RecordTarget {
+  section: number | null;
+  category: string;
+}
 
 export const createRecord = (
   project: number,
-  category: string,
+  target: RecordTarget,
   data: Record<string, string>,
   files?: File[] | null,
   schedule?: { start_at?: string; end_at?: string },
@@ -41,7 +53,8 @@ export const createRecord = (
   if (files && files.length) {
     const fd = new FormData();
     fd.append("project", String(project));
-    fd.append("category", category);
+    if (target.section != null) fd.append("section", String(target.section));
+    fd.append("category", target.category);
     fd.append("data", JSON.stringify(data));
     files.forEach((f) => fd.append("attachments", f));
     if (schedule?.start_at) fd.append("start_at", schedule.start_at);
@@ -49,7 +62,9 @@ export const createRecord = (
     return api.post<WorkspaceRecord>("/workspace-records/", fd).then((r) => r.data);
   }
   return api
-    .post<WorkspaceRecord>("/workspace-records/", { project, category, data, ...(schedule ?? {}) })
+    .post<WorkspaceRecord>("/workspace-records/", {
+      project, section: target.section, category: target.category, data, ...(schedule ?? {}),
+    })
     .then((r) => r.data);
 };
 
