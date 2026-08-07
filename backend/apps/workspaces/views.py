@@ -29,7 +29,7 @@ from apps.audit.services import record
 from .access import base_access, can_edit, effective_access, is_supervisor
 from .models import (
     ARCHIVE_TTL_DAYS, Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
-    WorkspaceRecord, WorkspaceSection, WorkspaceUserAccess,
+    WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection, WorkspaceUserAccess,
 )
 from .serializers import (
     WorkspaceMemberSerializer, WorkspacePermissionSerializer, WorkspaceProjectSerializer,
@@ -495,7 +495,7 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = (
-            WorkspaceRecord.objects.select_related("created_by")
+            WorkspaceRecord.objects.select_related("created_by").prefetch_related("attachments")
             .filter(deleted_at__isnull=True)
             .exclude(project__deleted_at__isnull=False)   # ride along with a deleted project
         )
@@ -513,6 +513,9 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
         ws = project.workspace if project else ""
         _require_edit(self.request.user, ws)
         rec = serializer.save(created_by=self.request.user, workspace=ws)
+        # Multiple files arrive under the "attachments" key of the multipart body.
+        for f in self.request.FILES.getlist("attachments"):
+            WorkspaceRecordAttachment.objects.create(record=rec, file=f)
         record(action=AuditAction.CREATE, obj=rec, new_value=_rec_val(rec), request=self.request)
 
     def perform_destroy(self, instance):

@@ -276,6 +276,26 @@ class WorkspaceRecord(models.Model):
         return compute_duration_state(self.start_at, self.end_at, self.completed_at, now)
 
 
+class WorkspaceRecordAttachment(models.Model):
+    """One of possibly many files attached to a workspace record. (The record's
+    own ``attachment`` field remains for the single-file records created before
+    this table existed.)"""
+
+    record = models.ForeignKey(WorkspaceRecord, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to="workspace_records/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("id",)
+
+    @property
+    def name(self) -> str:
+        return self.file.name.rsplit("/", 1)[-1] if self.file else ""
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class WorkspaceSection(models.Model):
     """A user-created section within a project, added on top of the built-in
     ones defined on the frontend. Each behaves like a category with a single

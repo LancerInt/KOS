@@ -9,7 +9,7 @@ from rest_framework import serializers
 
 from .models import (
     Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
-    WorkspaceRecord, WorkspaceSection,
+    WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection,
 )
 
 
@@ -126,16 +126,25 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class RecordAttachmentSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = WorkspaceRecordAttachment
+        fields = ("id", "file", "name")
+
+
 class WorkspaceRecordSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     attachment_name = serializers.SerializerMethodField()
+    attachments = RecordAttachmentSerializer(many=True, read_only=True)
     duration = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkspaceRecord
         fields = (
             "id", "project", "workspace", "category", "data",
-            "attachment", "attachment_name",
+            "attachment", "attachment_name", "attachments",
             "start_at", "end_at", "completed_at", "duration",
             "created_by", "created_by_name", "created_at", "updated_at",
         )

@@ -1,6 +1,12 @@
 import { api } from "../../api/client";
 import type { Duration } from "./projectsApi";
 
+export interface RecordAttachment {
+  id: number;
+  file: string;
+  name: string;
+}
+
 export interface WorkspaceRecord {
   id: number;
   project: number;
@@ -9,6 +15,7 @@ export interface WorkspaceRecord {
   data: Record<string, string>;
   attachment: string | null;
   attachment_name: string;
+  attachments: RecordAttachment[];
   start_at: string | null;
   end_at: string | null;
   completed_at: string | null;
@@ -28,15 +35,15 @@ export const createRecord = (
   project: number,
   category: string,
   data: Record<string, string>,
-  file?: File | null,
+  files?: File[] | null,
   schedule?: { start_at?: string; end_at?: string },
 ) => {
-  if (file) {
+  if (files && files.length) {
     const fd = new FormData();
     fd.append("project", String(project));
     fd.append("category", category);
     fd.append("data", JSON.stringify(data));
-    fd.append("attachment", file);
+    files.forEach((f) => fd.append("attachments", f));
     if (schedule?.start_at) fd.append("start_at", schedule.start_at);
     if (schedule?.end_at) fd.append("end_at", schedule.end_at);
     return api.post<WorkspaceRecord>("/workspace-records/", fd).then((r) => r.data);

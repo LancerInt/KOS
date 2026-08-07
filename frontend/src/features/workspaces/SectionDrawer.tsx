@@ -416,7 +416,7 @@ function RecordsTab({ category, project, records, fields, canEdit, showDuration,
   const headField = primary?.label ?? "";
 
   const [form, setForm] = useState<Record<string, string>>({});
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [durStart, setDurStart] = useState("");
   const [durEnd, setDurEnd] = useState("");
   const [adding, setAdding] = useState(false);
@@ -431,11 +431,11 @@ function RecordsTab({ category, project, records, fields, canEdit, showDuration,
   };
   const set = (label: string, v: string) => setForm((s) => ({ ...s, [label]: v }));
   const startAdding = () => {
-    setForm({}); setFile(null);
+    setForm({}); setFiles([]);
     setDurStart(showDuration ? localNow() : ""); setDurEnd("");
     setAdding(true);
   };
-  const reset = () => { setForm({}); setFile(null); setDurStart(""); setDurEnd(""); setAdding(false); };
+  const reset = () => { setForm({}); setFiles([]); setDurStart(""); setDurEnd(""); setAdding(false); };
 
   const save = async () => {
     if (!primaryFilled) return;
@@ -450,7 +450,7 @@ function RecordsTab({ category, project, records, fields, canEdit, showDuration,
       const schedule = showDuration && durValid
         ? { start_at: new Date(durStart).toISOString(), end_at: new Date(durEnd).toISOString() }
         : undefined;
-      await createRecord(project, category.name, data, hasFileField ? file : null, schedule);
+      await createRecord(project, category.name, data, hasFileField ? files : null, schedule);
       reset();
       onChanged();
     } finally {
@@ -491,19 +491,34 @@ function RecordsTab({ category, project, records, fields, canEdit, showDuration,
               </>
             )}
             {hasFileField && (
-              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+              <Box>
                 <Button component="label" variant="outlined" size="small" startIcon={<AttachFileRoundedIcon sx={{ fontSize: 16 }} />}>
-                  {file ? "Change file" : "Attach file"}
-                  <input type="file" hidden accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                  {files.length ? "Add more files" : "Attach files"}
+                  <input type="file" hidden multiple accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    onChange={(e) => {
+                      const picked = Array.from(e.target.files ?? []);
+                      // Append, de-duping by name+size so the same file isn't added twice.
+                      setFiles((prev) => {
+                        const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
+                        return [...prev, ...picked.filter((f) => !seen.has(`${f.name}:${f.size}`))];
+                      });
+                      e.target.value = "";  // let the same file be re-picked after removal
+                    }} />
                 </Button>
-                {file && (
-                  <Typography sx={{ fontSize: 12, color: tokens.text2, display: "inline-flex", alignItems: "center", gap: 0.5, minWidth: 0 }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170 }}>{file.name}</span>
-                    <IconButton size="small" onClick={() => setFile(null)}><CloseRoundedIcon sx={{ fontSize: 14 }} /></IconButton>
-                  </Typography>
+                {files.length > 0 && (
+                  <Stack spacing={0.25} sx={{ mt: 0.75 }}>
+                    {files.map((f, i) => (
+                      <Stack key={`${f.name}:${f.size}:${i}`} direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+                        <AttachFileRoundedIcon sx={{ fontSize: 13, color: tokens.text3 }} />
+                        <Typography sx={{ fontSize: 12, color: tokens.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{f.name}</Typography>
+                        <IconButton size="small" onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}>
+                          <CloseRoundedIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </Stack>
+                    ))}
+                  </Stack>
                 )}
-              </Stack>
+              </Box>
             )}
           </Stack>
           <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
@@ -534,13 +549,24 @@ function RecordsTab({ category, project, records, fields, canEdit, showDuration,
                   <Box sx={{ minWidth: 0, flex: 1 }}>
                     <Typography sx={{ fontSize: 13.5, fontWeight: 600 }} noWrap>{headline}</Typography>
                     {rest && <Typography sx={{ fontSize: 11.5, color: tokens.text2 }} noWrap>{rest}</Typography>}
-                    {r.attachment && (
-                      <Typography component="a" href={r.attachment} target="_blank" rel="noopener"
-                        sx={{ fontSize: 11.5, color: tokens.kriyaInk, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 0.5, mt: 0.25 }}>
-                        <AttachFileRoundedIcon sx={{ fontSize: 13 }} />
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{r.attachment_name || "Attachment"}</span>
-                      </Typography>
-                    )}
+                    {(() => {
+                      // New multi-file attachments, plus the legacy single one for older records.
+                      const links = [
+                        ...(r.attachments ?? []).map((a) => ({ href: a.file, name: a.name })),
+                        ...(r.attachment ? [{ href: r.attachment, name: r.attachment_name || "Attachment" }] : []),
+                      ];
+                      return links.length > 0 ? (
+                        <Stack spacing={0.1} sx={{ mt: 0.25 }}>
+                          {links.map((l, i) => (
+                            <Typography key={i} component="a" href={l.href} target="_blank" rel="noopener"
+                              sx={{ fontSize: 11.5, color: tokens.kriyaInk, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                              <AttachFileRoundedIcon sx={{ fontSize: 13 }} />
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{l.name}</span>
+                            </Typography>
+                          ))}
+                        </Stack>
+                      ) : null;
+                    })()}
                     {hasDur && (
                       <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 0.6 }}>
                         <DurationChip duration={r.duration} />
