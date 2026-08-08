@@ -427,6 +427,14 @@ def dashboard_insights(metrics: dict, *, audience: str = "a project manager", us
     prompt = (
         f"Read these dashboard figures and tell {audience} what actually matters right now — "
         "what is going well, what needs intervention today, and what trend is forming."
+        # The shared JSON instruction permits empty lists for anything the model
+        # has nothing to say about, and it takes that permission readily: it
+        # would return a headline calling something a major concern and then an
+        # empty `insights` list, which reads as a broken feature. Whenever the
+        # figures support a headline they support the entries behind it.
+        "\n\nWhenever the figures show anything at all, give at least one entry under `insights` "
+        "and one under `recommendations` — a headline on its own is not an answer. Quote the "
+        "actual numbers in each detail rather than describing them in general terms."
         f"\n\n{ctx.metrics_context(metrics)}"
     )
     return _json(AIAction.INSIGHTS, prompt, system=prompts.ANALYSIS_SYSTEM,

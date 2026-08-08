@@ -587,10 +587,17 @@ export interface InsightsData {
   trends: string[];
 }
 
+/** Mirrors `schemas.EXPLAIN` — the answer to a question about the figures. */
+export interface ExplainData {
+  explanation: string;
+  key_takeaways: string[];
+  watch_outs: string[];
+}
+
 export const dashboard = {
   insights: (projectId?: number) => post<InsightsData>("/ai/dashboard/insights/", { project_id: projectId }),
   explain: (question = "", projectId?: number) =>
-    post("/ai/dashboard/explain/", { question, project_id: projectId }),
+    post<ExplainData>("/ai/dashboard/explain/", { question, project_id: projectId }),
   recommendations: () => post("/ai/dashboard/recommendations/"),
 };
 
