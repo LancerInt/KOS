@@ -264,13 +264,48 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
                new_value={"workspace": key, "name": label, "kind": "workspace", "domain": domain},
                request=self.request)
 
+    def update(self, request, *args, **kwargs):
+        """Editing a built-in workspace creates its row on the way through.
+
+        The eleven built-ins are frontend config and have no row until something
+        needs one — renaming is the first thing that does. The client sends the
+        identity it ships with (icon, accent, blurb) alongside the new label, so
+        the row stands in for the built-in completely from here on.
+        """
+        key = kwargs.get(self.lookup_field) or ""
+        if key and not Workspace.objects.filter(key=key).exists():
+            self._require_admin()
+            data = request.data
+            Workspace.objects.create(
+                key=key,
+                label=(data.get("label") or key).strip(),
+                blurb=(data.get("blurb") or "").strip(),
+                icon=data.get("icon") or "folder",
+                accent=data.get("accent") or "",
+                domain=BUILTIN_WORKSPACE_DOMAIN.get(key, ""),
+                is_builtin=True,
+                created_by=request.user,
+            )
+        return super().update(request, *args, **kwargs)
+
     def perform_update(self, serializer):
         self._require_admin()
-        serializer.save()
+        was_label = serializer.instance.label
+        ws = serializer.save()
+        if ws.label != was_label:
+            record(action=AuditAction.UPDATE, obj=ws,
+                   old_value={"workspace": ws.key, "name": was_label, "kind": "workspace"},
+                   new_value={"workspace": ws.key, "name": ws.label, "kind": "workspace"},
+                   request=self.request)
 
     def perform_destroy(self, instance):
         # Delete = archive; the hard purge happens after the TTL.
         self._require_admin()
+        if instance.is_builtin:
+            # The row only carries a customised label; the workspace itself is
+            # config. Archiving it would hide the row while the built-in kept
+            # rendering — the name would silently revert instead of disappearing.
+            raise ValidationError({"detail": "A built-in workspace can't be archived."})
         instance.archived_at = timezone.now()
         instance.save(update_fields=["archived_at"])
         record(action=AuditAction.DELETE, obj=instance,

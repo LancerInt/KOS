@@ -14,6 +14,7 @@ import { listSections, createSection, updateSection, type WorkspaceSection } fro
 import { buildSectionTree, builtinKeyOf, recordIn, type SectionNode } from "../features/workspaces/sectionTree";
 import { stringsToFields, type FieldDef } from "../features/workspaces/fields";
 import { SectionDrawer } from "../features/workspaces/SectionDrawer";
+import { InlineRename } from "../features/workspaces/InlineRename";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { DurationPanel } from "../features/workspaces/durationDisplay";
 import { tokens } from "../theme";
@@ -137,6 +138,17 @@ export default function WorkspaceProjectPage() {
       ));
       if (found) return found.id;
       throw e;
+    }
+  };
+
+  /** Rename the project. Throws with a message the heading shows inline —
+   *  the server rejects a name another project in this workspace already has. */
+  const renameProject = async (name: string) => {
+    try {
+      setProject(await updateProject(pid, { name }));
+    } catch (e) {
+      const data = (e as { response?: { data?: Record<string, string[]> } }).response?.data;
+      throw new Error(data?.name?.[0] ?? "Could not rename this project.");
     }
   };
 
@@ -274,10 +286,14 @@ export default function WorkspaceProjectPage() {
           bgcolor: tokens.kriyaWash, color: tokens.kriyaInk }}>
           <Icon sx={{ fontSize: 23 }} />
         </Box>
-        <Box>
-          <Typography variant="h1" sx={{ fontSize: 26, lineHeight: 1.2 }}>{project?.name ?? "Project"}</Typography>
-          <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>{ws.label} · project</Typography>
-        </Box>
+        <InlineRename
+          value={project?.name ?? "Project"}
+          label="Project name"
+          onSave={canEdit && project ? renameProject : undefined}
+          subtitle={
+            <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>{ws.label} · project</Typography>
+          }
+        />
       </Stack>
 
       {project && (

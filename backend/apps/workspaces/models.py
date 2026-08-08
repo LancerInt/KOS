@@ -473,6 +473,12 @@ class Workspace(models.Model):
     # neutral/supervisor-only workspace). Decides which team's members may be
     # added to it. Built-in workspaces carry this in ``BUILTIN_WORKSPACE_DOMAIN``.
     domain = models.CharField(max_length=12, blank=True)
+    # True when the row exists only to customise a workspace that ships in the
+    # frontend's built-in list. A built-in has no row until someone renames it —
+    # the same "adopt on first change" rule built-in sections follow. Such a row
+    # is never archivable: a built-in is part of the product, not the user's to
+    # remove, and archiving one would strand the config entry still rendering it.
+    is_builtin = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
     archived_at = models.DateTimeField(null=True, blank=True)   # soft-delete → auto-purge after TTL
     created_by = models.ForeignKey(

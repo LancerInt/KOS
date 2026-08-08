@@ -506,6 +506,12 @@ export const ICON_REGISTRY: Record<string, SvgIconComponent> = {
 };
 export const ICON_OPTIONS = Object.keys(ICON_REGISTRY);
 
+/** The registry name behind a workspace's icon component. Editing a workspace
+ *  sends the icon back by name, and a built-in only holds the component — every
+ *  built-in icon is registered above, so the lookup resolves. */
+export const iconNameOf = (w: Workspace): string =>
+  ICON_OPTIONS.find((name) => ICON_REGISTRY[name] === w.Icon) ?? "folder";
+
 /** Accent swatches offered when creating a workspace. */
 export const ACCENT_OPTIONS = [
   "#0F7A8B", "#C07A1E", "#2E8B6B", "#C0417A", "#7C5CD6",
@@ -529,12 +535,24 @@ function fromDynamic(w: DynamicWorkspace): Workspace {
 }
 
 let dynamicCache: Workspace[] = [];
+/** Customised labels/descriptions for *built-in* workspaces, by key. A built-in
+ *  has no row until someone renames it; from then on the row's label wins while
+ *  the sections and icon keep coming from config. */
+let builtinOverrides = new Map<string, Pick<Workspace, "label" | "blurb">>();
 let dynamicLoaded = false;
 let dynamicLoading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
 export function allWorkspaces(): Workspace[] {
-  return [...WORKSPACES, ...dynamicCache];
+  // Overrides patch the built-in in place rather than appending, or a renamed
+  // built-in would appear twice — once from config, once from its own row.
+  const builtins = builtinOverrides.size
+    ? WORKSPACES.map((w) => {
+        const o = builtinOverrides.get(w.key);
+        return o ? { ...w, label: o.label || w.label, blurb: o.blurb || w.blurb } : w;
+      })
+    : WORKSPACES;
+  return [...builtins, ...dynamicCache];
 }
 
 export const getWorkspace = (key?: string): Workspace | undefined =>
@@ -548,7 +566,15 @@ export function loadDynamicWorkspaces(force = false): Promise<void> {
   if (dynamicLoading && !force) return dynamicLoading;
   dynamicLoading = listWorkspaces()
     .then((rows) => {
-      dynamicCache = rows.map(fromDynamic);
+      // A row whose key matches a built-in is an override, not a workspace of
+      // its own. Splitting on the key rather than on `is_builtin` alone keeps a
+      // row that somehow lost the flag from duplicating the section it renames.
+      const builtinKeys = new Set(WORKSPACES.map((w) => w.key));
+      dynamicCache = rows.filter((r) => !builtinKeys.has(r.key)).map(fromDynamic);
+      builtinOverrides = new Map(
+        rows.filter((r) => builtinKeys.has(r.key))
+          .map((r) => [r.key, { label: r.label, blurb: r.blurb }]),
+      );
       registerDynamicAccents(rows.map((r) => ({ key: r.key, accent: r.accent })));
       dynamicLoaded = true;
       listeners.forEach((l) => l());

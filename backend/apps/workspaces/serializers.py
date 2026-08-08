@@ -21,9 +21,11 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         model = Workspace
         fields = (
             "id", "key", "label", "blurb", "icon", "accent", "domain", "order",
-            "archived_at", "is_archived", "days_left", "created_at",
+            "is_builtin", "archived_at", "is_archived", "days_left", "created_at",
         )
-        read_only_fields = ("key", "domain", "archived_at", "created_at")
+        # is_builtin is decided by how the row came into being, never by the
+        # client — it is what stops a built-in being archived.
+        read_only_fields = ("key", "domain", "is_builtin", "archived_at", "created_at")
 
     def get_is_archived(self, obj) -> bool:
         return obj.is_archived

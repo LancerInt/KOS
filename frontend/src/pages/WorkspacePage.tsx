@@ -12,13 +12,14 @@ import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 
-import { getWorkspace, useWorkspaces, loadDynamicWorkspaces, dynamicWorkspacesReady } from "../features/workspaces/workspaces";
+import { getWorkspace, useWorkspaces, loadDynamicWorkspaces, dynamicWorkspacesReady, iconNameOf } from "../features/workspaces/workspaces";
+import { InlineRename } from "../features/workspaces/InlineRename";
 import BuildWithAiDialog from "../features/ai/BuildWithAiDialog";
 import MembersDialog from "../features/workspaces/MembersDialog";
 import { listMembers } from "../features/workspaces/workspaceMembersApi";
 import { listProjects, createProject, deleteProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
-import { archiveWorkspace } from "../features/workspaces/workspacesApi";
+import { archiveWorkspace, updateWorkspace } from "../features/workspaces/workspacesApi";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { workspaceAccent, accentFromHex } from "../features/workspaces/accent";
 import { tokens, monoFont } from "../theme";
@@ -142,6 +143,30 @@ export default function WorkspacePage() {
     navigate("/");
   };
   const canArchive = !!ws.dynamic && !!mine?.is_admin;
+  // Renaming is administrators-only, matching the server. Built-in workspaces
+  // rename too — the server creates their row on the first edit.
+  const canRenameWs = !!mine?.is_admin;
+
+  const renameWs = async (label: string) => {
+    try {
+      await updateWorkspace(ws.key, {
+        label,
+        // Sent so the row that stands in for a built-in keeps its identity
+        // rather than falling back to a default folder icon and empty blurb.
+        blurb: ws.blurb,
+        icon: iconNameOf(ws),
+        accent: ws.accent ?? "",
+      });
+    } catch (e) {
+      const data = (e as { response?: { data?: Record<string, string[] | string> } }).response?.data;
+      const first = data?.label ?? data?.detail;
+      throw new Error(
+        (Array.isArray(first) ? first[0] : first) ?? "Could not rename this workspace.");
+    }
+    // Force, so the freshly written label replaces the cached one everywhere —
+    // the sidebar reads the same cache this page does.
+    await loadDynamicWorkspaces(true);
+  };
 
   const header = (
     <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.75 }}>
@@ -149,10 +174,14 @@ export default function WorkspacePage() {
         background: `linear-gradient(150deg, ${acc.base}, ${acc.ink})`, color: "#fff", boxShadow: `0 6px 16px ${acc.base}40` }}>
         <Icon sx={{ fontSize: 23 }} />
       </Box>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="h1" sx={{ fontSize: 26, lineHeight: 1.2 }}>{ws.label}</Typography>
-        <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>{ws.blurb || "Custom workspace."}</Typography>
-      </Box>
+      <InlineRename
+        value={ws.label}
+        label="Workspace name"
+        onSave={canRenameWs ? renameWs : undefined}
+        subtitle={
+          <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>{ws.blurb || "Custom workspace."}</Typography>
+        }
+      />
       {!accessLoading && level !== "none" && (
         <Tooltip title="Members — who can open this workspace">
           <Button size="small" variant="outlined" startIcon={<GroupRoundedIcon sx={{ fontSize: 17 }} />}

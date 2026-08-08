@@ -9,6 +9,9 @@ export interface DynamicWorkspace {
   icon: string;     // name → ICON_REGISTRY in workspaces.tsx
   accent: string;   // hex "#RRGGBB" (may be empty → default)
   order: number;
+  /** True when the row only carries a customised label for a workspace that
+   *  ships built in — those are renameable but never archivable. */
+  is_builtin: boolean;
   archived_at: string | null;
   is_archived: boolean;
   days_left: number | null;   // days until auto-purge (archived only)
@@ -34,6 +37,17 @@ export const listArchivedWorkspaces = () =>
 
 export const createWorkspace = (payload: NewWorkspace) =>
   api.post<DynamicWorkspace>("/workspaces/", payload).then((r) => r.data);
+
+/** Rename a workspace (or edit its description). Administrators only.
+ *
+ *  Works for built-in workspaces too: they have no row until the first edit, and
+ *  the server creates one then. Send the identity the built-in ships with
+ *  (`icon`, `accent`, `blurb`) so the new row stands in for it completely —
+ *  otherwise the workspace would come back wearing a default folder icon. */
+export const updateWorkspace = (
+  key: string,
+  patch: { label?: string; blurb?: string; icon?: string; accent?: string },
+) => api.patch<DynamicWorkspace>(`/workspaces/${key}/`, patch).then((r) => r.data);
 
 /** Archive (soft-delete) a workspace — recoverable for 30 days. */
 export const archiveWorkspace = (key: string) => api.delete(`/workspaces/${key}/`);

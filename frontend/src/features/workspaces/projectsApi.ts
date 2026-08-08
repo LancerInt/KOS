@@ -50,7 +50,7 @@ export const createProject = (
 
 export const updateProject = (
   id: number,
-  patch: { start_at?: string | null; end_at?: string | null },
+  patch: { name?: string; start_at?: string | null; end_at?: string | null },
 ) => api.patch<WorkspaceProject>(`/workspace-projects/${id}/`, patch).then((r) => r.data);
 
 /** Toggle completed state (closes / reopens the duration loop). */
