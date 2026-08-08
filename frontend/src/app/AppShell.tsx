@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Avatar, Box, Stack, Tooltip, Typography } from "@mui/material";
+import { Avatar, Box, Drawer, Stack, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
@@ -128,12 +130,26 @@ export default function AppShell() {
       return next;
     });
 
+  // Below md the rail would eat most of a phone's width, so it moves into a
+  // drawer opened from a button in the top bar. The rail renders once and is
+  // placed in whichever container the width calls for.
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [navOpen, setNavOpen] = useState(false);
+  // Never collapsed inside the drawer: it is already a temporary surface, and
+  // icon-only rows there would be a second thing to decipher.
+  const railCollapsed = isMobile ? false : collapsed;
+
+  // Navigating closes it. Without this the menu stays open over the very page
+  // the user just asked for.
+  useEffect(() => { setNavOpen(false); }, [location.pathname]);
+
   const initials =
     (user?.first_name?.[0] ?? user?.username?.[0] ?? "?").toUpperCase() +
     (user?.last_name?.[0]?.toUpperCase() ?? "");
 
   const logoutBtn = (
-    <Tooltip title="Sign out" placement={collapsed ? "right" : "top"}>
+    <Tooltip title="Sign out" placement={railCollapsed ? "right" : "top"}>
       <Box component="button" onClick={() => dispatch(logout())}
         sx={{ border: "none", bgcolor: "transparent", color: RAIL.text, cursor: "pointer", display: "flex", p: 0.5, borderRadius: 1,
           "&:hover": { color: RAIL.textHover, bgcolor: RAIL.hoverBg } }}>
@@ -151,26 +167,28 @@ export default function AppShell() {
       sx={{ width: 30, height: 30, objectFit: "contain", flexShrink: 0, display: "block" }} />
   );
 
-  return (
-    <AiProvider>
-    <Box sx={{ display: "grid", gridTemplateColumns: collapsed ? "64px 1fr" : "232px 1fr", minHeight: "100vh",
-      transition: "grid-template-columns .18s ease" }}>
-      {/* Teal sidebar */}
-      <Box sx={{ background: RAIL.gradient, color: RAIL.text, display: "flex", flexDirection: "column", p: collapsed ? 1 : 1.5, overflow: "hidden" }}>
+  const rail = (
+    <Box sx={{ background: RAIL.gradient, color: RAIL.text, display: "flex", flexDirection: "column",
+      p: railCollapsed ? 1 : 1.5, overflow: "hidden", height: "100%" }}>
         {/* brand (Kriya mark + KOS) + collapse toggle */}
-        <Stack direction={collapsed ? "column" : "row"} alignItems="center" justifyContent={collapsed ? "center" : "space-between"}
-          spacing={collapsed ? 0.75 : 0} sx={{ px: collapsed ? 0 : 0.75, py: 1, mb: 1, minWidth: 0 }}>
-          {collapsed ? brandMark : (
+        <Stack direction={railCollapsed ? "column" : "row"} alignItems="center" justifyContent={railCollapsed ? "center" : "space-between"}
+          spacing={railCollapsed ? 0.75 : 0} sx={{ px: railCollapsed ? 0 : 0.75, py: 1, mb: 1, minWidth: 0 }}>
+          {railCollapsed ? brandMark : (
             <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
               {brandMark}
               <Typography sx={{ color: RAIL.brand, fontFamily: '"Manrope Variable"', fontWeight: 600, fontSize: 17, letterSpacing: "0.03em" }}>KOS</Typography>
             </Stack>
           )}
-          <Tooltip title={collapsed ? "Expand" : "Collapse"} placement="right">
-            <Box component="button" onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          {/* Collapsing is a desktop affordance; in the drawer the same corner
+              is where a close button belongs. */}
+          <Tooltip title={isMobile ? "Close menu" : railCollapsed ? "Expand" : "Collapse"} placement="right">
+            <Box component="button"
+              onClick={isMobile ? () => setNavOpen(false) : toggleCollapsed}
+              aria-label={isMobile ? "Close menu" : railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               sx={{ border: "none", bgcolor: "transparent", color: RAIL.text, cursor: "pointer", display: "flex", p: 0.5, borderRadius: 1, flexShrink: 0,
                 "&:hover": { color: RAIL.textHover, bgcolor: RAIL.hoverBg } }}>
-              {collapsed ? <ChevronRightRoundedIcon fontSize="small" /> : <ChevronLeftRoundedIcon fontSize="small" />}
+              {isMobile ? <CloseRoundedIcon fontSize="small" />
+                : railCollapsed ? <ChevronRightRoundedIcon fontSize="small" /> : <ChevronLeftRoundedIcon fontSize="small" />}
             </Box>
           </Tooltip>
         </Stack>
@@ -191,7 +209,7 @@ export default function AppShell() {
             return (
               <Box key={group.title ?? `g${gi}`} sx={{ mb: 0.75 }}>
                 {group.title && (group.title === "Workspaces" ? (
-                  collapsed ? (
+                  railCollapsed ? (
                     <Tooltip title="New workspace" placement="right" arrow>
                       <Box component="button" onClick={() => setNewWsOpen(true)}
                         sx={{ display: "flex", mx: "auto", my: 0.75, p: 0.5, border: "none", bgcolor: "transparent", cursor: "pointer",
@@ -213,7 +231,7 @@ export default function AppShell() {
                       </Tooltip>
                     </Stack>
                   )
-                ) : (collapsed ? (
+                ) : (railCollapsed ? (
                   <Box sx={{ height: "1px", bgcolor: RAIL.border, mx: 1, my: 0.75 }} />
                 ) : (
                   <Typography sx={{ px: 1.25, pt: gi === 0 ? 0 : 1, pb: 0.75, fontSize: 10, fontWeight: 700,
@@ -226,24 +244,24 @@ export default function AppShell() {
                     const active = n.to === "/" ? location.pathname === "/" : location.pathname.startsWith(n.to);
                     const showBadge = n.to === "/notifications" && unread > 0;
                     return (
-                      <Tooltip key={n.to} title={collapsed ? n.label : ""} placement="right" arrow>
+                      <Tooltip key={n.to} title={railCollapsed ? n.label : ""} placement="right" arrow>
                         <Box component={Link} to={n.to}
                           sx={{ position: "relative", display: "flex", alignItems: "center",
-                            justifyContent: collapsed ? "center" : "flex-start",
-                            gap: collapsed ? 0 : 1.25, px: collapsed ? 0 : 1.25, py: 1, borderRadius: "8px",
+                            justifyContent: railCollapsed ? "center" : "flex-start",
+                            gap: railCollapsed ? 0 : 1.25, px: railCollapsed ? 0 : 1.25, py: 1, borderRadius: "8px",
                             textDecoration: "none", fontSize: 13.5,
                             color: active ? RAIL.activeText : RAIL.text,
                             bgcolor: active ? RAIL.activeBg : "transparent",
-                            boxShadow: active && !collapsed ? `inset 2px 0 0 ${RAIL.accent}` : "none",
+                            boxShadow: active && !railCollapsed ? `inset 2px 0 0 ${RAIL.accent}` : "none",
                             "&:hover": { bgcolor: active ? RAIL.activeHoverBg : RAIL.hoverBg, color: active ? RAIL.activeText : RAIL.textHover } }}>
                           <Box sx={{ color: active ? RAIL.accent : "inherit", display: "flex" }}>{n.icon}</Box>
-                          {!collapsed && n.label}
-                          {!collapsed && showBadge && (
+                          {!railCollapsed && n.label}
+                          {!railCollapsed && showBadge && (
                             <Box sx={{ ml: "auto", minWidth: 18, height: 18, px: 0.5, borderRadius: 9, bgcolor: tokens.attn, color: "#fff", fontSize: 10.5, fontWeight: 700, display: "grid", placeItems: "center" }}>
                               {unread}
                             </Box>
                           )}
-                          {collapsed && showBadge && (
+                          {railCollapsed && showBadge && (
                             <Box sx={{ position: "absolute", top: 5, right: 9, width: 7, height: 7, borderRadius: "50%", bgcolor: tokens.attn, border: `1.5px solid ${RAIL.bg}` }} />
                           )}
                         </Box>
@@ -258,7 +276,7 @@ export default function AppShell() {
 
         {/* footer: identity + logout */}
         <Box sx={{ mt: "auto", pt: 1.5, borderTop: `1px solid ${RAIL.border}` }}>
-          {collapsed ? (
+          {railCollapsed ? (
             <Stack alignItems="center" spacing={1} sx={{ py: 0.5 }}>
               <Tooltip title={user?.full_name || user?.username || ""} placement="right">
                 <Avatar sx={{ width: 30, height: 30, bgcolor: tokens.kriyaInk, fontSize: 12, fontFamily: '"Manrope Variable"' }}>
@@ -284,10 +302,49 @@ export default function AppShell() {
             </Stack>
           )}
         </Box>
-      </Box>
+    </Box>
+  );
+
+  return (
+    <AiProvider>
+    <Box sx={{ display: "grid", minHeight: "100vh",
+      gridTemplateColumns: isMobile ? "1fr" : railCollapsed ? "64px 1fr" : "232px 1fr",
+      transition: "grid-template-columns .18s ease" }}>
+      {/* The rail: a column of the grid on desktop, a temporary drawer below md.
+          Anchored right so it opens under the thumb that reached the button. */}
+      {isMobile ? (
+        <Drawer anchor="right" open={navOpen} onClose={() => setNavOpen(false)}
+          PaperProps={{ sx: { width: 264, maxWidth: "86vw", border: "none", bgcolor: "transparent" } }}>
+          {rail}
+        </Drawer>
+      ) : rail}
 
       {/* main */}
       <Box sx={{ bgcolor: "background.default", overflowY: "auto", minWidth: 0 }}>
+        {isMobile && (
+          <Stack direction="row" alignItems="center" justifyContent="space-between"
+            sx={{ position: "sticky", top: 0, zIndex: 5, px: 2, py: 1,
+              background: RAIL.gradient, color: RAIL.text }}>
+            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+              {brandMark}
+              <Typography sx={{ color: RAIL.brand, fontFamily: '"Manrope Variable"', fontWeight: 600, fontSize: 17, letterSpacing: "0.03em" }}>
+                KOS
+              </Typography>
+            </Stack>
+            <Box component="button" onClick={() => setNavOpen(true)} aria-label="Open menu"
+              sx={{ position: "relative", border: "none", bgcolor: "transparent", color: RAIL.text,
+                cursor: "pointer", display: "flex", p: 0.75, borderRadius: 1, flexShrink: 0,
+                "&:hover": { color: RAIL.textHover, bgcolor: RAIL.hoverBg } }}>
+              <MenuRoundedIcon />
+              {/* The unread badge lives on a nav row that is now hidden, so it
+                  has to surface on the thing that opens the nav. */}
+              {unread > 0 && (
+                <Box sx={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%",
+                  bgcolor: tokens.attn, border: `1.5px solid ${RAIL.bg}` }} />
+              )}
+            </Box>
+          </Stack>
+        )}
         <OfflineBanner />
         <Outlet />
       </Box>
