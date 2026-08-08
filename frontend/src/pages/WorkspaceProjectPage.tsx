@@ -113,11 +113,15 @@ export default function WorkspaceProjectPage() {
    *  an id — saving a schema, adding a sub-section — adopts it first. */
   const ensureRow = async (node: SectionNode): Promise<number> => {
     if (node.id != null) return node.id;
+    // Built-ins nest, and a row's parent is a real foreign key — so adopting a
+    // built-in sub-section means adopting the trail above it first. Recursion
+    // terminates at a root (parent null) or at any ancestor already adopted.
+    const parent = node.parent ? await ensureRow(node.parent) : null;
+    const builtin = builtinKeyOf(node);
     try {
-      // parent stays null: a built-in only keeps its identity at root level.
       const row = await createSection({
-        project: pid, name: node.name, blurb: node.blurb, fields: node.fieldDefs, parent: null,
-        builtinKey: builtinKeyOf(node),
+        project: pid, name: node.name, blurb: node.blurb, fields: node.fieldDefs, parent,
+        builtinKey: builtin,
       });
       return row.id;
     } catch (e) {
@@ -125,8 +129,12 @@ export default function WorkspaceProjectPage() {
       // Re-read and reuse that row rather than surfacing a confusing error.
       const fresh = await listSections(pid);
       setRows(fresh);
-      const found = fresh.find(
-        (r) => r.parent == null && r.name.trim().toLowerCase() === node.name.trim().toLowerCase());
+      const found = fresh.find((r) => (
+        // Prefer the key: it identifies the built-in even if it was renamed
+        // between our read and this write.
+        builtin ? r.builtin_key === builtin
+          : r.parent === parent && r.name.trim().toLowerCase() === node.name.trim().toLowerCase()
+      ));
       if (found) return found.id;
       throw e;
     }
@@ -206,6 +214,9 @@ export default function WorkspaceProjectPage() {
   const deleteSectionNode = async (node: SectionNode) => {
     const id = node.id ?? (await createSection({
       project: pid, name: node.name, blurb: node.blurb, fields: node.fieldDefs, hidden: true,
+      // A built-in sub-section deleted before it was ever customised still needs
+      // its parent, or the row would land at the root of the project.
+      parent: node.parent ? await ensureRow(node.parent) : null,
       builtinKey: builtinKeyOf(node),
     })).id;
     if (node.id) await updateSection(id, { hidden: true });

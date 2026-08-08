@@ -24,8 +24,10 @@ export type NodeKey = string;
 
 const norm = (s: string) => s.trim().toLowerCase();
 
-/** Key for a built-in section, whether or not it has been adopted. */
-export const builtinKey = (name: string): NodeKey => `b:${norm(name)}`;
+/** Key for a built-in section, whether or not it has been adopted. Takes the
+ *  trail of names from the root, since built-ins nest and a bare name would
+ *  collide across branches. */
+export const builtinKey = (path: string[]): NodeKey => `b:${path.map(norm).join("/")}`;
 
 export interface SectionNode {
   key: NodeKey;
@@ -60,7 +62,18 @@ export function buildSectionTree(
   rows: WorkspaceSection[],
   records: WorkspaceRecord[],
 ): SectionTree {
-  const builtinNames = new Set(builtins.map((c) => norm(c.name)));
+  // Every built-in path in the workspace, as slash-joined lowercased names.
+  // Built-ins nest, so a bare name is no longer an identity: two workflows may
+  // each declare a "Step 1", and only the path tells them apart.
+  const builtinPaths = new Set<string>();
+  const collectPaths = (list: WorkspaceCategory[], trail: string[]) => {
+    for (const c of list) {
+      const path = [...trail, norm(c.name)];
+      builtinPaths.add(path.join("/"));
+      if (c.children?.length) collectPaths(c.children, path);
+    }
+  };
+  collectPaths(builtins, []);
 
   // 1 — record counts. Two indexes: records written before sections had a FK,
   // and records on an unadopted built-in, carry only a name.
@@ -71,17 +84,22 @@ export function buildSectionTree(
     else cntByName.set(norm(r.category), (cntByName.get(norm(r.category)) ?? 0) + 1);
   }
 
-  // 2 — key every row. Only a ROOT row may claim a built-in's identity.
+  // 2 — key every row.
   //
   // `builtin_key` is checked before the name so a renamed built-in keeps its
   // identity: matching on name alone meant a rename detached the row, and the
-  // built-in reappeared unadopted beside it. The name match remains as the
-  // fallback for rows adopted before that column existed — they carry no key
-  // until something writes one (a rename does, see WorkspaceProjectPage).
+  // built-in reappeared unadopted beside it. A keyed row claims its built-in at
+  // any depth, which is what lets a built-in *sub-section* be customised
+  // without becoming a second section beside the one it came from.
+  //
+  // The name match remains as the fallback for rows adopted before that column
+  // existed. It stays root-only: a bare name cannot say which branch it belongs
+  // to, and guessing would merge two unrelated sections.
   const keyOf = (row: WorkspaceSection): NodeKey => {
-    if (row.parent != null) return String(row.id);
-    if (row.builtin_key && builtinNames.has(row.builtin_key)) return `b:${row.builtin_key}`;
-    if (!row.builtin_key && builtinNames.has(norm(row.name))) return builtinKey(row.name);
+    if (row.builtin_key && builtinPaths.has(row.builtin_key)) return `b:${row.builtin_key}`;
+    if (!row.builtin_key && row.parent == null && builtinPaths.has(norm(row.name))) {
+      return builtinKey([row.name]);
+    }
     return String(row.id);
   };
 
@@ -104,26 +122,36 @@ export function buildSectionTree(
   });
   const parentKeyOf = new Map<NodeKey, NodeKey | null>();
 
-  for (const c of builtins) {
-    const k = builtinKey(c.name);
-    const row = adopting.get(k);
-    const saved = row ? toFieldDefs(row.fields) : [];
-    byKey.set(k, mk({
-      key: k,
-      id: row?.id ?? null,
-      // The adopting row's name wins — that is where a rename lands. Until one
-      // exists (or if it is somehow blank) the config name stands in, which is
-      // also what keeps casing right for a row adopted straight from config.
-      name: row?.name || c.name,
-      blurb: row?.blurb || c.blurb,
-      fieldDefs: saved.length ? saved : stringsToFields(c.fields),
-      allowFiles: !!c.allowFiles,
-      isBuiltin: true,
-      selfHidden: !!row?.hidden,
-      ownCount: (row ? cntById.get(row.id) ?? 0 : 0) + (cntByName.get(norm(c.name)) ?? 0),
-    }));
-    parentKeyOf.set(k, null);
-  }
+  // Depth-first, so a child's parent is already in `byKey` when it is linked.
+  const walkBuiltins = (list: WorkspaceCategory[], trail: string[], parentKey: NodeKey | null) => {
+    for (const c of list) {
+      const path = [...trail, c.name];
+      const k = builtinKey(path);
+      const row = adopting.get(k);
+      const saved = row ? toFieldDefs(row.fields) : [];
+      byKey.set(k, mk({
+        key: k,
+        id: row?.id ?? null,
+        // The adopting row's name wins — that is where a rename lands. Until one
+        // exists (or if it is somehow blank) the config name stands in, which is
+        // also what keeps casing right for a row adopted straight from config.
+        name: row?.name || c.name,
+        blurb: row?.blurb || c.blurb,
+        fieldDefs: saved.length ? saved : stringsToFields(c.fields),
+        allowFiles: !!c.allowFiles,
+        isBuiltin: true,
+        selfHidden: !!row?.hidden,
+        // The name index is root-only: a record carrying just a category name
+        // predates section FKs, and such a record can only mean a top-level
+        // section. Counting it at depth would double-count it.
+        ownCount: (row ? cntById.get(row.id) ?? 0 : 0)
+          + (parentKey === null ? cntByName.get(norm(c.name)) ?? 0 : 0),
+      }));
+      parentKeyOf.set(k, parentKey);
+      if (c.children?.length) walkBuiltins(c.children, path, k);
+    }
+  };
+  walkBuiltins(builtins, [], null);
 
   for (const row of rows) {
     const k = keyOf(row);

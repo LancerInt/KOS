@@ -342,7 +342,13 @@ class WorkspaceSection(models.Model):
     # it, and the grid showed the original again (unadopted, empty) beside the
     # renamed row. Recording the built-in's key once, at adoption, keeps that
     # identity stable across any later rename. Write-once — see the serializer.
-    builtin_key = models.CharField(max_length=80, blank=True)
+    #
+    # Built-ins nest, so this is a slash-joined path of names
+    # ("content creation workflow/step 1: planning (monday)") rather than a bare
+    # name: two steps called alike under different parents must not collide.
+    # Generous length because a truncated key silently stops matching, which
+    # would show the built-in twice rather than fail.
+    builtin_key = models.CharField(max_length=200, blank=True)
     # Typed field schema for this section — a list of field definitions
     # ({id, type, label, placeholder, help, required, options}). Empty = use the
     # workspace's built-in default fields. Built-in sections also get a row here

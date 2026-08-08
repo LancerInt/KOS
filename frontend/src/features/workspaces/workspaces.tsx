@@ -39,6 +39,10 @@ export interface WorkspaceCategory {
   /** Typed field schema. When present it overrides `fields` for the builder and
    *  record form; merged in at runtime from the section's saved schema. */
   fieldDefs?: FieldDef[];
+  /** Built-in sub-sections. A child is a section in every respect — its own
+   *  fields, records and delete/restore — so a workflow's steps or a team's
+   *  members can be modelled as structure rather than flattened into labels. */
+  children?: WorkspaceCategory[];
   /** Allow attaching a file (document / poster / PPT) when adding a record. */
   allowFiles?: boolean;
   /** Set once a section has a WorkspaceSection row (custom, or a built-in whose
@@ -181,8 +185,94 @@ export const WORKSPACES: Workspace[] = [
     label: "Marketing Marathon",
     Icon: CampaignRoundedIcon,
     blurb: "The Marketing Marathon campaign.",
-    sections: ["Campaign plan", "Content calendar", "Creatives & assets", "Email campaigns", "Performance tracking"],
+    // The expo lead-nurture process: where leads came from, who they are, and
+    // what happened to each one — then the sprints that work the backlog, and
+    // the monthly numbers. The generic campaign sections follow it.
+    sections: [
+      "Expo details", "Client database", "Follow-up tracker", "Response tracker",
+      "Lost opportunities tracker", "Next expo invitation tracker",
+      "Agile workflow", "Track every month",
+      "Campaign plan", "Content calendar", "Creatives & assets", "Email campaigns",
+      "Performance tracking",
+    ],
     categories: [
+      {
+        name: "Expo details",
+        blurb: "Each expo attended and what it brought in — one record per expo.",
+        fields: ["Year", "Expo Name", "Country", "Total Leads"],
+      },
+      {
+        name: "Client database",
+        blurb: "Everyone met, and which expo they came from — one record per client.",
+        fields: ["Client Name", "Company", "Country", "Email", "Phone", "Product Interest", "Expo Year"],
+      },
+      {
+        name: "Follow-up tracker",
+        blurb: "Where each client stands in the follow-up sequence.",
+        fields: ["Client", "Country", "First Email", "Second Follow-up", "Last Contact", "Status"],
+      },
+      {
+        name: "Response tracker",
+        blurb: "Positive responses, by what the client actually asked for.",
+        fields: ["Requested quotation", "Requested samples", "Distributor interest", "Registration support"],
+      },
+      {
+        name: "Lost opportunities tracker",
+        blurb: "Clients whose communication stopped, and why.",
+        fields: ["Client", "Country", "Last Communication", "Reason"],
+      },
+      {
+        name: "Next expo invitation tracker",
+        blurb: "Invitations to the next expo, counted country by country.",
+        fields: ["Country", "Total Clients", "Invited", "Accepted", "Rejected", "No Response"],
+      },
+      {
+        name: "Agile workflow",
+        blurb: "The backlog worked through in sprints, oldest cards first.",
+        fields: ["Description"],
+        children: [
+          {
+            name: "Backlog",
+            blurb: "Everything not yet worked, in one pile.",
+            fields: ["Collect all visiting cards from the last 5–6 years"],
+          },
+          {
+            name: "Sprint 1",
+            blurb: "Turning the card pile into data.",
+            fields: ["Convert visiting cards into Excel"],
+          },
+          {
+            name: "Sprint 2",
+            blurb: "Grouping the data so it can be worked by region.",
+            fields: ["Categorize clients country-wise"],
+          },
+          {
+            name: "Sprint 3",
+            blurb: "Reading what came back, and what didn't.",
+            fields: ["Analyze responses and non-responses"],
+          },
+          {
+            name: "Sprint 4",
+            blurb: "Putting the list to work on the next expo.",
+            fields: ["Invite clients to upcoming expos"],
+          },
+          {
+            name: "Sprint 5",
+            blurb: "Going back to the ones who went quiet.",
+            fields: ["Reconnect with inactive clients"],
+          },
+          {
+            name: "Sprint 6",
+            blurb: "Making the cycle measurable.",
+            fields: ["Generate monthly reports"],
+          },
+        ],
+      },
+      {
+        name: "Track every month",
+        blurb: "The monthly numbers — one record per month.",
+        fields: ["Total clients contacted", "Country-wise inquiries", "Response rate", "No-response rate", "Number of quotations sent", "Number of samples sent", "Number of converted clients", "Lost clients and reasons"],
+      },
       { name: "Campaign plan", blurb: "Overall plan, goals and timeline for the campaign.", fields: ["Description"] },
       { name: "Content calendar", blurb: "Scheduled content across channels.", fields: ["Description"] },
       { name: "Creatives & assets", blurb: "Design assets, graphics and copy.", fields: ["Description"] },
@@ -237,15 +327,103 @@ export const WORKSPACES: Workspace[] = [
     label: "Social Media",
     Icon: ShareRoundedIcon,
     blurb: "Social channels and content.",
-    sections: ["WhatsApp", "LinkedIn", "Instagram", "Facebook", "YouTube", "X (Twitter)", "Content calendar"],
+    // The content-operations model first — what to say, when to post it, who
+    // does which part — then the per-channel sections for the work itself.
+    // Two of these are two-level: a workflow's steps and a team's members are
+    // each a section in their own right, with their own fields and records.
+    sections: [
+      "Product Insight", "Create a content calendar", "Content creation workflow",
+      "Track performance every month", "Team structure (4 members)", "Monthly workflow",
+      "WhatsApp", "LinkedIn", "Instagram", "Facebook", "YouTube", "X (Twitter)",
+    ],
     categories: [
+      {
+        name: "Product Insight",
+        blurb: "What there is to say about the product, and why it matters to a buyer.",
+        fields: ["Features", "Advantages/ Benefits"],
+      },
+      {
+        // A table in the source document: one record per platform, so the
+        // cadence can change per platform without editing the schema.
+        name: "Create a content calendar",
+        blurb: "Posting cadence per platform — add one record for each channel.",
+        fields: ["Platform", "Posts per week"],
+      },
+      {
+        name: "Content creation workflow",
+        blurb: "The weekly cycle from planning through to publishing.",
+        fields: ["Description"],
+        children: [
+          {
+            name: "Step 1: Planning (Monday)",
+            blurb: "Deciding what the week will say.",
+            fields: ["Decide weekly topics", "Collect images and videos", "Prepare captions"],
+          },
+          {
+            name: "Step 2: Design (Tuesday)",
+            blurb: "Turning the plan into artwork.",
+            fields: ["Create posters in Canva/chatgpt/gemini", "Add company logo", "Add product details"],
+          },
+          {
+            name: "Step 3: Approval (Wednesday)",
+            blurb: "Checking it before it goes anywhere.",
+            fields: ["Review content", "Check grammar", "Verify technical data"],
+          },
+          {
+            name: "Step 4: Schedule (Thursday)",
+            blurb: "Queueing the week's posts.",
+            fields: ["Schedule posts", "Add hashtags"],
+          },
+          {
+            name: "Step 5: Publish (Friday onwards)",
+            blurb: "Going live, and staying with it afterwards.",
+            fields: ["Upload content", "Respond to comments", "Reply to messages"],
+          },
+        ],
+      },
+      {
+        name: "Track performance every month",
+        blurb: "The monthly numbers — one record per month.",
+        fields: ["Reach", "Likes", "Comments", "Shares", "Website clicks", "Leads generated", "Export inquiries"],
+      },
+      {
+        name: "Team structure (4 members)",
+        blurb: "Who owns what.",
+        fields: ["Description"],
+        children: [
+          {
+            name: "Member 1 (You): Marketing Responsible",
+            blurb: "Direction, measurement and sign-off.",
+            fields: ["Strategy", "Analytics", "Approval"],
+          },
+          {
+            name: "Member 2: Content Executive",
+            blurb: "The words.",
+            fields: ["Captions", "Blog posts", "Hashtags", "Product descriptions"],
+          },
+          {
+            name: "Member 3: Designer",
+            blurb: "The visuals.",
+            fields: ["Posters", "Videos"],
+          },
+          {
+            name: "Member 4: Community Manager",
+            blurb: "Everything that happens after a post goes live.",
+            fields: ["Reply to comments", "Handle inquiries", "Follow up with leads", "Schedule posts"],
+          },
+        ],
+      },
+      {
+        name: "Monthly workflow",
+        blurb: "What each week of the month is for.",
+        fields: ["Week 1: Planning", "Week 2: Content creation", "Week 3: Promotion and ads", "Week 4: Analytics and improvements"],
+      },
       { name: "WhatsApp", blurb: "WhatsApp channel activity and content.", fields: ["Description"] },
       { name: "LinkedIn", blurb: "LinkedIn posts and engagement.", fields: ["Description"] },
       { name: "Instagram", blurb: "Instagram content and campaigns.", fields: ["Description"] },
       { name: "Facebook", blurb: "Facebook page posts and ads.", fields: ["Description"] },
       { name: "YouTube", blurb: "YouTube videos and channel.", fields: ["Description"] },
       { name: "X (Twitter)", blurb: "Posts and engagement on X.", fields: ["Description"] },
-      { name: "Content calendar", blurb: "Planned social content schedule.", fields: ["Description"] },
     ],
   },
   {
