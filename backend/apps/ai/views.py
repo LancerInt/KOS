@@ -918,6 +918,31 @@ class PerformanceSummaryView(AIView):
 # --------------------------------------------------------------------------- #
 # Dashboard
 # --------------------------------------------------------------------------- #
+def _workspace_project_metrics(user) -> dict:
+    """The figures the Dashboard screen itself shows.
+
+    The dashboard lists **workspace** projects, and those live in a different
+    model from the ``Project``/``Task`` pair the rest of this module analyses.
+    Reading only the latter is what made the panel report "0 active projects"
+    to someone looking at thirteen of them — the two counts were never the same
+    thing. Scoped with the workspaces app's own rule so the AI cannot describe a
+    project the viewer is not allowed to see.
+    """
+    from apps.workspaces.models import WorkspaceProject
+    from apps.workspaces.views import _scope_to_viewable
+
+    rows = list(_scope_to_viewable(
+        WorkspaceProject.objects.filter(deleted_at__isnull=True), user))
+    status_of = [(p.duration_state() or {}).get("status", "none") for p in rows]
+    return {
+        "dashboard_projects": len(rows),
+        "dashboard_overdue_projects": status_of.count("due"),
+        "dashboard_ending_soon_projects": status_of.count("ending_soon"),
+        "dashboard_in_progress_projects": status_of.count("active"),
+        "dashboard_completed_projects": status_of.count("completed"),
+    }
+
+
 def _dashboard_metrics(user, project=None) -> dict:
     """Figures for the dashboard AI actions.
 
@@ -939,7 +964,7 @@ def _dashboard_metrics(user, project=None) -> dict:
     # Read the prefetched owners rather than querying once per task.
     mine = [t for t in open_tasks if any(o.pk == user.pk for o in t.owners.all())]
 
-    return {
+    figures = {
         "visible_projects": projects.count(),
         "active_projects": projects.filter(status="active").count(),
         "at_risk_projects": projects.filter(status="at_risk").count(),
@@ -952,6 +977,15 @@ def _dashboard_metrics(user, project=None) -> dict:
         "my_open_tasks": len(mine),
         "my_overdue_tasks": len([t for t in mine if t.due_date and t.due_date < today]),
     }
+    # The Project/Task subsystem is optional — an installation that works
+    # entirely in workspaces has nothing in it. Sending a row of zeros beside
+    # thirteen real workspace projects is worse than sending nothing: the model
+    # believes the zeros and answers "no current project activity", which is
+    # exactly what the deployed dashboard reported to someone looking at a
+    # screen full of overdue work.
+    if not (figures["visible_projects"] or figures["total_open_tasks"]):
+        figures = {}
+    return {**figures, **_workspace_project_metrics(user)}
 
 
 @ai_endpoint(MetricsSerializer)
