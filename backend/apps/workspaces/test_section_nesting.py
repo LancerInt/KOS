@@ -228,6 +228,74 @@ def test_renaming_a_section_carries_its_records(auth_client, project):
     assert rec.section_id == sec.id and rec.category == "Produce"
 
 
+# --------------------------------------------------------------------------- #
+# Built-in identity across a rename
+#
+# Built-in sections live in frontend config, not in the database, so a row only
+# appears once one is customised. Identity used to be the name, which meant a
+# rename detached the row and the built-in reappeared unadopted beside it.
+# ``builtin_key`` is that identity, recorded once at adoption.
+# --------------------------------------------------------------------------- #
+@pytest.mark.django_db
+def test_renaming_a_builtin_keeps_the_key_it_was_adopted_under(auth_client, project):
+    r = auth_client.post(SECTIONS, {"project": project.id, "name": "Product",
+                                    "builtin_key": "product", "fields": []}, format="json")
+    assert r.status_code == 201, r.data
+    r = auth_client.patch(f"{SECTIONS}{r.data['id']}/", {"name": "Products"}, format="json")
+    assert r.status_code == 200, r.data
+    # The name moved; the identity did not, so the grid still shows one section.
+    assert r.data["name"] == "Products" and r.data["builtin_key"] == "product"
+
+
+@pytest.mark.django_db
+def test_builtin_key_is_normalised_on_the_way_in(auth_client, project):
+    r = auth_client.post(SECTIONS, {"project": project.id, "name": "Product",
+                                    "builtin_key": "  PRODUCT  ", "fields": []}, format="json")
+    assert r.status_code == 201, r.data
+    assert r.data["builtin_key"] == "product"
+
+
+@pytest.mark.django_db
+def test_a_section_cannot_be_repointed_to_another_builtin(auth_client, project):
+    sec = mk(project, "Product", builtin_key="product")
+    r = auth_client.patch(f"{SECTIONS}{sec.id}/", {"builtin_key": "category"}, format="json")
+    # Repointing would hand this row — and its records — another built-in's
+    # identity, so the grid would lose one section and duplicate the other.
+    assert r.status_code == 400, r.data
+    sec.refresh_from_db()
+    assert sec.builtin_key == "product"
+
+
+@pytest.mark.django_db
+def test_a_section_adopted_before_the_key_existed_can_still_acquire_one(auth_client, project):
+    """Rows adopted before ``builtin_key`` was added carry none. The first rename
+    sends it, which is what keeps *those* sections attached to their built-in."""
+    sec = mk(project, "Product")
+    assert sec.builtin_key == ""
+    r = auth_client.patch(f"{SECTIONS}{sec.id}/",
+                          {"name": "Products", "builtin_key": "product"}, format="json")
+    assert r.status_code == 200, r.data
+    sec.refresh_from_db()
+    assert sec.name == "Products" and sec.builtin_key == "product"
+
+
+@pytest.mark.django_db
+def test_resending_the_same_builtin_key_is_accepted(auth_client, project):
+    """The client sends the key on every rename; that must not read as repointing."""
+    sec = mk(project, "Product", builtin_key="product")
+    r = auth_client.patch(f"{SECTIONS}{sec.id}/",
+                          {"name": "Products", "builtin_key": "product"}, format="json")
+    assert r.status_code == 200, r.data
+
+
+@pytest.mark.django_db
+def test_a_custom_section_keeps_an_empty_key(auth_client, project):
+    r = auth_client.post(SECTIONS, {"project": project.id, "name": "Trials", "fields": []},
+                         format="json")
+    assert r.status_code == 201, r.data
+    assert r.data["builtin_key"] == ""
+
+
 @pytest.mark.django_db
 def test_a_long_section_name_does_not_truncate_the_mirror(auth_client, project):
     long_name = "N" * 120

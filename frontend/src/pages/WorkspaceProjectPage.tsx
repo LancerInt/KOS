@@ -11,7 +11,7 @@ import { getWorkspace, useWorkspaces, dynamicWorkspacesReady } from "../features
 import { getProject, updateProject, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import { listRecords, type WorkspaceRecord } from "../features/workspaces/recordsApi";
 import { listSections, createSection, updateSection, type WorkspaceSection } from "../features/workspaces/sectionsApi";
-import { buildSectionTree, recordIn, type SectionNode } from "../features/workspaces/sectionTree";
+import { buildSectionTree, builtinKeyOf, recordIn, type SectionNode } from "../features/workspaces/sectionTree";
 import { stringsToFields, type FieldDef } from "../features/workspaces/fields";
 import { SectionDrawer } from "../features/workspaces/SectionDrawer";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
@@ -117,6 +117,7 @@ export default function WorkspaceProjectPage() {
       // parent stays null: a built-in only keeps its identity at root level.
       const row = await createSection({
         project: pid, name: node.name, blurb: node.blurb, fields: node.fieldDefs, parent: null,
+        builtinKey: builtinKeyOf(node),
       });
       return row.id;
     } catch (e) {
@@ -134,6 +135,33 @@ export default function WorkspaceProjectPage() {
   const saveFields = async (node: SectionNode, fields: FieldDef[]) => {
     await updateSection(await ensureRow(node), { fields });
     await refreshSections();
+  };
+
+  /** Rename a section (and its description). Throws with a message the drawer
+   *  shows inline. Built-ins are adopted first, exactly as saving fields does. */
+  const renameSection = async (node: SectionNode, name: string, blurb: string) => {
+    // Sibling clash. The server enforces this over *rows*, which cannot see a
+    // built-in nobody has customised yet — renaming onto one of those would
+    // otherwise pass and leave two identically named tiles side by side.
+    const siblings = node.parent ? node.parent.children : tree.roots;
+    const clash = siblings.some(
+      (s) => s.key !== node.key && s.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (clash) throw new Error("A section with this name already exists here.");
+
+    const id = await ensureRow(node);
+    // Send the built-in key alongside: a section adopted before that column
+    // existed has none, and without it this rename would detach it from the
+    // built-in it stands for. Re-sending the same key on a row that has one is
+    // accepted; repointing it is not.
+    const builtin = builtinKeyOf(node);
+    try {
+      await updateSection(id, { name, blurb, ...(builtin ? { builtin_key: builtin } : {}) });
+    } catch (e) {
+      const data = (e as { response?: { data?: Record<string, string[]> } }).response?.data;
+      throw new Error(data?.name?.[0] ?? data?.detail?.[0] ?? "Could not rename this section.");
+    }
+    await refreshSections();
+    load();     // the server mirrors the new name onto this section's records
   };
 
   const saveSection = async () => {
@@ -178,6 +206,7 @@ export default function WorkspaceProjectPage() {
   const deleteSectionNode = async (node: SectionNode) => {
     const id = node.id ?? (await createSection({
       project: pid, name: node.name, blurb: node.blurb, fields: node.fieldDefs, hidden: true,
+      builtinKey: builtinKeyOf(node),
     })).id;
     if (node.id) await updateSection(id, { hidden: true });
     openNode(node.parent ? node.parent.key : null);
@@ -323,6 +352,7 @@ export default function WorkspaceProjectPage() {
             onRestoreChild={(id) => restoreSection(id)}
             onRecordsChanged={load}
             onSaveFields={(fields) => saveFields(selected, fields)}
+            onRenameSection={canEdit ? (name, blurb) => renameSection(selected, name, blurb) : undefined}
             onDeleteSection={canEdit ? () => deleteSectionNode(selected) : undefined}
           />
         )}

@@ -72,8 +72,18 @@ export function buildSectionTree(
   }
 
   // 2 — key every row. Only a ROOT row may claim a built-in's identity.
-  const keyOf = (row: WorkspaceSection): NodeKey =>
-    row.parent == null && builtinNames.has(norm(row.name)) ? builtinKey(row.name) : String(row.id);
+  //
+  // `builtin_key` is checked before the name so a renamed built-in keeps its
+  // identity: matching on name alone meant a rename detached the row, and the
+  // built-in reappeared unadopted beside it. The name match remains as the
+  // fallback for rows adopted before that column existed — they carry no key
+  // until something writes one (a rename does, see WorkspaceProjectPage).
+  const keyOf = (row: WorkspaceSection): NodeKey => {
+    if (row.parent != null) return String(row.id);
+    if (row.builtin_key && builtinNames.has(row.builtin_key)) return `b:${row.builtin_key}`;
+    if (!row.builtin_key && builtinNames.has(norm(row.name))) return builtinKey(row.name);
+    return String(row.id);
+  };
 
   const keyById = new Map<number, NodeKey>();
   const adopting = new Map<NodeKey, WorkspaceSection>();
@@ -101,7 +111,10 @@ export function buildSectionTree(
     byKey.set(k, mk({
       key: k,
       id: row?.id ?? null,
-      name: c.name,                                   // config casing always wins
+      // The adopting row's name wins — that is where a rename lands. Until one
+      // exists (or if it is somehow blank) the config name stands in, which is
+      // also what keeps casing right for a row adopted straight from config.
+      name: row?.name || c.name,
       blurb: row?.blurb || c.blurb,
       fieldDefs: saved.length ? saved : stringsToFields(c.fields),
       allowFiles: !!c.allowFiles,
@@ -162,6 +175,11 @@ export function buildSectionTree(
 
   return { roots, hiddenRoots, byKey };
 }
+
+/** The built-in this node stands for ("label"), or "" for a custom section.
+ *  Sent when adopting or renaming so the row keeps that identity across a
+ *  rename — the key is `b:<builtin>`, so it is already carried in the key. */
+export const builtinKeyOf = (n: SectionNode): string => (n.isBuiltin ? n.key.slice(2) : "");
 
 /** Root → … → node, for a breadcrumb. Hop-capped against a corrupt chain. */
 export function ancestorTrail(node: SectionNode | null): SectionNode[] {

@@ -219,7 +219,7 @@ class WorkspaceSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkspaceSection
         fields = ("id", "project", "parent", "workspace", "name", "blurb", "fields",
-                  "hidden", "created_by", "created_at")
+                  "builtin_key", "hidden", "created_by", "created_at")
         read_only_fields = ("workspace", "created_by", "created_at")
 
     def validate_fields(self, value):
@@ -237,10 +237,24 @@ class WorkspaceSectionSerializer(serializers.ModelSerializer):
                 clean.append(f)
         return clean
 
+    def validate_builtin_key(self, value):
+        return (value or "").strip().lower()
+
     def validate(self, attrs):
         instance = self.instance
         project = attrs.get("project") or (instance.project if instance else None)
         parent = attrs["parent"] if "parent" in attrs else (instance.parent if instance else None)
+
+        # builtin_key is write-once. It is what a renamed built-in is recognised
+        # by, so letting an update repoint it would let one row take over another
+        # built-in's identity — and silently move its records with it. Setting it
+        # on a row that has none is allowed: that is how a section adopted before
+        # this column existed acquires its key, on the first rename.
+        if "builtin_key" in attrs and instance is not None:
+            if instance.builtin_key and attrs["builtin_key"] != instance.builtin_key:
+                raise serializers.ValidationError(
+                    {"builtin_key": "A section can't be repointed to another built-in section."})
+
         # On a partial update (e.g. saving only the field schema) name isn't in
         # the payload — fall back to the existing name instead of erroring.
         provided_name = "name" in attrs

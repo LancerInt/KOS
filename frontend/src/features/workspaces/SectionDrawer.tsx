@@ -31,7 +31,7 @@ type Tab = "fields" | "records" | "children";
 export function SectionDrawer({
   node, projectName, project, records, canEdit, showDuration, initialTab,
   onClose, onOpenNode, onAddChild, onRestoreChild,
-  onRecordsChanged, onSaveFields, onDeleteSection,
+  onRecordsChanged, onSaveFields, onRenameSection, onDeleteSection,
 }: {
   node: SectionNode;
   projectName: string;
@@ -46,6 +46,8 @@ export function SectionDrawer({
   onRestoreChild: (id: number) => void;
   onRecordsChanged: () => void;
   onSaveFields: (fields: FieldDef[]) => Promise<void>;
+  /** Rejects with a message to show inline (duplicate name, no permission). */
+  onRenameSection?: (name: string, blurb: string) => Promise<void>;
   onDeleteSection?: () => void;
 }) {
   const savedFields = node.fieldDefs;
@@ -73,10 +75,7 @@ export function SectionDrawer({
           ))}
         </Stack>
         <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="h3" sx={{ fontSize: 19, lineHeight: 1.3 }}>{node.name}</Typography>
-            <Typography sx={{ fontSize: 12.5, color: tokens.text3, mt: 0.25 }}>{node.blurb}</Typography>
-          </Box>
+          <SectionHeading key={`${node.key}:${node.name}`} node={node} onRename={onRenameSection} />
           <IconButton size="small" onClick={onClose}><CloseRoundedIcon sx={{ fontSize: 18 }} /></IconButton>
         </Stack>
         <Box sx={{ display: "inline-flex", mt: 1.75, p: "3px", borderRadius: "9px", bgcolor: "#EEF0F3", border: `1px solid ${tokens.line}` }}>
@@ -120,6 +119,102 @@ export function SectionDrawer({
           </Box>
         )}
       </Box>
+    </Box>
+  );
+}
+
+/**
+ * The section's name and description, renamed in place.
+ *
+ * Editing happens here rather than in a dialog because the heading is already
+ * the thing being changed — a modal would hide the breadcrumb that gives the
+ * name its context. Read-only viewers get the plain heading, unchanged.
+ */
+function SectionHeading({ node, onRename }: {
+  node: SectionNode;
+  onRename?: (name: string, blurb: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(node.name);
+  const [blurb, setBlurb] = useState(node.blurb);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const start = () => {
+    setName(node.name);
+    setBlurb(node.blurb);
+    setErr("");
+    setEditing(true);
+  };
+  const cancel = () => { setEditing(false); setErr(""); };
+
+  const save = async () => {
+    const nextName = name.trim();
+    const nextBlurb = blurb.trim();
+    if (!nextName || busy || !onRename) return;
+    // Nothing changed — close quietly rather than spend a request.
+    if (nextName === node.name.trim() && nextBlurb === node.blurb.trim()) { cancel(); return; }
+    setBusy(true);
+    setErr("");
+    try {
+      await onRename(nextName, nextBlurb);
+      setEditing(false);
+    } catch (e) {
+      setErr(e instanceof Error && e.message ? e.message : "Could not rename this section.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <Box sx={{ minWidth: 0, "&:hover .sec-rename": { opacity: 1 } }}>
+        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+          <Typography variant="h3" sx={{ fontSize: 19, lineHeight: 1.3 }}>{node.name}</Typography>
+          {onRename && (
+            <IconButton className="sec-rename" size="small" title="Rename section" onClick={start}
+              sx={{ opacity: 0, transition: "opacity .14s", color: tokens.text3,
+                "&:hover": { color: tokens.kriyaInk } }}>
+              <EditRoundedIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+          )}
+        </Stack>
+        <Typography sx={{ fontSize: 12.5, color: tokens.text3, mt: 0.25 }}>{node.blurb}</Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ minWidth: 0, flex: 1 }}>
+      <Stack spacing={1}>
+        <TextField
+          size="small" label="Section name" value={name} autoFocus fullWidth disabled={busy}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); save(); }
+            if (e.key === "Escape") { e.preventDefault(); cancel(); }
+          }}
+        />
+        <TextField
+          size="small" label="Description (optional)" value={blurb} fullWidth multiline minRows={2}
+          disabled={busy}
+          onChange={(e) => setBlurb(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
+        />
+        {err && <Typography sx={{ fontSize: 12, color: tokens.attn }}>{err}</Typography>}
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="contained" onClick={save} disabled={busy || !name.trim()}
+            startIcon={<CheckRoundedIcon sx={{ fontSize: 16 }} />}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+          <Button size="small" onClick={cancel} disabled={busy}>Cancel</Button>
+        </Stack>
+        {node.isBuiltin && (
+          <Typography sx={{ fontSize: 11, color: tokens.text3 }}>
+            Renaming applies to this project only — other projects keep the original name.
+          </Typography>
+        )}
+      </Stack>
     </Box>
   );
 }

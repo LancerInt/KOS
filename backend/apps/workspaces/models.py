@@ -336,6 +336,13 @@ class WorkspaceSection(models.Model):
     workspace = models.CharField(max_length=64)    # mirrors project.workspace
     name = models.CharField(max_length=120)
     blurb = models.CharField(max_length=300, blank=True)
+    # Which built-in section this row adopts, lowercased — blank for a
+    # user-created one. Built-ins are frontend config rather than rows, so a
+    # built-in's identity used to be its name; renaming one therefore detached
+    # it, and the grid showed the original again (unadopted, empty) beside the
+    # renamed row. Recording the built-in's key once, at adoption, keeps that
+    # identity stable across any later rename. Write-once — see the serializer.
+    builtin_key = models.CharField(max_length=80, blank=True)
     # Typed field schema for this section — a list of field definitions
     # ({id, type, label, placeholder, help, required, options}). Empty = use the
     # workspace's built-in default fields. Built-in sections also get a row here
