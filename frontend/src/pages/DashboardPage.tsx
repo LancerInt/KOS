@@ -40,6 +40,7 @@ import { useAiPageContext } from "../features/ai/AiContext";
 import DailyStandupWidget from "../features/ai/DailyStandupWidget";
 import PortfolioInsightsWidget from "../features/ai/PortfolioInsightsWidget";
 import MyWorkBand from "../features/tasks/MyWorkBand";
+import PortfolioCharts from "../features/dashboard/PortfolioCharts";
 import { tokens, monoFont, categoryColors } from "../theme";
 
 type Filter = "all" | DurationStatus;
@@ -294,6 +295,9 @@ export default function DashboardPage() {
         <MetricTile label="In progress" value={counts.active} active={filter === "active"} onClick={() => setFilter("active")} icon={<AutorenewRoundedIcon sx={{ fontSize: 20 }} />} />
         <MetricTile label="Completed" value={counts.completed} active={filter === "completed"} onClick={() => setFilter("completed")} icon={<CheckCircleRoundedIcon sx={{ fontSize: 20 }} />} />
       </Box>
+
+      {/* B · portfolio charts — where the work sits, and the weeks ahead */}
+      {projects && <PortfolioCharts projects={projects} />}
 
       {/* view switch — My work vs Reports (reports gated) */}
       {canReports && (
