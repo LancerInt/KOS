@@ -112,6 +112,15 @@ class WorkspaceProject(models.Model):
     duration_notified_at = models.DateTimeField(null=True, blank=True)
     # Which staged reminders (due-7 / due-1 / due / overdue) have already fired.
     reminders_sent = models.JSONField(default=list, blank=True)
+    # Post-completion workflow flag, orthogonal to the timed duration status: a
+    # project can be marked blocked, or escalated for a management decision.
+    REVIEW_NONE = ""
+    REVIEW_BLOCKED = "blocked"
+    REVIEW_DECISION = "needs_decision"
+    REVIEW_CHOICES = [
+        (REVIEW_NONE, "None"), (REVIEW_BLOCKED, "Blocked"), (REVIEW_DECISION, "Needs decision"),
+    ]
+    review_state = models.CharField(max_length=16, choices=REVIEW_CHOICES, default=REVIEW_NONE, blank=True)
     # Soft-delete → recoverable from the Archive, auto-purged after the TTL.
     deleted_at = models.DateTimeField(null=True, blank=True)
     deleted_by = models.ForeignKey(

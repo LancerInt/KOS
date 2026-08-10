@@ -109,7 +109,7 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             "id", "workspace", "name",
             "created_by", "created_by_name", "created_at",
             "section_count", "record_count", "member_count",
-            "start_at", "end_at", "completed_at", "duration",
+            "start_at", "end_at", "completed_at", "duration", "review_state",
         )
         read_only_fields = ("created_by", "created_at", "completed_at")
 

@@ -2,6 +2,9 @@ import { api } from "../../api/client";
 
 export type DurationStatus = "none" | "active" | "ending_soon" | "due" | "completed";
 
+/** A post-completion workflow flag, separate from the timed duration status. */
+export type ReviewState = "" | "blocked" | "needs_decision";
+
 export interface Duration {
   status: DurationStatus;
   start_at?: string;      // precise start datetime (ISO)
@@ -32,6 +35,8 @@ export interface WorkspaceProject {
   end_at: string | null;
   completed_at: string | null;
   duration: Duration;
+  /** "" (normal) · "blocked" · "needs_decision" — the review workflow flag. */
+  review_state: ReviewState;
 }
 
 export const listProjects = (workspace: string) =>
@@ -59,5 +64,9 @@ export const updateProject = (
 /** Toggle completed state (closes / reopens the duration loop). */
 export const completeProject = (id: number) =>
   api.post<WorkspaceProject>(`/workspace-projects/${id}/complete/`).then((r) => r.data);
+
+/** Flag a project as blocked / needing a decision (or clear it with ""). */
+export const setProjectReviewState = (id: number, review_state: ReviewState) =>
+  api.patch<WorkspaceProject>(`/workspace-projects/${id}/`, { review_state }).then((r) => r.data);
 
 export const deleteProject = (id: number) => api.delete(`/workspace-projects/${id}/`);

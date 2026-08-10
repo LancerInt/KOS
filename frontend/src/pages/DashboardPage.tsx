@@ -12,10 +12,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  InputAdornment, MenuItem, Paper, Select, Stack,
-  Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
+  IconButton, InputAdornment, Menu, MenuItem, Paper, Select, Stack,
+  Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
 } from "@mui/material";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
+import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
+import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
 import BookmarkBorderRoundedIcon from "@mui/icons-material/BookmarkBorderRounded";
 import BookmarkAddRoundedIcon from "@mui/icons-material/BookmarkAddRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
@@ -29,8 +32,8 @@ import ViewKanbanRoundedIcon from "@mui/icons-material/ViewKanbanRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 
-import { listAllProjects, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
-import type { DurationStatus } from "../features/workspaces/projectsApi";
+import { listAllProjects, completeProject, setProjectReviewState, type WorkspaceProject } from "../features/workspaces/projectsApi";
+import type { DurationStatus, ReviewState } from "../features/workspaces/projectsApi";
 import { listSavedViews, createSavedView, deleteSavedView, type SavedView } from "../features/views/savedViewsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
@@ -39,11 +42,10 @@ import { AiActionBar } from "../features/ai/AiActionButton";
 import { useAiPageContext } from "../features/ai/AiContext";
 import DailyStandupWidget from "../features/ai/DailyStandupWidget";
 import PortfolioInsightsWidget from "../features/ai/PortfolioInsightsWidget";
-import MyWorkBand from "../features/tasks/MyWorkBand";
 import PortfolioCharts from "../features/dashboard/PortfolioCharts";
 import { tokens, monoFont, categoryColors } from "../theme";
 
-type Filter = "all" | DurationStatus;
+type Filter = "all" | DurationStatus | "blocked" | "needs_decision";
 type SortKey = "urgency" | "end" | "name" | "workspace";
 type Layout = "list" | "board";
 
@@ -202,8 +204,12 @@ export default function DashboardPage() {
   const canEdit = (p: WorkspaceProject) => accessLevel(mine, p.workspace) === "edit";
 
   const counts = useMemo(() => {
-    const c = { all: (projects ?? []).length, due: 0, ending_soon: 0, active: 0, completed: 0, none: 0 } as Record<string, number>;
-    for (const p of projects ?? []) c[p.duration.status] += 1;
+    const c = { all: (projects ?? []).length, due: 0, ending_soon: 0, active: 0, completed: 0, none: 0, blocked: 0, needs_decision: 0 } as Record<string, number>;
+    for (const p of projects ?? []) {
+      c[p.duration.status] += 1;
+      if (p.review_state === "blocked") c.blocked += 1;
+      else if (p.review_state === "needs_decision") c.needs_decision += 1;
+    }
     return c;
   }, [projects]);
 
@@ -225,7 +231,11 @@ export default function DashboardPage() {
   }, [projects, query]);
 
   const listShown = useMemo(() => {
-    const out = searched.filter((p) => filter === "all" || p.duration.status === filter);
+    const out = searched.filter((p) =>
+      filter === "all" ? true
+        : filter === "blocked" ? p.review_state === "blocked"
+          : filter === "needs_decision" ? p.review_state === "needs_decision"
+            : p.duration.status === filter);
     return [...out].sort((a, b) => {
       if (sort === "urgency") return urgency(a, b);
       if (sort === "end") return (a.duration.end_date ?? "9999").localeCompare(b.duration.end_date ?? "9999");
@@ -254,6 +264,7 @@ export default function DashboardPage() {
 
   const openWorkspace = (p: WorkspaceProject) => navigate(`/workspaces/${p.workspace}`);
   const toggleComplete = (p: WorkspaceProject) => { completeProject(p.id).then(reload).catch(() => {}); };
+  const setReviewState = (p: WorkspaceProject, state: ReviewState) => { setProjectReviewState(p.id, state).then(reload).catch(() => {}); };
   const dropTo = (p: WorkspaceProject, col: DurationStatus) => {
     if (!canEdit(p)) return;
     const isDone = p.duration.status === "completed";
@@ -284,15 +295,14 @@ export default function DashboardPage() {
         </AiActionBar>
       </Box>
 
-      {/* My Work — personal task triage (Overdue / Due today / review / blocked / decision) */}
-      <MyWorkBand />
-
-      {/* A · metric tiles as filters */}
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", sm: "repeat(5,1fr)" }, gap: 1.25, mb: 2 }}>
+      {/* A · metric tiles as filters — one row: duration status + review states */}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", sm: "repeat(4,1fr)", lg: "repeat(7,1fr)" }, gap: 1.25, mb: 2 }}>
         <MetricTile label="Projects" value={counts.all} active={filter === "all"} onClick={() => setFilter("all")} icon={<FolderRoundedIcon sx={{ fontSize: 20 }} />} />
         <MetricTile label="Overdue" value={counts.due} active={filter === "due"} onClick={() => setFilter("due")} icon={<WarningAmberRoundedIcon sx={{ fontSize: 20 }} />} attn />
         <MetricTile label="Ending soon" value={counts.ending_soon} active={filter === "ending_soon"} onClick={() => setFilter("ending_soon")} icon={<AccessTimeRoundedIcon sx={{ fontSize: 20 }} />} />
         <MetricTile label="In progress" value={counts.active} active={filter === "active"} onClick={() => setFilter("active")} icon={<AutorenewRoundedIcon sx={{ fontSize: 20 }} />} />
+        <MetricTile label="Blocked" value={counts.blocked} active={filter === "blocked"} onClick={() => setFilter("blocked")} icon={<BlockRoundedIcon sx={{ fontSize: 20 }} />} tone="#C7891B" />
+        <MetricTile label="Needs decision" value={counts.needs_decision} active={filter === "needs_decision"} onClick={() => setFilter("needs_decision")} icon={<GavelRoundedIcon sx={{ fontSize: 20 }} />} tone="#C0417A" />
         <MetricTile label="Completed" value={counts.completed} active={filter === "completed"} onClick={() => setFilter("completed")} icon={<CheckCircleRoundedIcon sx={{ fontSize: 20 }} />} />
       </Box>
 
@@ -382,7 +392,7 @@ export default function DashboardPage() {
                 ) : (
                   <Stack spacing={dense ? 0.75 : 1.25}>
                     {listShown.map((p) => (
-                      <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} onOpen={() => openWorkspace(p)} onComplete={() => toggleComplete(p)} />
+                      <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} onOpen={() => openWorkspace(p)} onComplete={() => toggleComplete(p)} onSetReview={(s) => setReviewState(p, s)} />
                     ))}
                   </Stack>
                 )}
@@ -534,24 +544,29 @@ function StatusPill({ status }: { status: DurationStatus }) {
   );
 }
 
-function MetricTile({ label, value, active, onClick, icon, attn }: {
-  label: string; value: number; active: boolean; onClick: () => void; icon: ReactNode; attn?: boolean;
+function MetricTile({ label, value, active, onClick, icon, attn, tone }: {
+  label: string; value: number; active: boolean; onClick: () => void; icon: ReactNode; attn?: boolean; tone?: string;
 }) {
   const shown = useCountUp(value);
   const hot = Boolean(attn) && value > 0;
-  const accent = hot ? tokens.attn : tokens.kriya;
+  // A custom tone (Blocked / Needs decision) tints the tile when it has items or
+  // is selected; otherwise fall back to the brand teal (or attn red for Overdue).
+  const toned = Boolean(tone) && (value > 0 || active);
+  const accent = hot ? tokens.attn : toned ? tone! : tokens.kriya;
+  const iconBg = hot ? tokens.attnWash : toned ? `${tone}1A` : active ? tokens.kriyaWash : "#F1F3F6";
+  const iconColor = hot ? tokens.attn : toned ? tone! : active ? tokens.kriyaInk : tokens.text2;
+  const numColor = hot ? tokens.attn : toned && value > 0 ? tone! : value > 0 ? tokens.ink : tokens.text3;
   return (
     <Paper onClick={onClick}
       sx={{ p: 1.5, borderRadius: "8px", cursor: "pointer", display: "flex", alignItems: "center", gap: 1.25, position: "relative",
         border: active ? `1.5px solid ${accent}` : `1px solid ${tokens.line}`, boxShadow: active ? `0 0 0 3px ${accent}22` : "none",
         transition: "border-color .16s, box-shadow .16s, transform .12s",
         "&:hover": { transform: "translateY(-1px)", boxShadow: `0 8px 22px rgba(20,22,29,.08)${active ? `, 0 0 0 3px ${accent}22` : ""}` } }}>
-      <Box sx={{ width: 34, height: 34, flexShrink: 0, borderRadius: "7px", display: "grid", placeItems: "center",
-        bgcolor: hot ? tokens.attnWash : active ? tokens.kriyaWash : "#F1F3F6", color: hot ? tokens.attn : active ? tokens.kriyaInk : tokens.text2 }}>
+      <Box sx={{ width: 34, height: 34, flexShrink: 0, borderRadius: "7px", display: "grid", placeItems: "center", bgcolor: iconBg, color: iconColor }}>
         {icon}
       </Box>
       <Box sx={{ minWidth: 0 }}>
-        <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 23, fontWeight: 600, lineHeight: 1, color: hot ? tokens.attn : value > 0 ? tokens.ink : tokens.text3 }}>{shown}</Typography>
+        <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 23, fontWeight: 600, lineHeight: 1, color: numColor }}>{shown}</Typography>
         <Typography sx={{ fontSize: 11.5, color: tokens.text2, mt: 0.4 }} noWrap>{label}</Typography>
       </Box>
     </Paper>
@@ -621,12 +636,30 @@ function StatusRing({ counts, active, onPick }: { counts: Record<string, number>
   );
 }
 
-function ProjectCard({ p, dense, canEdit, onOpen, onComplete }: {
+const REVIEW_UI: Record<"blocked" | "needs_decision", { label: string; color: string; wash: string }> = {
+  blocked: { label: "Blocked", color: "#8A5A0F", wash: "#FBF2DF" },
+  needs_decision: { label: "Needs decision", color: "#9C2E5E", wash: "#FAE7F0" },
+};
+
+function ReviewBadge({ state }: { state: "blocked" | "needs_decision" }) {
+  const r = REVIEW_UI[state];
+  return (
+    <Box sx={{ display: "inline-flex", alignItems: "center", px: 0.85, py: 0.2, borderRadius: "5px", bgcolor: r.wash }}>
+      <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: r.color }}>{r.label}</Typography>
+    </Box>
+  );
+}
+
+function ProjectCard({ p, dense, canEdit, onOpen, onComplete, onSetReview }: {
   p: WorkspaceProject; dense: boolean; canEdit: boolean; onOpen: () => void; onComplete: () => void;
+  onSetReview: (state: ReviewState) => void;
 }) {
   const ws = getWorkspace(p.workspace);
   const s = STATUS_UI[p.duration.status];
   const meta = durMeta(p);
+  const [menuEl, setMenuEl] = useState<null | HTMLElement>(null);
+  const pick = (state: ReviewState) => { setMenuEl(null); onSetReview(state); };
+  const review = p.review_state === "blocked" || p.review_state === "needs_decision" ? p.review_state : null;
   return (
     <Paper onClick={onOpen}
       sx={{ p: dense ? 1.25 : 1.75, borderRadius: "8px", cursor: "pointer", display: "grid", gridTemplateColumns: "auto 1fr auto", gap: `${dense ? 2 : 4}px 13px`,
@@ -639,6 +672,7 @@ function ProjectCard({ p, dense, canEdit, onOpen, onComplete }: {
         <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: "wrap" }} useFlexGap>
           <Typography sx={{ fontSize: dense ? 13.5 : 14.5, fontWeight: 600 }}>{p.name}</Typography>
           <StatusPill status={p.duration.status} />
+          {review && <ReviewBadge state={review} />}
         </Stack>
         <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mt: 0.6, flexWrap: "wrap" }} useFlexGap>
           <Box component="span" sx={{ fontFamily: monoFont, fontSize: 10.5, fontWeight: 600, px: 0.75, py: 0.15, borderRadius: "4px", bgcolor: tokens.kriyaWash, color: tokens.kriyaInk }}>{ws?.label ?? p.workspace}</Box>
@@ -656,13 +690,34 @@ function ProjectCard({ p, dense, canEdit, onOpen, onComplete }: {
           <Avatar title={p.created_by_name || undefined} sx={{ width: 24, height: 24, fontSize: 10, bgcolor: tokens.kriyaInk }}>{initials(p.created_by_name)}</Avatar>
           <StarRoundedIcon sx={{ fontSize: 12, color: "#E5A138", ml: 0.25 }} />
         </Stack>
-        <Stack className="qa" direction="row" spacing={0.5} sx={{ mt: 1 }}>
+        <Stack className="qa" direction="row" spacing={0.5} sx={{ mt: 1 }} alignItems="center">
           <QuickAction icon={<LaunchRoundedIcon sx={{ fontSize: 14 }} />} label="Open" onClick={onOpen} />
           {canEdit && p.duration.status !== "completed" && p.duration.status !== "none" && (
             <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Done" onClick={onComplete} accent />
           )}
+          {canEdit && (
+            <Tooltip title="Flag project">
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); setMenuEl(e.currentTarget); }}
+                sx={{ border: `1px solid ${tokens.line}`, borderRadius: 1.5, p: 0.35, color: tokens.text2, "&:hover": { borderColor: "#C5CAD2" } }}>
+                <MoreVertRoundedIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
+          )}
         </Stack>
-        {/* Open is redundant with the whole-card click but kept as a clear affordance. */}
+        <Menu anchorEl={menuEl} open={Boolean(menuEl)} onClose={() => setMenuEl(null)} onClick={(e) => e.stopPropagation()}
+          transformOrigin={{ horizontal: "right", vertical: "top" }} anchorOrigin={{ horizontal: "right", vertical: "bottom" }}>
+          <MenuItem onClick={() => pick("blocked")} sx={{ fontSize: 13, gap: 1 }} selected={review === "blocked"}>
+            <BlockRoundedIcon sx={{ fontSize: 16, color: "#C7891B" }} /> Blocked
+          </MenuItem>
+          <MenuItem onClick={() => pick("needs_decision")} sx={{ fontSize: 13, gap: 1 }} selected={review === "needs_decision"}>
+            <GavelRoundedIcon sx={{ fontSize: 16, color: "#C0417A" }} /> Needs decision
+          </MenuItem>
+          {review && (
+            <MenuItem onClick={() => pick("")} sx={{ fontSize: 13, gap: 1, color: tokens.text2 }}>
+              <CheckCircleRoundedIcon sx={{ fontSize: 16, color: tokens.text3 }} /> Clear flag
+            </MenuItem>
+          )}
+        </Menu>
       </Stack>
     </Paper>
   );
