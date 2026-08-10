@@ -3,8 +3,8 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     WorkspaceDeletedItemsView, WorkspaceMemberViewSet, WorkspacePermissionViewSet,
-    WorkspaceProjectMemberViewSet, WorkspaceProjectViewSet, WorkspaceRecordViewSet,
-    WorkspaceSectionViewSet, WorkspaceUserAccessView, WorkspaceViewSet,
+    WorkspaceProjectExportView, WorkspaceProjectMemberViewSet, WorkspaceProjectViewSet,
+    WorkspaceRecordViewSet, WorkspaceSectionViewSet, WorkspaceUserAccessView, WorkspaceViewSet,
 )
 
 router = DefaultRouter()
@@ -21,5 +21,8 @@ urlpatterns = [
     # Before the router so it isn't captured by the workspaces/<key>/ detail route.
     path("workspaces/deleted-items/", WorkspaceDeletedItemsView.as_view(), name="workspace-deleted-items"),
     path("workspace-user-access/", WorkspaceUserAccessView.as_view(), name="workspace-user-access"),
+    # Before the router, so the dot in the filename isn't read as a project id.
+    path("workspace-projects/export.xlsx", WorkspaceProjectExportView.as_view(),
+         name="workspace-project-export"),
     *router.urls,
 ]

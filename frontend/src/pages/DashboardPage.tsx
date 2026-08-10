@@ -32,7 +32,7 @@ import ViewKanbanRoundedIcon from "@mui/icons-material/ViewKanbanRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 
-import { listAllProjects, completeProject, submitProject, approveProject, rejectProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
+import { listAllProjects, completeProject, submitProject, approveProject, rejectProject, downloadProjectsXlsx, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
 import { listSavedViews, createSavedView, deleteSavedView, type SavedView } from "../features/views/savedViewsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
@@ -273,6 +273,19 @@ export default function DashboardPage() {
   };
   const dateStr = new Date().toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).replace(",", " ·");
 
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState("");
+  const exportXlsx = async () => {
+    setExporting(true); setExportErr("");
+    try {
+      await downloadProjectsXlsx();
+    } catch {
+      setExportErr("Couldn't build the Excel file. Try again in a moment.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <Box sx={{ px: 3, py: 2.5 }}>
       {/* head */}
@@ -285,8 +298,27 @@ export default function DashboardPage() {
               : "Loading your projects…"}
           </Typography>
         </Box>
-        <Typography sx={{ fontFamily: monoFont, fontSize: 12, color: tokens.text3 }}>{dateStr}</Typography>
+        <Stack direction="row" alignItems="center" spacing={1.5}>
+          {/* Administrators only — the whole portfolio in one file is a wider
+              reach than the per-workspace access everyone else holds. The
+              server enforces it; this only decides whether to offer it. */}
+          {mine?.is_admin && (
+            <Button size="small" variant="outlined" disabled={exporting}
+              startIcon={exporting
+                ? <CircularProgressDot />
+                : <DownloadRoundedIcon sx={{ fontSize: 17 }} />}
+              onClick={exportXlsx}
+              sx={{ color: tokens.text2, borderColor: tokens.line, whiteSpace: "nowrap",
+                "&:hover": { borderColor: tokens.kriya, bgcolor: "rgba(15,122,139,.06)" } }}>
+              {exporting ? "Preparing…" : "Export Excel"}
+            </Button>
+          )}
+          <Typography sx={{ fontFamily: monoFont, fontSize: 12, color: tokens.text3 }}>{dateStr}</Typography>
+        </Stack>
       </Stack>
+      {exportErr && (
+        <Typography sx={{ fontSize: 12.5, color: tokens.attn, mb: 1.5 }}>{exportErr}</Typography>
+      )}
 
       {/* AI actions */}
       <Box sx={{ mb: 2 }}>

@@ -11,6 +11,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Q
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import viewsets
@@ -32,6 +33,7 @@ from .access import (
     SUPERVISOR_ROLE_NAMES, base_access, can_edit, can_open_project, can_view,
     effective_access, is_supervisor, project_scope_q,
 )
+from .export import build_workbook, project_rows
 from .models import (
     ARCHIVE_TTL_DAYS, Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
     WorkspaceProjectMember, WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection,
@@ -599,6 +601,38 @@ class WorkspaceMemberViewSet(viewsets.ModelViewSet):
             "role": next(iter(u.roles.values_list("name", flat=True)), ""),
         } for u in candidates]
         return Response({"domain": domain, "users": users})
+
+
+class WorkspaceProjectExportView(APIView):
+    """The dashboard's project list as a formatted Excel workbook.
+
+    Administrators only — this is the whole portfolio in one file, which is a
+    different thing from the per-workspace access the rest of the app grants.
+    Still routed through the ordinary scoping rule rather than reading the table
+    raw, so the export can never be the one door that ignores it.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdministrator]
+
+    def get(self, request):
+        projects = (
+            _scope_to_open_projects(
+                WorkspaceProject.objects.filter(deleted_at__isnull=True), request.user)
+            .select_related("created_by")
+            .prefetch_related("members__user", "members__added_by")
+            .order_by("workspace", "name")
+        )
+        rows = project_rows(projects)
+        record(action=AuditAction.EXPORT, object_type="WorkspaceProject",
+               new_value={"kind": "dashboard_xlsx", "rows": len(rows)}, request=request)
+
+        stamp = timezone.localtime(timezone.now()).strftime("%Y-%m-%d")
+        response = HttpResponse(
+            build_workbook(rows),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="kos-projects-{stamp}.xlsx"'
+        return response
 
 
 class WorkspaceProjectMemberViewSet(viewsets.ModelViewSet):

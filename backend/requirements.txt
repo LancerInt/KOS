@@ -24,6 +24,12 @@ django-celery-beat==2.7.0
 whitenoise==6.8.2
 Pillow==11.0.0
 
+# --- Spreadsheet export (.xlsx) ---
+# Present transitively today; pinned here because the dashboard export imports
+# it directly, and a transitive dependency is one `pip install` away from
+# vanishing under a clean deploy.
+openpyxl==3.1.5
+
 # --- Auth / MFA ---
 pyotp==2.9.0
 qrcode==8.0

@@ -84,3 +84,24 @@ export const rejectProject = (id: number, reason: string) =>
   api.post<WorkspaceProject>(`/workspace-projects/${id}/reject/`, { reason }).then((r) => r.data);
 
 export const deleteProject = (id: number) => api.delete(`/workspace-projects/${id}/`);
+
+/** Download the dashboard's projects as a formatted Excel workbook
+ *  (administrators only, enforced server-side).
+ *
+ *  Fetched rather than linked: the endpoint needs the bearer token, and a plain
+ *  anchor href carries no Authorization header — it would arrive as a 401 that
+ *  the browser renders as a broken download. */
+export async function downloadProjectsXlsx(): Promise<void> {
+  const { data, headers } = await api.get<Blob>("/workspace-projects/export.xlsx", {
+    responseType: "blob",
+  });
+  const match = /filename="([^"]+)"/.exec(String(headers["content-disposition"] ?? ""));
+  const url = URL.createObjectURL(data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = match?.[1] ?? "kos-projects.xlsx";
+  a.click();
+  // Revoked on the next tick: Chrome cancels an in-flight download if the blob
+  // URL is released synchronously after the click.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
