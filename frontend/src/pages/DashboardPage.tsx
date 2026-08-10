@@ -562,7 +562,7 @@ function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onComplete, onSubm
   const isCompleted = p.duration.status === "completed";
   return (
     <Paper onClick={onOpen}
-      sx={{ p: dense ? 1.25 : 1.75, borderRadius: "8px", cursor: "pointer", display: "grid", gridTemplateColumns: "auto 1fr auto", gap: `${dense ? 2 : 4}px 13px`,
+      sx={{ p: dense ? 1.25 : 1.75, borderRadius: "8px", cursor: "pointer", display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: `${dense ? 2 : 4}px 13px`, overflow: "hidden",
         transition: "box-shadow .16s, transform .16s, border-color .16s",
         "& .qa": { opacity: 0, transition: "opacity .14s" },
         "&:hover": { boxShadow: "0 2px 4px rgba(20,22,29,.06), 0 12px 32px rgba(20,22,29,.1)", transform: "translateY(-1px)", borderColor: "#DADEE4" },
