@@ -748,7 +748,9 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
             project.reminders_sent = []          # reopened → reminders may fire again
         else:
             project.completed_at = timezone.now()
-        project.save(update_fields=["completed_at", "duration_notified_at", "reminders_sent"])
+            project.review_state = WorkspaceProject.REVIEW_NONE   # done → no pending review
+            project.review_reason = ""
+        project.save(update_fields=["completed_at", "duration_notified_at", "reminders_sent", "review_state", "review_reason"])
         record(action=AuditAction.STATUS_CHANGE, obj=project,
                new_value={**_proj_val(project), "completed": bool(project.completed_at)}, request=request)
         return Response(self.get_serializer(project).data)

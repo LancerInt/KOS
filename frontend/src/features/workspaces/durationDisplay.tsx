@@ -133,12 +133,15 @@ export function DurationPanel({
     try { await fn(); } finally { setBusy(false); }
   };
   const completed = duration.status === "completed";
+  // The worker (an editor who isn't an approver) submits / resubmits; an
+  // approver (IT/Management) approves or sends back. A completed project has no
+  // pending review, so it only offers Reopen.
+  const worker = canEdit && !canApprove;
+  const review = completed ? "" : reviewState;
 
-  // The completion path now runs through approval: a non-approver submits for
-  // sign-off; an approver (IT/Management) approves (→ complete) or sends back.
   const actions = () => {
     if (completed) return canEdit ? <Button size="small" variant="outlined" onClick={toggle} disabled={busy}>Reopen</Button> : null;
-    if (reviewState === "needs_decision")
+    if (review === "needs_decision")
       return canApprove ? (
         <Stack direction="row" spacing={1}>
           <Button size="small" variant="contained" onClick={run(onApprove)} disabled={busy}>Approve</Button>
@@ -146,19 +149,19 @@ export function DurationPanel({
             sx={{ color: tokens.text2, borderColor: tokens.line }}>Send back</Button>
         </Stack>
       ) : null;
-    if (reviewState === "blocked") return canEdit ? <Button size="small" variant="contained" onClick={run(onSubmit)} disabled={busy}>Resubmit</Button> : null;
+    if (review === "blocked") return worker ? <Button size="small" variant="contained" onClick={run(onSubmit)} disabled={busy}>Resubmit</Button> : null;
     if (canApprove) return <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={toggle} disabled={busy}>Mark complete</Button>;
-    return canEdit ? <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={run(onSubmit)} disabled={busy}>Submit for approval</Button> : null;
+    return worker ? <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={run(onSubmit)} disabled={busy}>Submit for approval</Button> : null;
   };
 
   return (
     <Paper sx={{ p: 1.75, borderRadius: "6px" }}>
-      {reviewState === "needs_decision" && (
+      {review === "needs_decision" && (
         <Box sx={{ mb: 1.25, display: "inline-flex", alignItems: "center", px: 1, py: 0.45, borderRadius: "6px", bgcolor: "#FAE7F0" }}>
           <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: "#9C2E5E" }}>Awaiting approval — submitted for sign-off</Typography>
         </Box>
       )}
-      {reviewState === "blocked" && (
+      {review === "blocked" && (
         <Box sx={{ mb: 1.25, px: 1.1, py: 0.65, borderRadius: "6px", bgcolor: "#FBF2DF" }}>
           <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: "#8A5A0F" }}>Sent back for changes</Typography>
           {reviewReason && <Typography sx={{ fontSize: 12, color: "#7a5a12", mt: 0.2 }}>{reviewReason}</Typography>}

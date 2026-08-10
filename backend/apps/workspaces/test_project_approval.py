@@ -76,3 +76,15 @@ def test_a_non_approver_cannot_approve(owner, project):
     client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
     r = client(owner).post(f"/api/workspace-projects/{project.id}/approve/")   # owner isn't a supervisor
     assert r.status_code == 403
+
+
+def test_completing_clears_any_pending_review(owner, approver, project):
+    # submit → sent back (blocked) → then completed directly: no stale flag remains,
+    # so the client never offers Resubmit on a done project.
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
+    client(approver).post(f"/api/workspace-projects/{project.id}/reject/", {"reason": "x"}, format="json")
+    r = client(approver).post(f"/api/workspace-projects/{project.id}/complete/")
+    assert r.status_code == 200, r.data
+    assert r.data["review_state"] == ""            # serialised as no-review once done
+    project.refresh_from_db()
+    assert project.review_state == "" and project.completed_at is not None

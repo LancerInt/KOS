@@ -104,6 +104,7 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
     duration = serializers.SerializerMethodField()
     submitted_by_name = serializers.SerializerMethodField()
     reviewed_by_name = serializers.SerializerMethodField()
+    review_state = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkspaceProject
@@ -115,12 +116,18 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             "review_state", "review_reason", "submitted_at", "submitted_by_name",
             "reviewed_at", "reviewed_by_name",
         )
-        # review_state and the workflow stamps move only through the submit /
-        # approve / reject actions — never a plain PATCH.
+        # The workflow stamps move only through the submit / approve / reject
+        # actions — never a plain PATCH.
         read_only_fields = (
             "created_by", "created_at", "completed_at",
-            "review_state", "review_reason", "submitted_at", "reviewed_at",
+            "review_reason", "submitted_at", "reviewed_at",
         )
+
+    def get_review_state(self, obj) -> str:
+        # A completed project has no pending review — normalises away any stale
+        # flag left on a completed project (e.g. from the old manual flag menu),
+        # so the client never offers Submit/Resubmit on something already done.
+        return "" if obj.completed_at else obj.review_state
 
     def get_submitted_by_name(self, obj) -> str:
         u = obj.submitted_by

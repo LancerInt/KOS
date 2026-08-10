@@ -563,8 +563,11 @@ function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onComplete, onSubm
   const ws = getWorkspace(p.workspace);
   const s = STATUS_UI[p.duration.status];
   const meta = durMeta(p);
-  const review = p.review_state === "blocked" || p.review_state === "needs_decision" ? p.review_state : null;
   const isCompleted = p.duration.status === "completed";
+  // A completed project carries no pending review; the worker (an editor who
+  // isn't an approver) is who submits / resubmits — approvers approve.
+  const review = !isCompleted && (p.review_state === "blocked" || p.review_state === "needs_decision") ? p.review_state : null;
+  const worker = canEdit && !canApprove;
   return (
     <Paper onClick={onOpen}
       sx={{ p: dense ? 1.25 : 1.75, borderRadius: "8px", cursor: "pointer", display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: `${dense ? 2 : 4}px 13px`, overflow: "hidden",
@@ -602,16 +605,16 @@ function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onComplete, onSubm
             <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Approve" onClick={onApprove} accent />
             <QuickAction icon={<BlockRoundedIcon sx={{ fontSize: 14 }} />} label="Send back" onClick={onReject} danger />
           </>}
-          {/* Sent back → owner fixes and resubmits */}
-          {review === "blocked" && canEdit && (
+          {/* Sent back → the worker fixes and resubmits (not the approver) */}
+          {review === "blocked" && worker && (
             <QuickAction icon={<SendRoundedIcon sx={{ fontSize: 14 }} />} label="Resubmit" onClick={onSubmit} primary />
           )}
-          {/* Normal → approvers complete directly; everyone else submits for sign-off */}
+          {/* Normal → approvers complete directly; the worker submits for sign-off */}
           {!review && !isCompleted && (
             canApprove
               ? (p.duration.status !== "none" &&
                   <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Done" onClick={onComplete} accent />)
-              : (canEdit &&
+              : (worker &&
                   <QuickAction icon={<SendRoundedIcon sx={{ fontSize: 14 }} />} label="Submit" onClick={onSubmit} primary />)
           )}
         </Stack>
