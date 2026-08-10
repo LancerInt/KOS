@@ -104,7 +104,12 @@ function durMeta(p: WorkspaceProject): { text: string; color: string } {
     }
     case "ending_soon": return { text: d.left_label ? `${d.left_label} left` : "Ending soon", color: "#9A6A16" };
     case "active": return { text: d.left_label ? `${d.left_label} left` : "In progress", color: tokens.text2 };
-    default: return { text: "No duration set", color: tokens.text3 };
+    default:
+      // none — no dates. If it's in the approval flow, say that instead of the
+      // bare "No duration set", which reads as a contradiction once submitted.
+      if (p.review_state === "needs_decision") return { text: "Awaiting approval", color: "#C0417A" };
+      if (p.review_state === "blocked") return { text: "Sent back for changes", color: "#C7891B" };
+      return { text: "No duration set", color: tokens.text3 };
   }
 }
 
