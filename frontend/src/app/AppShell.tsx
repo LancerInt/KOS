@@ -169,7 +169,7 @@ export default function AppShell() {
 
   const rail = (
     <Box sx={{ background: RAIL.gradient, color: RAIL.text, display: "flex", flexDirection: "column",
-      p: railCollapsed ? 1 : 1.5, overflow: "hidden", height: "100%" }}>
+      p: railCollapsed ? 1 : 1.5, overflow: "hidden", height: "100%", minHeight: 0 }}>
         {/* brand (Kriya mark + KOS) + collapse toggle */}
         <Stack direction={railCollapsed ? "column" : "row"} alignItems="center" justifyContent={railCollapsed ? "center" : "space-between"}
           spacing={railCollapsed ? 0.75 : 0} sx={{ px: railCollapsed ? 0 : 0.75, py: 1, mb: 1, minWidth: 0 }}>
@@ -193,8 +193,18 @@ export default function AppShell() {
           </Tooltip>
         </Stack>
 
-        {/* nav */}
-        <Stack spacing={0.25} sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
+        {/* nav — the rail's own scroll area, between the fixed brand row above
+            and the fixed identity/logout row below. A long workspace list
+            scrolls here without disturbing the page beside it. The scrollbar is
+            restyled because the browser default is drawn for a light surface
+            and reads as a bright stripe down the teal rail. */}
+        <Stack spacing={0.25} sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden",
+          overscrollBehavior: "contain",
+          scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,.22) transparent",
+          "&::-webkit-scrollbar": { width: 6 },
+          "&::-webkit-scrollbar-thumb": { backgroundColor: "rgba(255,255,255,.22)", borderRadius: 3 },
+          "&:hover::-webkit-scrollbar-thumb": { backgroundColor: "rgba(255,255,255,.34)" },
+          "&::-webkit-scrollbar-track": { backgroundColor: "transparent" } }}>
           {NAV.map((group, gi) => {
             const items = group.items.filter((n) => {
               if (n.capability && !(n.capability in caps)) return false;
@@ -307,7 +317,14 @@ export default function AppShell() {
 
   return (
     <AiProvider>
-    <Box sx={{ display: "grid", minHeight: "100vh",
+    {/* The shell is a fixed-height frame, not a page that grows: the rail and
+        the content are two independent scroll areas side by side. Growing (the
+        old `minHeight`) gave the document a single scrollbar, so paging through
+        a long project carried the whole sidebar off the top of the screen and
+        the nav could only be reached by scrolling back up. `dvh` where it's
+        supported, so mobile browser chrome doesn't clip the bottom row. */}
+    <Box sx={{ display: "grid", height: "100vh", overflow: "hidden",
+      "@supports (height: 100dvh)": { height: "100dvh" },
       gridTemplateColumns: isMobile ? "1fr" : railCollapsed ? "64px 1fr" : "232px 1fr",
       transition: "grid-template-columns .18s ease" }}>
       {/* The rail: a column of the grid on desktop, a temporary drawer below md.
@@ -319,8 +336,12 @@ export default function AppShell() {
         </Drawer>
       ) : rail}
 
-      {/* main */}
-      <Box sx={{ bgcolor: "background.default", overflowY: "auto", minWidth: 0 }}>
+      {/* main — the other scroll area. `minHeight: 0` is what actually lets it
+          scroll: a grid item defaults to min-height:auto and would otherwise
+          stretch to its content and push the frame open again. `contain` stops
+          a flick past the end of this pane from scrolling anything behind it. */}
+      <Box sx={{ bgcolor: "background.default", height: "100%", minHeight: 0, minWidth: 0,
+        overflowY: "auto", overflowX: "auto", overscrollBehavior: "contain" }}>
         {isMobile && (
           <Stack direction="row" alignItems="center" justifyContent="space-between"
             sx={{ position: "sticky", top: 0, zIndex: 5, px: 2, py: 1,
