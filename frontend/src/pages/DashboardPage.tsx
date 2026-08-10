@@ -2,7 +2,7 @@
  * Dashboard — the single home. Consolidates the personal work queue, the
  * portfolio overview, and reports over workspace projects (access-scoped).
  *
- * Interactions: metric tiles + status ring filter the list; a command strip
+ * Interactions: metric tiles filter the list; a command strip
  * (find · sort · density) tunes it; List ⇄ Board (drag a card to Completed to
  * close it / out to reopen); cards carry a duration stage rail with a "today"
  * marker and hover quick-actions. Clicking a project opens its workspace —
@@ -219,11 +219,6 @@ export default function DashboardPage() {
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [projects]);
 
-  const attention = useMemo(
-    () => (projects ?? []).filter((p) => p.duration.status === "due" || p.duration.status === "ending_soon").sort(urgency),
-    [projects],
-  );
-
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = (projects ?? []).filter((p) => !q || p.name.toLowerCase().includes(q) || (getWorkspace(p.workspace)?.label ?? p.workspace).toLowerCase().includes(q));
@@ -399,30 +394,6 @@ export default function DashboardPage() {
               </Box>
 
               <Box sx={{ position: { md: "sticky" }, top: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                <Panel title="By status">
-                  <StatusRing counts={counts} active={filter} onPick={setFilter} />
-                </Panel>
-                <Panel title="Needs attention">
-                  {attention.length === 0 ? (
-                    <Typography sx={{ fontSize: 12.5, color: tokens.text3 }}>Nothing overdue or ending soon.</Typography>
-                  ) : (
-                    <Stack spacing={0}>
-                      {attention.slice(0, 6).map((p, i) => {
-                        const ws = getWorkspace(p.workspace);
-                        return (
-                          <Stack key={p.id} direction="row" alignItems="center" spacing={1} onClick={() => openWorkspace(p)}
-                            sx={{ py: 0.9, cursor: "pointer", borderTop: i === 0 ? "none" : `1px solid ${tokens.line}`, "&:hover": { color: tokens.kriyaInk } }}>
-                            <Box sx={{ minWidth: 0, flex: 1 }}>
-                              <Typography sx={{ fontSize: 12.5, fontWeight: 550 }} noWrap>{p.name}</Typography>
-                              <Typography sx={{ fontSize: 11, color: tokens.text3 }} noWrap>{ws?.label ?? p.workspace}</Typography>
-                            </Box>
-                            <StatusDot status={p.duration.status} />
-                          </Stack>
-                        );
-                      })}
-                    </Stack>
-                  )}
-                </Panel>
                 <Panel title="By workspace">
                   {byWorkspace.length === 0 ? (
                     <Typography sx={{ fontSize: 12.5, color: tokens.text3 }}>No projects yet.</Typography>
@@ -530,10 +501,6 @@ function CircularProgressDot() {
   return <Box sx={{ width: 26, height: 26, borderRadius: "50%", border: `3px solid ${tokens.line}`, borderTopColor: tokens.kriya, animation: "spin 0.8s linear infinite", "@keyframes spin": { to: { transform: "rotate(360deg)" } } }} />;
 }
 
-function StatusDot({ status }: { status: DurationStatus }) {
-  return <Box sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: STATUS_UI[status].ring, flexShrink: 0 }} />;
-}
-
 function StatusPill({ status }: { status: DurationStatus }) {
   const s = STATUS_UI[status];
   return (
@@ -588,51 +555,6 @@ function Segmented({ value, onChange, options }: { value: string; onChange: (v: 
         );
       })}
     </Stack>
-  );
-}
-
-function StatusRing({ counts, active, onPick }: { counts: Record<string, number>; active: Filter; onPick: (s: Filter) => void }) {
-  const segs = ([
-    { key: "due", n: counts.due }, { key: "ending_soon", n: counts.ending_soon },
-    { key: "active", n: counts.active }, { key: "completed", n: counts.completed }, { key: "none", n: counts.none },
-  ] as { key: DurationStatus; n: number }[]).filter((s) => s.n > 0);
-  const total = segs.reduce((s, x) => s + x.n, 0) || 1;
-  const r = 52, C = 2 * Math.PI * r;
-  let offset = 0;
-  return (
-    <Box>
-      <Box sx={{ display: "grid", placeItems: "center", py: 0.5 }}>
-        <Box sx={{ position: "relative", width: 132, height: 132 }}>
-          <svg width="132" height="132" viewBox="0 0 140 140" style={{ transform: "rotate(-90deg)" }}>
-            <circle cx="70" cy="70" r={r} fill="none" stroke={tokens.line} strokeWidth="16" />
-            {segs.map((s) => {
-              const len = (s.n / total) * C;
-              const el = <circle key={s.key} cx="70" cy="70" r={r} fill="none" stroke={STATUS_UI[s.key].ring} strokeWidth={active === s.key ? 20 : 16}
-                strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset} style={{ cursor: "pointer", transition: "stroke-width .16s" }}
-                onClick={() => onPick(active === s.key ? "all" : s.key)} />;
-              offset += len;
-              return el;
-            })}
-          </svg>
-          <Box sx={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
-            <Box sx={{ textAlign: "center" }}>
-              <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 25, fontWeight: 700, lineHeight: 1 }}>{counts.all}</Typography>
-              <Typography sx={{ fontSize: 10.5, color: tokens.text3 }}>projects</Typography>
-            </Box>
-          </Box>
-        </Box>
-      </Box>
-      <Stack spacing={0.25} sx={{ mt: 0.5 }}>
-        {([["due", "Overdue"], ["ending_soon", "Ending soon"], ["active", "In progress"], ["completed", "Completed"]] as [DurationStatus, string][]).map(([k, label]) => (
-          <Stack key={k} direction="row" alignItems="center" spacing={1} onClick={() => onPick(active === k ? "all" : k)}
-            sx={{ py: 0.4, px: 0.5, borderRadius: 1, cursor: "pointer", bgcolor: active === k ? STATUS_UI[k].bg : "transparent", "&:hover": { bgcolor: STATUS_UI[k].bg } }}>
-            <Box sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: STATUS_UI[k].ring }} />
-            <Typography sx={{ fontSize: 12, flex: 1, color: tokens.text2 }}>{label}</Typography>
-            <Typography sx={{ fontSize: 12, fontFamily: monoFont, color: tokens.text }}>{counts[k]}</Typography>
-          </Stack>
-        ))}
-      </Stack>
-    </Box>
   );
 }
 

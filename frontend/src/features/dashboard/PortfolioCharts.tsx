@@ -1,24 +1,21 @@
 /**
- * Two portfolio visualisations for the Dashboard: **where** the work sits, and
- * **when** it lands. Both read the projects the page already loaded — no extra
- * request, and nothing here can show a project the viewer cannot see.
+ * The portfolio visualisation for the Dashboard: **where** the work sits. Reads
+ * the projects the page already loaded — no extra request, and nothing here can
+ * show a project the viewer cannot see.
  *
- * Deliberately two charts, not a wall of them. The metric tiles above already
- * answer "how many, in what state"; a donut of the same five numbers would be
- * the same information wearing a costume. These answer the two questions the
- * tiles cannot: which workspace is carrying the load (and the overdue), and
- * which weeks ahead are crowded.
+ * One chart, not a wall of them. The metric tiles above already answer "how
+ * many, in what state"; this answers the question they cannot — which workspace
+ * is carrying the load, and the overdue.
  *
- * **Colour.** Three meanings, fixed to the entity and reused across both charts
- * so they never have to be re-learned: brand teal = live work, the reserved
- * coral = overdue, muted ink = chrome. The pair was checked with the dataviz
- * validator rather than by eye — separation is ΔE 11.7 under protanopia and
- * 28.3 under normal vision, well clear of the 8 / 15 floors, and both clear 3:1
- * on white. (The teal sits a hair under the chroma floor at 0.09; matching the
- * status colours the rest of this page already uses is worth more than the
- * 0.01, and chroma exists to protect exactly the separation that passes here.)
+ * **Colour.** Two meanings, fixed to the entity: brand teal = live work, the
+ * reserved coral = overdue. The pair was checked with the dataviz validator
+ * rather than by eye — separation is ΔE 11.7 under protanopia and 28.3 under
+ * normal vision, well clear of the 8 / 15 floors, and both clear 3:1 on white.
+ * (The teal sits a hair under the chroma floor at 0.09; matching the status
+ * colours the rest of this page already uses is worth more than the 0.01, and
+ * chroma exists to protect exactly the separation that passes here.)
  *
- * Every chart carries a table twin — the toggle in its corner — because colour
+ * The chart carries a table twin — the toggle in its corner — because colour
  * and hover must never be the only way to reach a number.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -34,16 +31,10 @@ import { tokens, monoFont } from "../../theme";
 const LIVE = tokens.kriya;
 /** Overdue. The one warm colour in the product, reserved for attention. */
 const LATE = tokens.attn;
-/** Chrome: gridlines and axis rules, one step off the surface. Solid hairlines —
- *  dashes read as "threshold" when they are only a grid. */
-const GRID = "#ECEEF1";
-const SURFACE = tokens.surface;
 
 /** Most workspaces to plot before the tail folds into one row. Past this the
  *  rows get too thin to label and the chart stops being readable. */
 const MAX_ROWS = 7;
-/** How far ahead the load chart looks. A quarter is the horizon people plan on. */
-const WEEKS_AHEAD = 12;
 
 // --------------------------------------------------------------------------- //
 // Geometry helpers
@@ -81,19 +72,6 @@ function useWidth<T extends HTMLElement>() {
   }, []);
   return [ref, width] as const;
 }
-
-const startOfWeek = (d: Date) => {
-  const out = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  // Monday-based: the working week people plan in.
-  out.setDate(out.getDate() - ((out.getDay() + 6) % 7));
-  return out;
-};
-const addDays = (d: Date, n: number) => {
-  const out = new Date(d);
-  out.setDate(out.getDate() + n);
-  return out;
-};
-const weekLabel = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 // --------------------------------------------------------------------------- //
 // Card chrome
@@ -302,134 +280,14 @@ function WorkspaceBars({ projects }: { projects: WorkspaceProject[] }) {
 }
 
 // --------------------------------------------------------------------------- //
-// B · The weeks ahead — how many projects are running each week
-// --------------------------------------------------------------------------- //
 
-interface Week { start: Date; label: string; count: number }
-
-function LoadLine({ projects }: { projects: WorkspaceProject[] }) {
-  const [ref, width] = useWidth<HTMLDivElement>();
-  const [hover, setHover] = useState<number | null>(null);
-
-  const weeks: Week[] = useMemo(() => {
-    const first = startOfWeek(new Date());
-    return Array.from({ length: WEEKS_AHEAD }, (_, i) => {
-      const start = addDays(first, i * 7);
-      const end = addDays(start, 7);
-      let count = 0;
-      for (const p of projects) {
-        if (p.completed_at || !p.start_at || !p.end_at) continue;
-        // Running during this week: started before it ends, ends after it starts.
-        if (new Date(p.start_at) < end && new Date(p.end_at) >= start) count += 1;
-      }
-      return { start, label: weekLabel(start), count };
-    });
-  }, [projects]);
-
-  const dated = projects.filter((p) => p.start_at && p.end_at && !p.completed_at).length;
-  const max = Math.max(1, ...weeks.map((w) => w.count));
-  const peak = weeks.reduce((best, w, i) => (w.count > weeks[best].count ? i : best), 0);
-
-  const table = (
-    <Table size="small">
-      <TableHead>
-        <TableRow sx={{ "& th": { fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".04em", color: tokens.text3, fontWeight: 600, borderColor: tokens.line } }}>
-          <TableCell>Week of</TableCell><TableCell align="right">Projects running</TableCell>
-        </TableRow>
-      </TableHead>
-      <TableBody>
-        {weeks.map((w) => (
-          <TableRow key={w.label}>
-            <TableCell sx={{ fontSize: 12.5, borderColor: tokens.line }}>{w.label}</TableCell>
-            <TableCell align="right" sx={{ ...numberCell, borderColor: tokens.line }}>{w.count}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-
-  const PAD_L = 26, PAD_R = 12, PAD_T = 16, PLOT_H = 128, AXIS_H = 20;
-  const plotW = Math.max(40, width - PAD_L - PAD_R);
-  const step = plotW / Math.max(1, weeks.length - 1);
-  const x = (i: number) => PAD_L + i * step;
-  const y = (v: number) => PAD_T + PLOT_H - (v / max) * PLOT_H;
-  const line = weeks.map((w, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(w.count)}`).join(" ");
-  const area = `${line} L${x(weeks.length - 1)},${PAD_T + PLOT_H} L${x(0)},${PAD_T + PLOT_H} Z`;
-
-  return (
-    <ChartCard title="The weeks ahead"
-      note={`Projects running each week for the next ${WEEKS_AHEAD} weeks.`}
-      table={table}>
-      <Box ref={ref} sx={{ flex: 1, minWidth: 0 }}>
-        {dated === 0 ? (
-          <Empty>No project has both a start and an end yet — set a duration and the load appears here.</Empty>
-        ) : width > 0 && (
-          <svg width={width} height={PAD_T + PLOT_H + AXIS_H} role="img"
-            aria-label={`Projects running per week. ${weeks.map((w) => `${w.label}: ${w.count}`).join(". ")}`}
-            onMouseLeave={() => setHover(null)}>
-            {/* gridlines — solid hairlines, one step off the surface */}
-            {[0, 0.5, 1].map((t) => (
-              <g key={t}>
-                <line x1={PAD_L} x2={PAD_L + plotW} y1={y(max * t)} y2={y(max * t)} stroke={GRID} strokeWidth={1} />
-                <text x={PAD_L - 6} y={y(max * t)} textAnchor="end" dominantBaseline="central"
-                  style={{ fontSize: 10, fontFamily: monoFont, fill: tokens.text3 }}>
-                  {Math.round(max * t)}
-                </text>
-              </g>
-            ))}
-
-            <path d={area} fill={LIVE} opacity={0.1} />
-            <path d={line} fill="none" stroke={LIVE} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-
-            {/* The crosshair finds the week — the reader aims at a date, never
-                at a 2px line. Hit bands span the full height, so the pointer
-                only has to be closest, not accurate. */}
-            {hover !== null && (
-              <line x1={x(hover)} x2={x(hover)} y1={PAD_T} y2={PAD_T + PLOT_H} stroke={tokens.text3} strokeWidth={1} opacity={0.45} />
-            )}
-            {weeks.map((w, i) => (
-              <Tooltip key={w.label} title={`Week of ${w.label} · ${w.count} running`} followCursor>
-                <rect x={x(i) - step / 2} y={PAD_T} width={Math.max(24, step)} height={PLOT_H}
-                  fill="transparent" tabIndex={0} style={{ outline: "none" }}
-                  onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} />
-              </Tooltip>
-            ))}
-            {hover !== null && (
-              <circle cx={x(hover)} cy={y(weeks[hover].count)} r={4} fill={LIVE} stroke={SURFACE} strokeWidth={2} />
-            )}
-
-            {/* One direct label: the busiest week. The axis carries the rest —
-                a number on every point is chaos and goes unread. */}
-            {max > 1 && (
-              <text x={Math.min(x(peak), PAD_L + plotW - 14)} y={y(weeks[peak].count) - 8} textAnchor="middle"
-                style={{ fontSize: 10.5, fontFamily: monoFont, fill: tokens.text2, fontWeight: 600 }}>
-                {weeks[peak].count}
-              </text>
-            )}
-
-            {/* Every third week is labelled, so ticks never collide. */}
-            {weeks.map((w, i) => (i % 3 === 0 ? (
-              <text key={w.label} x={x(i)} y={PAD_T + PLOT_H + 13} textAnchor={i === 0 ? "start" : "middle"}
-                style={{ fontSize: 10, fontFamily: monoFont, fill: tokens.text3 }}>{w.label}</text>
-            ) : null))}
-          </svg>
-        )}
-      </Box>
-    </ChartCard>
-  );
-}
-
-// --------------------------------------------------------------------------- //
-
-/** Both charts, side by side on a wide screen and stacked on a narrow one.
- *  Renders nothing at all until there is something to plot — an empty chart
+/** Renders nothing at all until there is something to plot — an empty chart
  *  frame is worse than no chart. */
 export default function PortfolioCharts({ projects }: { projects: WorkspaceProject[] }) {
   if (!projects.length) return null;
   return (
-    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 1.25, mb: 2 }}>
+    <Box sx={{ mb: 2 }}>
       <WorkspaceBars projects={projects} />
-      <LoadLine projects={projects} />
     </Box>
   );
 }
