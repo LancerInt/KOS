@@ -9,7 +9,7 @@ import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 import { getWorkspace, useWorkspaces, dynamicWorkspacesReady } from "../features/workspaces/workspaces";
-import { getProject, updateProject, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
+import { getProject, updateProject, completeProject, submitProject, approveProject, rejectProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import MembersDialog from "../features/workspaces/MembersDialog";
 import { listProjectMembers, projectMemberScope } from "../features/workspaces/projectMembersApi";
 import { listRecords, type WorkspaceRecord } from "../features/workspaces/recordsApi";
@@ -327,6 +327,15 @@ export default function WorkspaceProjectPage() {
             allowSet={true}
             onSet={(startAt, endAt) => updateProject(pid, { start_at: startAt, end_at: endAt }).then(setProject)}
             onToggleComplete={() => completeProject(pid).then(setProject)}
+            reviewState={project.review_state}
+            reviewReason={project.review_reason}
+            canApprove={!!mine?.is_admin}
+            onSubmit={() => submitProject(pid).then(setProject)}
+            onApprove={() => approveProject(pid).then(setProject)}
+            onReject={() => {
+              const r = window.prompt(`Send “${project.name}” back — what needs to change? (the owner is notified)`);
+              return r && r.trim() ? rejectProject(pid, r.trim()).then(setProject) : undefined;
+            }}
           />
         </Box>
       )}

@@ -86,6 +86,7 @@ function toLocalInput(iso?: string | null): string {
  */
 export function DurationPanel({
   duration, completedAt, canEdit, allowSet, onSet, onToggleComplete,
+  reviewState = "", reviewReason = "", canApprove = false, onSubmit, onApprove, onReject,
 }: {
   duration: Duration;
   completedAt?: string | null;
@@ -93,6 +94,13 @@ export function DurationPanel({
   allowSet: boolean;
   onSet: (startAt: string, endAt: string | null) => Promise<unknown> | void;
   onToggleComplete: () => Promise<unknown> | void;
+  /** Approval workflow: "" · "needs_decision" (awaiting) · "blocked" (sent back). */
+  reviewState?: "" | "needs_decision" | "blocked";
+  reviewReason?: string;
+  canApprove?: boolean;
+  onSubmit?: () => Promise<unknown> | void;
+  onApprove?: () => Promise<unknown> | void;
+  onReject?: () => Promise<unknown> | void;
 }) {
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState("");
@@ -119,9 +127,43 @@ export function DurationPanel({
     } finally { setBusy(false); }
   };
   const toggle = async () => { setBusy(true); try { await onToggleComplete(); } finally { setBusy(false); } };
+  const run = (fn?: () => Promise<unknown> | void) => async () => {
+    if (!fn) return;
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
+  const completed = duration.status === "completed";
+
+  // The completion path now runs through approval: a non-approver submits for
+  // sign-off; an approver (IT/Management) approves (→ complete) or sends back.
+  const actions = () => {
+    if (completed) return canEdit ? <Button size="small" variant="outlined" onClick={toggle} disabled={busy}>Reopen</Button> : null;
+    if (reviewState === "needs_decision")
+      return canApprove ? (
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="contained" onClick={run(onApprove)} disabled={busy}>Approve</Button>
+          <Button size="small" variant="outlined" onClick={run(onReject)} disabled={busy}
+            sx={{ color: tokens.text2, borderColor: tokens.line }}>Send back</Button>
+        </Stack>
+      ) : null;
+    if (reviewState === "blocked") return canEdit ? <Button size="small" variant="contained" onClick={run(onSubmit)} disabled={busy}>Resubmit</Button> : null;
+    if (canApprove) return <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={toggle} disabled={busy}>Mark complete</Button>;
+    return canEdit ? <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={run(onSubmit)} disabled={busy}>Submit for approval</Button> : null;
+  };
 
   return (
     <Paper sx={{ p: 1.75, borderRadius: "6px" }}>
+      {reviewState === "needs_decision" && (
+        <Box sx={{ mb: 1.25, display: "inline-flex", alignItems: "center", px: 1, py: 0.45, borderRadius: "6px", bgcolor: "#FAE7F0" }}>
+          <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: "#9C2E5E" }}>Awaiting approval — submitted for sign-off</Typography>
+        </Box>
+      )}
+      {reviewState === "blocked" && (
+        <Box sx={{ mb: 1.25, px: 1.1, py: 0.65, borderRadius: "6px", bgcolor: "#FBF2DF" }}>
+          <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: "#8A5A0F" }}>Sent back for changes</Typography>
+          {reviewReason && <Typography sx={{ fontSize: 12, color: "#7a5a12", mt: 0.2 }}>{reviewReason}</Typography>}
+        </Box>
+      )}
       {hasDur ? (
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Box sx={{ flex: 1, minWidth: 200 }}>
@@ -137,11 +179,7 @@ export function DurationPanel({
             </Stack>
             <Box sx={{ mt: 1 }}><DurationBar duration={duration} /></Box>
           </Box>
-          {canEdit && (
-            <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={toggle} disabled={busy}>
-              {duration.status === "completed" ? "Reopen" : "Mark complete"}
-            </Button>
-          )}
+          {actions()}
         </Stack>
       ) : startOnly ? (
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
@@ -156,11 +194,15 @@ export function DurationPanel({
               </Box>
             )}
           </Stack>
+          {actions()}
         </Stack>
       ) : (
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Typography sx={{ fontSize: 13, color: tokens.text2 }}>Set a duration to be notified when the time is up.</Typography>
-          <Button size="small" variant="outlined" startIcon={<ScheduleRoundedIcon sx={{ fontSize: 16 }} />} onClick={openDialog}>Set duration</Button>
+          <Stack direction="row" spacing={1} alignItems="center">
+            {actions()}
+            <Button size="small" variant="outlined" startIcon={<ScheduleRoundedIcon sx={{ fontSize: 16 }} />} onClick={openDialog}>Set duration</Button>
+          </Stack>
         </Stack>
       )}
 
