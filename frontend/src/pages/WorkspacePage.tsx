@@ -5,6 +5,7 @@ import {
   IconButton, Paper, Stack, TextField, Tooltip, Typography,
 } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
@@ -173,6 +174,12 @@ export default function WorkspacePage() {
 
   const header = (
     <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.75 }}>
+      <Tooltip title="Back to dashboard">
+        <IconButton onClick={() => navigate("/")} aria-label="Back to dashboard"
+          sx={{ color: tokens.text2, flexShrink: 0, ml: -0.5, "&:hover": { color: tokens.kriyaInk, bgcolor: tokens.kriyaWash } }}>
+          <ArrowBackRoundedIcon sx={{ fontSize: 20 }} />
+        </IconButton>
+      </Tooltip>
       <Box sx={{ width: 44, height: 44, borderRadius: "11px", flexShrink: 0, display: "grid", placeItems: "center",
         background: `linear-gradient(150deg, ${acc.base}, ${acc.ink})`, color: "#fff", boxShadow: `0 6px 16px ${acc.base}40` }}>
         <Icon sx={{ fontSize: 23 }} />
