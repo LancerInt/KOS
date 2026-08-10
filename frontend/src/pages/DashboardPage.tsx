@@ -291,8 +291,9 @@ export default function DashboardPage() {
         </AiActionBar>
       </Box>
 
-      {/* A · metric tiles as filters — one row: duration status + review states */}
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", sm: "repeat(4,1fr)", lg: "repeat(7,1fr)" }, gap: 1.25, mb: 2 }}>
+      {/* A · metric tiles as filters — one row: duration status + review states.
+          minmax(0,1fr) lets the 7 tracks shrink instead of forcing the page wider. */}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0,1fr))", sm: "repeat(4, minmax(0,1fr))", lg: "repeat(7, minmax(0,1fr))" }, gap: 1.25, mb: 2 }}>
         <MetricTile label="Projects" value={counts.all} active={filter === "all"} onClick={() => setFilter("all")} icon={<FolderRoundedIcon sx={{ fontSize: 20 }} />} />
         <MetricTile label="Overdue" value={counts.due} active={filter === "due"} onClick={() => setFilter("due")} icon={<WarningAmberRoundedIcon sx={{ fontSize: 20 }} />} attn />
         <MetricTile label="Ending soon" value={counts.ending_soon} active={filter === "ending_soon"} onClick={() => setFilter("ending_soon")} icon={<AccessTimeRoundedIcon sx={{ fontSize: 20 }} />} />
