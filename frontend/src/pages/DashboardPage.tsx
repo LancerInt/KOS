@@ -213,12 +213,6 @@ export default function DashboardPage() {
     return c;
   }, [projects]);
 
-  const byWorkspace = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const p of projects ?? []) m.set(p.workspace, (m.get(p.workspace) ?? 0) + 1);
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [projects]);
-
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = (projects ?? []).filter((p) => !q || p.name.toLowerCase().includes(q) || (getWorkspace(p.workspace)?.label ?? p.workspace).toLowerCase().includes(q));
@@ -374,49 +368,24 @@ export default function DashboardPage() {
           </Stack>
 
           {layout === "list" ? (
-            // Rail widened from 270px to fit the stand-up's prose comfortably.
-            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 320px" }, gap: 3, alignItems: "start" }}>
-              <Box sx={{ minWidth: 0 }}>
-                {listShown.length === 0 ? (
-                  <Paper sx={{ p: 5, textAlign: "center", borderRadius: "6px" }}>
-                    <Typography sx={{ fontWeight: 600, mb: 0.5 }}>{counts.all === 0 ? "No projects yet" : "Nothing here"}</Typography>
-                    <Typography color="text.secondary" sx={{ fontSize: 14 }}>
-                      {counts.all === 0 ? "Open a workspace from the sidebar to create your first project." : "No projects match this filter/search."}
-                    </Typography>
-                  </Paper>
-                ) : (
-                  <Stack spacing={dense ? 0.75 : 1.25}>
-                    {listShown.map((p) => (
-                      <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} onOpen={() => openWorkspace(p)} onComplete={() => toggleComplete(p)} onSetReview={(s) => setReviewState(p, s)} />
-                    ))}
-                  </Stack>
-                )}
-              </Box>
-
-              <Box sx={{ position: { md: "sticky" }, top: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                <Panel title="By workspace">
-                  {byWorkspace.length === 0 ? (
-                    <Typography sx={{ fontSize: 12.5, color: tokens.text3 }}>No projects yet.</Typography>
-                  ) : (
-                    <Stack spacing={0.25}>
-                      {byWorkspace.map(([wsKey, n]) => {
-                        const ws = getWorkspace(wsKey);
-                        const Icon = ws?.Icon ?? FolderRoundedIcon;
-                        return (
-                          <Stack key={wsKey} direction="row" alignItems="center" spacing={1} onClick={() => navigate(`/workspaces/${wsKey}`)}
-                            sx={{ py: 0.7, cursor: "pointer", "&:hover .wsLabel": { color: tokens.kriyaInk } }}>
-                            <Box sx={{ width: 24, height: 24, borderRadius: "5px", flexShrink: 0, display: "grid", placeItems: "center", bgcolor: tokens.kriyaWash, color: tokens.kriyaInk }}>
-                              <Icon sx={{ fontSize: 14 }} />
-                            </Box>
-                            <Typography className="wsLabel" sx={{ fontSize: 12.5, flex: 1, color: tokens.text }} noWrap>{ws?.label ?? wsKey}</Typography>
-                            <Typography sx={{ fontSize: 12, fontFamily: monoFont, color: tokens.text2 }}>{n}</Typography>
-                          </Stack>
-                        );
-                      })}
-                    </Stack>
-                  )}
-                </Panel>
-              </Box>
+            // Full width: the side rail that used to sit here held the panels
+            // that have since been removed, and an empty 320px column would
+            // just be a margin pretending to be a layout.
+            <Box sx={{ minWidth: 0 }}>
+              {listShown.length === 0 ? (
+                <Paper sx={{ p: 5, textAlign: "center", borderRadius: "6px" }}>
+                  <Typography sx={{ fontWeight: 600, mb: 0.5 }}>{counts.all === 0 ? "No projects yet" : "Nothing here"}</Typography>
+                  <Typography color="text.secondary" sx={{ fontSize: 14 }}>
+                    {counts.all === 0 ? "Open a workspace from the sidebar to create your first project." : "No projects match this filter/search."}
+                  </Typography>
+                </Paper>
+              ) : (
+                <Stack spacing={dense ? 0.75 : 1.25}>
+                  {listShown.map((p) => (
+                    <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} onOpen={() => openWorkspace(p)} onComplete={() => toggleComplete(p)} onSetReview={(s) => setReviewState(p, s)} />
+                  ))}
+                </Stack>
+              )}
             </Box>
           ) : (
             <Board projects={searched} canEdit={canEdit} onDropTo={dropTo} onOpen={openWorkspace} dense={dense} />
@@ -743,11 +712,3 @@ function Board({ projects, canEdit, onDropTo, onOpen, dense }: {
   );
 }
 
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Paper sx={{ p: 2, borderRadius: "6px" }}>
-      <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 11.5, textTransform: "uppercase", letterSpacing: ".07em", color: tokens.text3, fontWeight: 600, mb: 1.5 }}>{title}</Typography>
-      {children}
-    </Paper>
-  );
-}
