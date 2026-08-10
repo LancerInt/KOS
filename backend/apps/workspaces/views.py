@@ -26,14 +26,19 @@ from apps.accounts.rbac import Capability
 from apps.audit.models import AuditAction
 from apps.audit.services import record
 
-from .access import base_access, can_edit, effective_access, is_supervisor
+from .access import (
+    base_access, can_edit, can_open_project, can_view, effective_access, is_supervisor,
+    project_scope_q,
+)
 from .models import (
     ARCHIVE_TTL_DAYS, Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
-    WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection, WorkspaceUserAccess,
+    WorkspaceProjectMember, WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection,
+    WorkspaceUserAccess,
 )
 from .serializers import (
-    WorkspaceMemberSerializer, WorkspacePermissionSerializer, WorkspaceProjectSerializer,
-    WorkspaceRecordSerializer, WorkspaceSectionSerializer, WorkspaceSerializer,
+    WorkspaceMemberSerializer, WorkspacePermissionSerializer, WorkspaceProjectMemberSerializer,
+    WorkspaceProjectSerializer, WorkspaceRecordSerializer, WorkspaceSectionSerializer,
+    WorkspaceSerializer,
 )
 
 User = get_user_model()
@@ -69,6 +74,20 @@ def _scope_to_viewable(qs, user):
         return qs.exclude(workspace__in=archived) if archived else qs
     keys = set(acc.keys()) - archived
     return qs.filter(workspace__in=keys)
+
+
+def _scope_to_open_projects(qs, user, path: str = ""):
+    """:func:`_scope_to_viewable` plus the per-project member gate.
+
+    Use this wherever project content is read — projects, their sections and
+    their records — so a project narrowed to a roster stays out of every list,
+    not just the one the roster is edited from. ``path`` is the lookup prefix
+    reaching the project (``""`` on projects themselves).
+    """
+    qs = _scope_to_viewable(qs, user)
+    gate = project_scope_q(user, path)
+    # distinct(): the gate joins the member table, which can repeat a row.
+    return qs if gate is None else qs.filter(gate).distinct()
 
 
 def _unique_workspace_key(label: str) -> str:
@@ -152,6 +171,15 @@ def _require_edit(user, workspace):
         raise PermissionDenied("You don't have edit access to this workspace.")
 
 
+def _require_project_edit(user, project, workspace=""):
+    """Edit rights on the workspace *and* a way into this particular project.
+    Writes to a project's own content all go through here. ``workspace`` is the
+    fallback for content that hangs off no project (legacy records)."""
+    _require_edit(user, project.workspace if project is not None else workspace)
+    if project is not None and not can_open_project(user, project):
+        raise PermissionDenied("This project is limited to its members.")
+
+
 # ---- Audit value builders -------------------------------------------------
 # Each carries the workspace key + a human name (+ parent context) so the audit
 # trail reads "which project / section / record, in which workspace".
@@ -227,6 +255,21 @@ def _addable_role_names(domain):
     if domain in DOMAIN_TEAM:
         return {DOMAIN_TEAM[domain]}
     return {TEAM_RESEARCHER, TEAM_EXECUTIVE}
+
+
+def _ensure_workspace_member(user, workspace, actor):
+    """Let ``user`` into ``workspace`` if nothing already does.
+
+    Joining a project has to carry workspace access with it, or the person would
+    hold a key to a room they can't walk to. Someone who *can* already see the
+    workspace is left exactly as they are — a view-only role grant stays
+    view-only, since joining one project is no reason to widen their rights over
+    everything else in there. Supervisors need no row at all."""
+    if user is None or is_supervisor(user) or can_view(user, workspace):
+        return
+    WorkspaceMember.objects.get_or_create(
+        user=user, workspace=workspace,
+        defaults={"access": WorkspaceMember.EDIT, "added_by": actor})
 
 
 class WorkspaceViewSet(viewsets.ModelViewSet):
@@ -546,6 +589,111 @@ class WorkspaceMemberViewSet(viewsets.ModelViewSet):
         return Response({"domain": domain, "users": users})
 
 
+class WorkspaceProjectMemberViewSet(viewsets.ModelViewSet):
+    """Per-user membership of a single **project** (need-to-know, one tier below
+    :class:`WorkspaceMemberViewSet`).
+
+    A project with no members is open to its whole workspace; listing anyone
+    closes it to that list. Members are drawn from the workspace's domain team,
+    and joining a project also joins its workspace, so a member can actually
+    reach what they've been given. Anyone who can edit the workspace *and* open
+    the project may manage its roster; supervisors always can."""
+
+    serializer_class = WorkspaceProjectMemberSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = WorkspaceProjectMember.objects.select_related("user", "added_by", "project")
+        project = self.request.query_params.get("project")
+        if project:
+            qs = qs.filter(project=project)
+        # Scoped through the project so the roster of a project you can't open
+        # isn't readable either.
+        return qs.filter(project__in=_scope_to_open_projects(
+            WorkspaceProject.objects.filter(deleted_at__isnull=True), self.request.user))
+
+    def _project(self, pk):
+        project = WorkspaceProject.objects.filter(pk=pk, deleted_at__isnull=True).first() if pk else None
+        if project is None:
+            raise NotFound("Project not found.")
+        return project
+
+    def _require_manage(self, project):
+        if project.deleted_at is not None:
+            # It's in the Archive; restore it before handing out keys to it.
+            raise NotFound("Project not found.")
+        _require_project_edit(self.request.user, project)
+
+    def _seed_roster(self, project, skip_user_id=None):
+        """Adding the first member closes a project that was open to the whole
+        workspace. Seed the roster with the two people who most obviously belong
+        on it — whoever created the project and whoever is doing the adding — so
+        closing it never silently locks out either of them. Supervisors are
+        skipped: they see every project without a row. Either can be removed
+        afterwards if that really was the intent."""
+        if project.members.exists():
+            return
+        for user in (project.created_by, self.request.user):
+            if user is None or user.pk == skip_user_id or is_supervisor(user):
+                continue
+            WorkspaceProjectMember.objects.get_or_create(
+                project=project, user=user, defaults={"added_by": self.request.user})
+            _ensure_workspace_member(user, project.workspace, self.request.user)
+
+    def perform_create(self, serializer):
+        project = serializer.validated_data["project"]
+        target = serializer.validated_data["user"]
+        self._require_manage(project)
+        if WorkspaceProjectMember.objects.filter(project=project, user=target).exists():
+            raise ValidationError({"user": "This person is already on this project."})
+        allowed = _addable_role_names(workspace_domain(project.workspace))
+        if not target.roles.filter(name__in=allowed).exists():
+            raise ValidationError({"user": "This person isn't on the team for this workspace."})
+        self._seed_roster(project, skip_user_id=target.pk)
+        member = serializer.save(added_by=self.request.user)
+        # A project member who can't open the workspace couldn't reach the
+        # project either, so joining one joins the other.
+        _ensure_workspace_member(target, project.workspace, self.request.user)
+        record(action=AuditAction.CREATE, obj=member,
+               new_value={"workspace": project.workspace, "kind": "project_member",
+                          "context": project.name,
+                          "name": member.user.get_full_name() or member.user.username},
+               request=self.request)
+
+    def perform_destroy(self, instance):
+        self._require_manage(instance.project)
+        name = instance.user.get_full_name() or instance.user.username
+        project, oid = instance.project, str(instance.pk)
+        instance.delete()
+        record(action=AuditAction.DELETE, object_type="WorkspaceProjectMember", object_id=oid,
+               old_value={"workspace": project.workspace, "name": name,
+                          "kind": "project_member", "context": project.name},
+               request=self.request)
+
+    @action(detail=False, methods=["get"])
+    def addable(self, request):
+        """Users who may be added to ``?project=`` — the workspace's domain team,
+        minus those already on it. Same shape as the workspace endpoint:
+        ``{domain, users:[{id,name,email,role}]}``."""
+        project = self._project(request.query_params.get("project"))
+        self._require_manage(project)
+        domain = workspace_domain(project.workspace)
+        member_ids = set(
+            WorkspaceProjectMember.objects.filter(project=project).values_list("user_id", flat=True))
+        candidates = (
+            User.objects.filter(roles__name__in=_addable_role_names(domain), is_active=True)
+            .exclude(id__in=member_ids).distinct().order_by("first_name", "username")
+        )
+        users = [{
+            "id": u.id,
+            "name": u.get_full_name() or u.username,
+            "email": u.email,
+            "role": next(iter(u.roles.values_list("name", flat=True)), ""),
+        } for u in candidates]
+        return Response({"domain": domain, "users": users})
+
+
 class WorkspaceProjectViewSet(viewsets.ModelViewSet):
     serializer_class = WorkspaceProjectSerializer
     permission_classes = [IsAuthenticated]
@@ -556,7 +704,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         workspace = self.request.query_params.get("workspace")
         if workspace:
             qs = qs.filter(workspace=workspace)
-        return _scope_to_viewable(qs, self.request.user)
+        return _scope_to_open_projects(qs, self.request.user)
 
     def perform_create(self, serializer):
         _require_edit(self.request.user, serializer.validated_data.get("workspace"))
@@ -564,14 +712,14 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         record(action=AuditAction.CREATE, obj=project, new_value=_proj_val(project), request=self.request)
 
     def perform_update(self, serializer):
-        _require_edit(self.request.user, serializer.instance.workspace)
+        _require_project_edit(self.request.user, serializer.instance)
         project = serializer.save()
         record(action=AuditAction.UPDATE, obj=project, new_value=_proj_val(project), request=self.request)
 
     def perform_destroy(self, instance):
         # Soft-delete: the project (with its sections/records) stays recoverable
         # from the Archive for the TTL, then is purged.
-        _require_edit(self.request.user, instance.workspace)
+        _require_project_edit(self.request.user, instance)
         instance.deleted_at = timezone.now()
         instance.deleted_by = self.request.user
         instance.save(update_fields=["deleted_at", "deleted_by"])
@@ -581,7 +729,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
     def complete(self, request, pk=None):
         """Toggle a project's completed state (closes the duration loop)."""
         project = self.get_object()
-        _require_edit(request.user, project.workspace)
+        _require_project_edit(request.user, project)
         if project.completed_at:
             project.completed_at = None
             project.duration_notified_at = None
@@ -618,12 +766,12 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
             # Legacy filter — ambiguous once sections nest, since two in
             # different branches may share a name. New clients send ?section=.
             qs = qs.filter(category=category)
-        return _scope_to_viewable(qs, self.request.user)
+        return _scope_to_open_projects(qs, self.request.user, "project")
 
     def perform_create(self, serializer):
         project = serializer.validated_data.get("project")
         ws = project.workspace if project else ""
-        _require_edit(self.request.user, ws)
+        _require_project_edit(self.request.user, project, ws)
         rec = serializer.save(created_by=self.request.user, workspace=ws)
         # Multiple files arrive under the "attachments" key of the multipart body.
         for f in self.request.FILES.getlist("attachments"):
@@ -632,7 +780,7 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         # Soft-delete → recoverable from the Archive for the TTL.
-        _require_edit(self.request.user, instance.workspace)
+        _require_project_edit(self.request.user, instance.project, instance.workspace)
         instance.deleted_at = timezone.now()
         instance.deleted_by = self.request.user
         instance.save(update_fields=["deleted_at", "deleted_by"])
@@ -642,7 +790,7 @@ class WorkspaceRecordViewSet(viewsets.ModelViewSet):
     def complete(self, request, pk=None):
         """Toggle a record's completed state (closes / reopens its duration)."""
         rec = self.get_object()
-        _require_edit(request.user, rec.workspace)
+        _require_project_edit(request.user, rec.project, rec.workspace)
         if rec.completed_at:
             rec.completed_at = None
             rec.duration_notified_at = None
@@ -669,7 +817,7 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
         project = self.request.query_params.get("project")
         if project:
             qs = qs.filter(project=project)
-        return _scope_to_viewable(qs, self.request.user)
+        return _scope_to_open_projects(qs, self.request.user, "project")
 
     def _mark_deleted(self, section):
         # `hidden` is persisted here too. It used to be set in memory by
@@ -684,7 +832,7 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         project = serializer.validated_data.get("project")
         ws = project.workspace if project else ""
-        _require_edit(self.request.user, ws)
+        _require_project_edit(self.request.user, project, ws)
         section = serializer.save(created_by=self.request.user, workspace=ws)
         # Adoption backfill. A built-in section only becomes a row the first time
         # someone customises or deletes it, so records written before that carry
@@ -707,7 +855,8 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
         # Descendants are deliberately left alone — a sub-section is effectively
         # hidden whenever an ancestor is, so a restore returns the subtree exactly
         # as the user left it (a child they deleted separately stays deleted).
-        _require_edit(self.request.user, serializer.instance.workspace)
+        _require_project_edit(
+            self.request.user, serializer.instance.project, serializer.instance.workspace)
         was_hidden = serializer.instance.hidden
         was_name = serializer.instance.name
         section = serializer.save()
@@ -730,7 +879,7 @@ class WorkspaceSectionViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         # Soft-delete: hide it and file it in the Archive, keeping its records so
         # a restore is intact. Purged (with those records) after the TTL.
-        _require_edit(self.request.user, instance.workspace)
+        _require_project_edit(self.request.user, instance.project, instance.workspace)
         instance.hidden = True
         self._mark_deleted(instance)
         record(action=AuditAction.DELETE, obj=instance, old_value=_sec_val(instance), request=self.request)
@@ -770,6 +919,11 @@ class WorkspaceDeletedItemsView(APIView):
         if keys is not None:                     # a member: their editable workspaces + their own deletions
             scope = lambda qs: qs.filter(Q(workspace__in=keys) | Q(deleted_by=user))
             projects, sections, records = scope(projects), scope(sections), scope(records)
+            # ...and never a project (or its content) whose roster excludes them:
+            # what the project page hides shouldn't reappear in the Archive.
+            projects = projects.filter(project_scope_q(user)).distinct()
+            gate = project_scope_q(user, "project")
+            sections, records = sections.filter(gate).distinct(), records.filter(gate).distinct()
         return projects, sections, records
 
     def _row(self, kind, row, name, context):
@@ -804,6 +958,12 @@ class WorkspaceDeletedItemsView(APIView):
             raise NotFound("That item isn't in the Archive.")
         if not (is_supervisor(request.user) or can_edit(request.user, row.workspace)):
             raise PermissionDenied("You don't have edit access to restore this item.")
+        # A section/record belonging to a project you can't open isn't yours to
+        # restore either. (A deleted project carries its own roster, so the same
+        # check reads straight off it.)
+        gated = row if model is WorkspaceProject else row.project
+        if gated is not None and not can_open_project(request.user, gated):
+            raise PermissionDenied("This project is limited to its members.")
         if model is WorkspaceSection and row.parent_id and row.parent.deleted_at is not None:
             # Restoring into a deleted parent would put it somewhere invisible.
             raise ValidationError("Restore the parent section first.")

@@ -929,9 +929,9 @@ def _workspace_project_metrics(user) -> dict:
     project the viewer is not allowed to see.
     """
     from apps.workspaces.models import WorkspaceProject
-    from apps.workspaces.views import _scope_to_viewable
+    from apps.workspaces.views import _scope_to_open_projects
 
-    rows = list(_scope_to_viewable(
+    rows = list(_scope_to_open_projects(
         WorkspaceProject.objects.filter(deleted_at__isnull=True), user))
     status_of = [(p.duration_state() or {}).get("status", "none") for p in rows]
     return {

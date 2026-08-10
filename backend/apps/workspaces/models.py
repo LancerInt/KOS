@@ -199,6 +199,49 @@ class WorkspaceMember(models.Model):
         return f"{self.user_id}@{self.workspace}={self.access}"
 
 
+class WorkspaceProjectMember(models.Model):
+    """Per-**user** access to one project, layered under the workspace's own
+    membership (:class:`WorkspaceMember`).
+
+    Project membership **narrows** workspace access, and only when it is used:
+
+    * a project with **no** member rows is open to everyone who can open its
+      workspace — which is what every project created before this table existed
+      keeps doing;
+    * the moment the first member is added the project becomes need-to-know —
+      only its members can open it. Emptying the roster again re-opens it.
+
+    Supervisors (IT Team / Management / admins) are outside this, exactly as they
+    are outside workspace membership: they see every project without a row.
+
+    Members are drawn from the workspace's domain team, and joining a project
+    also makes the person a workspace member — a door into a room they can't
+    reach would be no access at all."""
+
+    project = models.ForeignKey(
+        WorkspaceProject, on_delete=models.CASCADE, related_name="members",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="workspace_project_memberships",
+    )
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("project", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "user"], name="uniq_user_workspace_project_member"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}@project:{self.project_id}"
+
+
 class WorkspaceUserAccess(models.Model):
     """Admin per-**user** override of workspace access, layered on top of the
     role and team-membership grants resolved in ``access.py``.

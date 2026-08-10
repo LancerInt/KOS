@@ -34,7 +34,7 @@ from apps.projects.models import Project, ProjectHealth, ProjectStatus
 from apps.projects.scoping import visible_projects
 from apps.registers.models import Decision, Issue, RegisterStatus, Risk
 from apps.tasks.models import Task
-from apps.workspaces.access import effective_access
+from apps.workspaces.access import effective_access, project_scope_q
 from apps.workspaces.models import Workspace, WorkspaceProject, WorkspaceRecord, WorkspaceSection
 
 from .aggregates import (
@@ -86,22 +86,30 @@ class GlobalSearchView(APIView):
             ws_keys = set(acc.keys()) - archived
             scope = Q(workspace__in=ws_keys)
 
+        # A project may narrow its workspace to a roster; search must respect
+        # that too, or a name would leak from a project the caller can't open.
+        # None = supervisor, nothing to narrow.
+        pgate = project_scope_q(user)
+        cgate = project_scope_q(user, "project")          # for sections/records
+        narrow = (lambda qs, g: qs if g is None else qs.filter(g).distinct())
+
         wprojects = [
             {"id": p.id, "workspace": p.workspace, "name": p.name}
-            for p in WorkspaceProject.objects.filter(scope).filter(name__icontains=q).order_by("-created_at")[:n]
+            for p in narrow(WorkspaceProject.objects.filter(scope).filter(name__icontains=q), pgate)
+                .order_by("-created_at")[:n]
         ]
         wsections = [
             {"id": s.id, "workspace": s.workspace, "project": s.project_id, "name": s.name}
-            for s in WorkspaceSection.objects.filter(scope).filter(name__icontains=q, hidden=False)[:n]
+            for s in narrow(
+                WorkspaceSection.objects.filter(scope).filter(name__icontains=q, hidden=False), cgate)[:n]
         ]
         # Records: match anywhere in the JSON payload (cast to text) or the category.
         records = []
-        rec_qs = (
+        rec_qs = narrow(
             WorkspaceRecord.objects.filter(scope)
             .annotate(_txt=Cast("data", output_field=TextField()))
-            .filter(Q(_txt__icontains=q) | Q(category__icontains=q))
-            .order_by("-created_at")[:n]
-        )
+            .filter(Q(_txt__icontains=q) | Q(category__icontains=q)), cgate
+        ).order_by("-created_at")[:n]
         for rec in rec_qs:
             headline = ""
             if isinstance(rec.data, dict):

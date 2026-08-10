@@ -25,6 +25,9 @@ export interface WorkspaceProject {
   created_at: string;
   section_count: number;
   record_count: number;
+  /** Size of the project's roster. 0 = open to everyone with workspace access;
+   *  anything else means only those people (and supervisors) can open it. */
+  member_count: number;
   start_at: string | null;
   end_at: string | null;
   completed_at: string | null;

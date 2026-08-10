@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type HTMLAttributes, type Key } from "react";
+import { useCallback, useEffect, useState, type HTMLAttributes, type Key, type ReactNode } from "react";
 import {
   Autocomplete, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, IconButton, Snackbar, Stack, TextField, Tooltip, Typography,
@@ -7,10 +7,7 @@ import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 import PersonAddAlt1RoundedIcon from "@mui/icons-material/PersonAddAlt1Rounded";
 import PersonRemoveRoundedIcon from "@mui/icons-material/PersonRemoveRounded";
 
-import {
-  addMember, addableMembers, listMembers, removeMember,
-  type AddableUser, type WorkspaceMember,
-} from "./workspaceMembersApi";
+import type { AddableUser, MemberRow, MemberScope } from "./memberScope";
 import { tokens } from "../../theme";
 
 const DOMAIN_LABEL: Record<string, string> = { research: "Research", executive: "Executive" };
@@ -20,19 +17,29 @@ function initials(name: string) {
   return ((p[0]?.[0] ?? "") + (p[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
-/** Who can open a workspace. A member can add or remove teammates of the same
- * team; supervisors (IT/Management/admin) see every workspace and aren't shown. */
+/** Who can open a workspace — or one project inside it.
+ *
+ * Both tiers grant access to named people out of the same team, so both drive
+ * this one dialog through a `MemberScope`; only `note` differs, because what an
+ * empty roster means differs (a workspace with no members is simply empty; a
+ * project with no members is open to its whole workspace). A member can add or
+ * remove teammates; supervisors (IT/Management/admin) see everything and are
+ * never listed. */
 export default function MembersDialog({
-  open, onClose, workspace, workspaceLabel, canManage, onChanged,
+  open, onClose, scope, note, emptyNote, removeTooltip = "Remove", canManage, onChanged,
 }: {
   open: boolean;
   onClose: () => void;
-  workspace: string;
-  workspaceLabel: string;
+  scope: MemberScope;
+  /** What this roster governs, named — sits above the list. */
+  note: ReactNode;
+  /** What an *empty* roster means here. Falls back to the plain "none yet". */
+  emptyNote?: ReactNode;
+  removeTooltip?: string;
   canManage: boolean;
   onChanged?: () => void;
 }) {
-  const [members, setMembers] = useState<WorkspaceMember[] | null>(null);
+  const [members, setMembers] = useState<MemberRow[] | null>(null);
   const [addable, setAddable] = useState<AddableUser[]>([]);
   const [domain, setDomain] = useState<string | null>(null);
   const [picked, setPicked] = useState<AddableUser | null>(null);
@@ -42,20 +49,20 @@ export default function MembersDialog({
 
   const load = useCallback(() => {
     setMembers(null); setErr("");
-    listMembers(workspace).then(setMembers).catch(() => setMembers([]));
+    scope.list().then(setMembers).catch(() => setMembers([]));
     if (canManage) {
-      addableMembers(workspace)
+      scope.addable()
         .then((a) => { setAddable(a.users); setDomain(a.domain); })
         .catch(() => setAddable([]));
     }
-  }, [workspace, canManage]);
+  }, [scope, canManage]);
 
   useEffect(() => { if (open) load(); }, [open, load]);
 
   const doAdd = async (userId: number) => {
     setBusy(true); setErr("");
     try {
-      await addMember(workspace, userId);
+      await scope.add(userId);
       setPicked(null);
       load();
       onChanged?.();
@@ -65,10 +72,10 @@ export default function MembersDialog({
     } finally { setBusy(false); }
   };
 
-  const doRemove = async (m: WorkspaceMember) => {
+  const doRemove = async (m: MemberRow) => {
     setBusy(true); setErr("");
     try {
-      await removeMember(m.id);
+      await scope.remove(m.id);
       setUndo({ user: m.user, name: m.user_name });
       load();
       onChanged?.();
@@ -96,9 +103,8 @@ export default function MembersDialog({
         </Stack>
       </DialogTitle>
       <DialogContent>
-        <Typography sx={{ fontSize: 12.5, color: tokens.text3, mb: 1.5 }}>
-          Who can open <b>{workspaceLabel}</b>. IT&nbsp;Team, Management and admins see every
-          workspace and aren't listed here.
+        <Typography component="div" sx={{ fontSize: 12.5, color: tokens.text3, mb: 1.5 }}>
+          {note}
         </Typography>
 
         {canManage && (
@@ -135,8 +141,8 @@ export default function MembersDialog({
         {members === null ? (
           <Stack alignItems="center" sx={{ py: 3 }}><CircularProgress size={22} /></Stack>
         ) : members.length === 0 ? (
-          <Typography sx={{ fontSize: 13, color: tokens.text3, py: 2, textAlign: "center" }}>
-            No members yet.{canManage ? " Add teammates above." : ""}
+          <Typography component="div" sx={{ fontSize: 13, color: tokens.text3, py: 2, textAlign: "center" }}>
+            {emptyNote ?? <>No members yet.{canManage ? " Add teammates above." : ""}</>}
           </Typography>
         ) : (
           <Stack spacing={0.25}>
@@ -151,7 +157,7 @@ export default function MembersDialog({
                   <Typography sx={{ fontSize: 11, color: tokens.text3 }} noWrap>{m.user_email}</Typography>
                 </Box>
                 {canManage && (
-                  <Tooltip title="Remove from workspace">
+                  <Tooltip title={removeTooltip}>
                     <IconButton size="small" disabled={busy} onClick={() => doRemove(m)}
                       sx={{ color: tokens.text3, "&:hover": { color: tokens.attn, bgcolor: tokens.attnWash } }}>
                       <PersonRemoveRoundedIcon sx={{ fontSize: 17 }} />

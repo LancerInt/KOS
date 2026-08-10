@@ -12,8 +12,13 @@ Access comes from two **additive** sources (highest level wins): a user's own
 ``WorkspaceMember`` rows (need-to-know, full edit), and the workspaces granted to
 any of their roles in the ``WorkspacePermission`` grid (Roles & Access →
 Workspace permissions).
+
+One tier further in, an individual **project** may narrow that again — see
+:func:`can_open_project`.
 """
 from __future__ import annotations
+
+from django.db.models import Q
 
 from .models import WorkspaceMember, WorkspacePermission, WorkspaceUserAccess
 
@@ -127,3 +132,41 @@ def can_view(user, workspace: str) -> bool:
 def can_edit(user, workspace: str) -> bool:
     acc = effective_access(user)
     return acc is None or acc.get(workspace) == "edit"
+
+
+# ---- Per-project membership ------------------------------------------------
+# A project may narrow its workspace's access to a named few. The rule is
+# "empty means open": no member rows → whoever can open the workspace can open
+# the project. Only once someone is listed does the project become members-only.
+# That is what keeps every project that predates the feature visible, and it
+# makes emptying the roster the way to re-open one.
+
+
+def can_open_project(user, project) -> bool:
+    """Whether ``user`` may open this project, given the workspace already lets
+    them in. Supervisors are never gated."""
+    if is_supervisor(user):
+        return True
+    if not user or not user.is_authenticated or project is None:
+        return False
+    member_ids = set(project.members.values_list("user_id", flat=True))
+    return not member_ids or user.id in member_ids
+
+
+def project_scope_q(user, path: str = "") -> Q | None:
+    """A ``Q`` narrowing a queryset to the projects ``user`` may open.
+
+    ``path`` is the lookup prefix reaching the project — ``""`` for a
+    ``WorkspaceProject`` queryset, ``"project"`` for its sections, records or
+    members. ``None`` means "no restriction" (a supervisor), so callers can skip
+    the filter (and the ``distinct()`` its join would need) entirely.
+    """
+    if is_supervisor(user):
+        return None
+    if not user or not user.is_authenticated:
+        return Q(pk__in=[])
+    prefix = f"{path}__" if path else ""
+    # Rows hanging off no project at all (records predating the project FK) are
+    # governed by their workspace alone — nothing here should hide them.
+    q = Q(**{f"{prefix}members__isnull": True}) | Q(**{f"{prefix}members__user": user})
+    return (q | Q(**{f"{path}__isnull": True})) if path else q

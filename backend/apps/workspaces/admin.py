@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import WorkspaceRecord, WorkspaceSection
+from .models import WorkspaceProjectMember, WorkspaceRecord, WorkspaceSection
+
+
+@admin.register(WorkspaceProjectMember)
+class WorkspaceProjectMemberAdmin(admin.ModelAdmin):
+    list_display = ("id", "project", "user", "added_by", "created_at")
+    list_filter = ("project__workspace",)
+    search_fields = ("project__name", "user__username", "user__email")
 
 
 @admin.register(WorkspaceRecord)

@@ -65,10 +65,19 @@ def _project_recipients(project):
     the workspace (so the assigned executives who see it overdue on their
     dashboard also get the bell), plus the creator even if their explicit access
     later changed. Supervisors still see everything in the UI without a per-
-    project ping."""
+    project ping.
+
+    A project with its own roster is narrower than its workspace, so the
+    reminder narrows with it — only the people actually on the project (plus the
+    creator) are chased about it."""
     from .access import workspace_members
 
-    people = {u.id: u for u in workspace_members(project.workspace)}
+    roster = list(project.members.select_related("user").all())
+    # Branch on whether a roster *exists*, not on who in it is still active: a
+    # project closed to one since-deactivated person is still closed, and the
+    # reminder must not fall back to chasing the whole workspace about it.
+    people = ({m.user_id: m.user for m in roster if m.user.is_active} if roster
+              else {u.id: u for u in workspace_members(project.workspace)})
     if project.created_by_id and project.created_by_id not in people:
         people[project.created_by_id] = project.created_by
     return list(people.values())

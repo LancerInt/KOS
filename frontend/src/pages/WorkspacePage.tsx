@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
@@ -17,7 +17,7 @@ import { getWorkspace, useWorkspaces, loadDynamicWorkspaces, dynamicWorkspacesRe
 import { InlineRename } from "../features/workspaces/InlineRename";
 import BuildWithAiDialog from "../features/ai/BuildWithAiDialog";
 import MembersDialog from "../features/workspaces/MembersDialog";
-import { listMembers } from "../features/workspaces/workspaceMembersApi";
+import { listMembers, workspaceMemberScope } from "../features/workspaces/workspaceMembersApi";
 import { listProjects, createProject, deleteProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
 import { archiveWorkspace, updateWorkspace } from "../features/workspaces/workspacesApi";
@@ -56,6 +56,8 @@ export default function WorkspacePage() {
   const [buildAiOpen, setBuildAiOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [memberCount, setMemberCount] = useState<number | null>(null);
+  // Stable across renders — the dialog reloads whenever its scope identity changes.
+  const memberScope = useMemo(() => workspaceMemberScope(ws?.key ?? ""), [ws?.key]);
 
   const load = () => {
     if (!ws) { setProjects([]); return; }
@@ -319,6 +321,20 @@ export default function WorkspacePage() {
                     <Tooltip title={p.duration.status.replace("_", " ")}>
                       <Box sx={{ position: "absolute", top: 7, left: 8, width: 9, height: 9, borderRadius: "50%", bgcolor: dot, border: "2px solid rgba(255,255,255,.85)" }} />
                     </Tooltip>
+                    {/* A roster means the project is narrower than its workspace —
+                        worth seeing before you open it. */}
+                    {p.member_count > 0 && (
+                      <Tooltip title={`Limited to ${p.member_count} member${p.member_count === 1 ? "" : "s"}`}>
+                        <Stack direction="row" alignItems="center" spacing={0.25}
+                          sx={{ position: "absolute", bottom: 6, left: 8, px: 0.6, py: 0.15, borderRadius: "999px",
+                            bgcolor: "rgba(255,255,255,.85)", color: tokens.text2 }}>
+                          <GroupRoundedIcon sx={{ fontSize: 12 }} />
+                          <Typography sx={{ fontFamily: monoFont, fontSize: 9.5, fontWeight: 600 }}>
+                            {p.member_count}
+                          </Typography>
+                        </Stack>
+                      </Tooltip>
+                    )}
                     {canEdit && (
                       <IconButton className="del" size="small" onClick={(e) => { e.stopPropagation(); removeProject(p); }}
                         sx={{ position: "absolute", top: 4, right: 4, bgcolor: "rgba(255,255,255,.85)", "&:hover": { bgcolor: "#fff" } }}>
@@ -362,8 +378,12 @@ export default function WorkspacePage() {
         onCreated={(projectId) => { setBuildAiOpen(false); navigate(`/workspaces/${ws.key}/projects/${projectId}`); }} />
 
       <MembersDialog open={membersOpen} onClose={() => setMembersOpen(false)}
-        workspace={ws.key} workspaceLabel={ws.label} canManage={canEdit}
-        onChanged={refreshMemberCount} />
+        scope={memberScope} canManage={canEdit} onChanged={refreshMemberCount}
+        removeTooltip="Remove from workspace"
+        note={<>
+          Who can open <b>{ws.label}</b>. IT&nbsp;Team, Management and admins see every
+          workspace and aren't listed here.
+        </>} />
 
       {/* New project dialog */}
       <Dialog open={newOpen} onClose={() => setNewOpen(false)} fullWidth maxWidth="xs">

@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, Paper, Snackbar, Stack, TextField, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, Paper, Snackbar, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 import { getWorkspace, useWorkspaces, dynamicWorkspacesReady } from "../features/workspaces/workspaces";
 import { getProject, updateProject, completeProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
+import MembersDialog from "../features/workspaces/MembersDialog";
+import { listProjectMembers, projectMemberScope } from "../features/workspaces/projectMembersApi";
 import { listRecords, type WorkspaceRecord } from "../features/workspaces/recordsApi";
 import { listSections, createSection, updateSection, type WorkspaceSection } from "../features/workspaces/sectionsApi";
 import { buildSectionTree, builtinKeyOf, recordIn, type SectionNode } from "../features/workspaces/sectionTree";
@@ -44,17 +47,26 @@ export default function WorkspaceProjectPage() {
   const [newErr, setNewErr] = useState("");
   const [creating, setCreating] = useState(false);
   const [snack, setSnack] = useState<{ msg: string; undo: () => void } | null>(null);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [memberCount, setMemberCount] = useState<number | null>(null);
+  // Stable across renders — the dialog reloads whenever its scope identity changes.
+  const memberScope = useMemo(() => projectMemberScope(pid), [pid]);
 
   const load = () => {
     if (!pid) { setRecords([]); return; }
     listRecords(pid).then(setRecords).catch(() => setRecords([]));
   };
   const refreshSections = () => listSections(pid).then(setRows);
+  const refreshMemberCount = () => {
+    if (!pid) return;
+    listProjectMembers(pid).then((m) => setMemberCount(m.length)).catch(() => {});
+  };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (pid) getProject(pid).then(setProject).catch(() => setProject(null));
     load();
+    refreshMemberCount();
     refreshSections().catch(() => setRows([]));
   }, [projectId]);
 
@@ -294,6 +306,16 @@ export default function WorkspaceProjectPage() {
             <Typography sx={{ color: tokens.text3, fontSize: 13.5 }}>{ws.label} · project</Typography>
           }
         />
+        <Tooltip title={memberCount
+          ? "Members — this project is limited to them"
+          : "Members — open to everyone in this workspace"}>
+          <Button size="small" variant="outlined" startIcon={<GroupRoundedIcon sx={{ fontSize: 17 }} />}
+            onClick={() => setMembersOpen(true)}
+            sx={{ color: tokens.text2, borderColor: tokens.line, whiteSpace: "nowrap", flexShrink: 0,
+              "&:hover": { borderColor: tokens.kriya, bgcolor: "rgba(15,122,139,.06)" } }}>
+            Members{memberCount ? ` · ${memberCount}` : ""}
+          </Button>
+        </Tooltip>
       </Stack>
 
       {project && (
@@ -384,6 +406,21 @@ export default function WorkspaceProjectPage() {
           />
         )}
       </Drawer>
+
+      {/* Who can open this project. Empty = the whole workspace, so the note has
+          to say so — otherwise "no members" reads as "nobody has access". */}
+      <MembersDialog open={membersOpen} onClose={() => setMembersOpen(false)}
+        scope={memberScope} canManage={canEdit} onChanged={refreshMemberCount}
+        removeTooltip="Remove from project"
+        note={<>
+          Who can open <b>{project?.name ?? "this project"}</b>. With nobody listed it's open to
+          everyone who can open {ws.label}; add someone and it's limited to that list.
+          IT&nbsp;Team, Management and admins always see it.
+        </>}
+        emptyNote={<>
+          Nobody listed — everyone with access to {ws.label} can open this project.
+          {canEdit ? " Add someone above to limit it." : ""}
+        </>} />
 
       {/* New section / sub-section dialog */}
       <Dialog open={newOpen} onClose={() => setNewOpen(false)} fullWidth maxWidth="xs">

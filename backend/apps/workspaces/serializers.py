@@ -9,7 +9,8 @@ from rest_framework import serializers
 
 from .models import (
     MAX_SECTION_DEPTH, Workspace, WorkspaceMember, WorkspacePermission,
-    WorkspaceProject, WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection,
+    WorkspaceProject, WorkspaceProjectMember, WorkspaceRecord, WorkspaceRecordAttachment,
+    WorkspaceSection,
 )
 
 
@@ -71,10 +72,35 @@ class WorkspaceMemberSerializer(serializers.ModelSerializer):
         return (u.get_full_name() or u.username) if u else ""
 
 
+class WorkspaceProjectMemberSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    added_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkspaceProjectMember
+        fields = (
+            "id", "project", "user", "user_name", "user_email",
+            "added_by", "added_by_name", "created_at",
+        )
+        # Who added them and when are set server-side. There is no per-member
+        # access level: a project member holds whatever the workspace grants
+        # them — membership decides *whether* they see the project, not how much.
+        read_only_fields = ("added_by", "created_at")
+
+    def get_user_name(self, obj) -> str:
+        return obj.user.get_full_name() or obj.user.username
+
+    def get_added_by_name(self, obj) -> str:
+        u = obj.added_by
+        return (u.get_full_name() or u.username) if u else ""
+
+
 class WorkspaceProjectSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     section_count = serializers.SerializerMethodField()
     record_count = serializers.SerializerMethodField()
+    member_count = serializers.SerializerMethodField()
     duration = serializers.SerializerMethodField()
 
     class Meta:
@@ -82,13 +108,18 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
         fields = (
             "id", "workspace", "name",
             "created_by", "created_by_name", "created_at",
-            "section_count", "record_count",
+            "section_count", "record_count", "member_count",
             "start_at", "end_at", "completed_at", "duration",
         )
         read_only_fields = ("created_by", "created_at", "completed_at")
 
     def get_duration(self, obj) -> dict:
         return obj.duration_state()
+
+    def get_member_count(self, obj) -> int:
+        """Size of the project's roster. Zero means the project is open to
+        everyone who can open its workspace — see ``WorkspaceProjectMember``."""
+        return obj.members.count()
 
     def _check_window(self, attrs):
         instance = self.instance
