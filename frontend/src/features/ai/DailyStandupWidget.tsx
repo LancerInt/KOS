@@ -19,6 +19,7 @@ import {
   type DailyStandup,
 } from "./aiApi";
 import { useAiAssistant } from "./AiContext";
+import SpeakButton from "./SpeakButton";
 
 /**
  * The Daily Stand-Up — an AI-action button (like the others in the bar) that
@@ -88,17 +89,38 @@ function CountChip({ label, value, attn }: { label: string; value: number; attn?
   );
 }
 
+/** The stand-up as something to listen to. Of everything AI writes here this is
+ *  the most worth hearing rather than reading — it is the brief you want while
+ *  your hands are busy with the start of the day. */
+function standupNarration(c: DailyStandup["content"]): string {
+  const list = (title: string, items?: string[]) =>
+    items?.length ? `${title}. ${items.join(". ")}` : "";
+  return [
+    c.greeting,
+    list("Yesterday", c.yesterday),
+    list("Today's priorities", c.today_priorities),
+    list("Needing attention", [...(c.overdue ?? []), ...(c.attention ?? [])]),
+    list("Blockers", c.blockers),
+    list("Recommendations", c.recommendations),
+    c.narrative,
+    c.productivity_insight,
+  ].filter(Boolean).join(". ");
+}
+
 function StandupBody({ standup }: { standup: DailyStandup }) {
   const c = standup.content;
   const counts = standup.metrics?.counts;
 
   return (
     <Stack spacing={2}>
-      {c.greeting && (
-        <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 16, fontWeight: 600 }}>
-          {c.greeting}
-        </Typography>
-      )}
+      <Stack direction="row" alignItems="center" spacing={0.5}>
+        {c.greeting && (
+          <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 16, fontWeight: 600, flex: 1 }}>
+            {c.greeting}
+          </Typography>
+        )}
+        <SpeakButton text={standupNarration(c)} size={17} />
+      </Stack>
 
       {counts && (
         <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>

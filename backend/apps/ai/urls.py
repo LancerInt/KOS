@@ -19,6 +19,7 @@ from .views import (
     AISettingsView,
     AIStatusView,
     AISummarizeView,
+    AITranscribeView,
     AITranslateView,
     CreateTasksView,
     CustomerProposalView,
@@ -74,6 +75,8 @@ urlpatterns = [
 
     # Assistant & generic text tools
     path("ai/chat/", AIChatView.as_view(), name="ai-chat"),
+    # Dictation fallback for browsers with no speech recognition of their own.
+    path("ai/transcribe/", AITranscribeView.as_view(), name="ai-transcribe"),
     path("ai/summarize/", AISummarizeView.as_view(), name="ai-summarize"),
     path("ai/rewrite/", AIRewriteView.as_view(), name="ai-rewrite"),
     path("ai/grammar/", AIGrammarView.as_view(), name="ai-grammar"),

@@ -25,6 +25,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -87,6 +88,8 @@ from .serializers import (
     SubtaskCountSerializer,
     SummarizeSerializer,
     TextInputSerializer,
+    TranscribeSerializer,
+    TranscriptSerializer,
     TranslateSerializer,
     WorkspaceScaffoldSerializer,
 )
@@ -184,6 +187,61 @@ class AIStatusView(AIView):
     @extend_schema(responses=AIStatusSerializer)
     def get(self, request: Request) -> Response:
         return Response(service.provider_status())
+
+
+#: Ceiling on one dictated clip. Groq and OpenAI both reject above 25 MB, so
+#: stopping here turns a wasted upload and a vendor error into an immediate,
+#: readable one. At Opus voice rates this is roughly half an hour of speech —
+#: far more than anyone dictates into a prompt box in one go.
+MAX_AUDIO_BYTES = 20 * 1024 * 1024
+
+#: What browsers actually produce from MediaRecorder, plus the common uploads.
+#: An allowlist rather than a sniff: this file is forwarded to a paid vendor
+#: endpoint, and "whatever the client labelled it" is not a good enough reason.
+AUDIO_CONTENT_TYPES = {
+    "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/mpga",
+    "audio/wav", "audio/x-wav", "audio/m4a", "audio/x-m4a", "audio/flac",
+}
+
+
+class AITranscribeView(AIView):
+    """Speech to text for the dictation microphone.
+
+    The browser's own recognition is preferred on the client where it exists —
+    it is free and shows words as they are spoken. This is the fallback for the
+    browsers that have none, and it is why dictation works in Firefox at all.
+    """
+
+    parser_classes = [MultiPartParser]
+
+    @extend_schema(request=TranscribeSerializer, responses=TranscriptSerializer)
+    def post(self, request: Request) -> Response:
+        data = validated(TranscribeSerializer, request)
+        upload = data["audio"]
+
+        if upload.size == 0:
+            raise ValidationError({"audio": "The recording is empty."})
+        if upload.size > MAX_AUDIO_BYTES:
+            raise ValidationError({
+                "audio": f"That recording is too large (limit {MAX_AUDIO_BYTES // (1024 * 1024)} MB). "
+                         "Record a shorter clip."
+            })
+        # Browsers append codec parameters ("audio/webm;codecs=opus").
+        content_type = (upload.content_type or "").split(";")[0].strip().lower()
+        if content_type not in AUDIO_CONTENT_TYPES:
+            raise ValidationError({"audio": "That file type isn't audio this system can transcribe."})
+
+        outcome = service.transcribe(
+            upload.read(),
+            filename=upload.name or "speech.webm",
+            content_type=content_type,
+            language=(data.get("language") or "").strip(),
+            user=request.user,
+        )
+        # Stripped here, not only in the provider: the client appends this
+        # straight onto whatever is already in the field, so stray whitespace
+        # would show up as odd gaps mid-sentence whichever vendor answered.
+        return Response({"text": outcome.text.strip()})
 
 
 class AISettingsView(APIView):

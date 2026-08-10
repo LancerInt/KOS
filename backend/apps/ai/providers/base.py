@@ -110,6 +110,15 @@ class AIProvider(ABC):
     name: str = "base"
     #: Used when neither the DB settings nor the environment names a model.
     default_model: str = ""
+    #: Whether this vendor can turn speech into text. Transcription is a second
+    #: primitive rather than a variation of ``_complete`` — different endpoint,
+    #: different wire format, different model — and most vendors do not offer
+    #: one, so the default is a plain no and callers ask before offering a mic.
+    supports_transcription: bool = False
+    #: The audio model, kept apart from :attr:`model`: that one is the chat
+    #: model an admin picks in settings, and feeding it an audio file would be
+    #: a confusing failure rather than a transcription.
+    transcription_model: str = ""
 
     def __init__(
         self,
@@ -143,6 +152,24 @@ class AIProvider(ABC):
         ``usage`` uses the keys ``prompt_tokens`` and ``completion_tokens``;
         providers that do not report usage may return zeros.
         """
+
+    def transcribe(
+        self,
+        audio: bytes,
+        *,
+        filename: str = "speech.webm",
+        content_type: str = "audio/webm",
+        language: str = "",
+    ) -> AIResult:
+        """Turn a recorded clip into text.
+
+        Only vendors advertising :attr:`supports_transcription` implement this;
+        the rest say so plainly rather than failing somewhere deeper.
+        """
+        raise AIProviderError(
+            f"The {self.name} provider cannot transcribe audio. "
+            "Switch to Groq or OpenAI in AI settings to dictate."
+        )
 
     @property
     def is_configured(self) -> bool:

@@ -15,7 +15,7 @@ import time
 
 import requests
 
-from .base import AIProvider, AIProviderError
+from .base import AIProvider, AIProviderError, AIResult
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,66 @@ class OpenAICompatibleProvider(AIProvider):
                 time.sleep(BACKOFF_SECONDS * attempt)
 
         raise last_error or AIProviderError(f"{self.name} call failed")
+
+    # --- transcription ----------------------------------------------------- #
+    # Groq and OpenAI expose the same multipart endpoint as well, so dictation
+    # rides on the one transport just as chat does. Deliberately *not* retried:
+    # a clip is megabytes, the caller is a person holding a microphone waiting
+    # for their words, and three attempts at a rate limit costs them the wait
+    # three times over. One try, then a clear failure they can repeat by choice.
+    def transcribe(self, audio, *, filename="speech.webm", content_type="audio/webm", language=""):
+        if not self.supports_transcription:
+            return super().transcribe(
+                audio, filename=filename, content_type=content_type, language=language)
+        if not self.api_key:
+            raise AIProviderError(
+                f"No API key configured for the {self.name} provider. "
+                "Set it in the server environment and restart.",
+            )
+
+        model = self.transcription_model
+        data = {"model": model, "response_format": "json"}
+        if language:
+            # A hint, not a constraint — the models auto-detect, but naming the
+            # expected language measurably steadies short clips.
+            data["language"] = language
+
+        started = time.monotonic()
+        try:
+            response = requests.post(
+                f"{self.base_url}/audio/transcriptions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                files={"file": (filename, audio, content_type)},
+                data=data,
+                timeout=self.timeout,
+            )
+        except requests.Timeout as exc:
+            raise AIProviderError(
+                f"{self.name} timed out after {self.timeout}s while transcribing", retryable=True
+            ) from exc
+        except requests.RequestException as exc:
+            raise AIProviderError(f"Could not reach {self.name}: {exc}", retryable=True) from exc
+
+        if response.status_code != 200:
+            detail = self._error_detail(response)
+            logger.warning("%s transcription HTTP %s: %s", self.name, response.status_code, detail)
+            raise AIProviderError(
+                f"{self.name} returned {response.status_code}: {detail}",
+                status=response.status_code,
+                retryable=response.status_code in RETRYABLE_STATUSES,
+            )
+
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise AIProviderError(f"{self.name} returned an unreadable transcription") from exc
+
+        return AIResult(
+            text=(body.get("text") or "").strip(),
+            provider=self.name,
+            model=model,
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
 
     @staticmethod
     def _error_detail(response) -> str:

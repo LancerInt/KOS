@@ -11,6 +11,9 @@ import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
 import { tokens } from "../../theme";
 import { aiErrorMessage, dashboard, type ExplainData, type InsightsData } from "./aiApi";
 import { useAiAssistant } from "./AiContext";
+import MicButton from "./MicButton";
+import SpeakButton from "./SpeakButton";
+import { appendSpoken } from "./dictation";
 
 /**
  * Portfolio insights — reads the dashboard's own figures and says what they
@@ -187,6 +190,8 @@ export default function PortfolioInsightsWidget() {
                     onChange={(e) => setQuestion(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void ask(); } }}
                   />
+                  <MicButton onText={(text) => setQuestion((current) => appendSpoken(current, text))}
+                    disabled={asking} hint="Ask out loud" onError={setAskErr} />
                   <Button size="small" variant="contained" onClick={() => void ask()}
                     disabled={asking || !question.trim()} sx={{ flexShrink: 0 }}>
                     {asking ? "Asking…" : "Ask"}
@@ -196,7 +201,10 @@ export default function PortfolioInsightsWidget() {
                 {askErr && <Alert severity="error" sx={{ mt: 1, fontSize: 13 }}>{askErr}</Alert>}
                 {answer && (
                   <Stack spacing={1.5} sx={{ mt: 1.5, p: 1.5, borderRadius: "6px", bgcolor: "#F7F8FA" }}>
-                    <Typography sx={{ fontSize: 13.5, lineHeight: 1.6 }}>{answer.explanation}</Typography>
+                    <Stack direction="row" alignItems="flex-start" spacing={0.5}>
+                      <Typography sx={{ fontSize: 13.5, lineHeight: 1.6, flex: 1 }}>{answer.explanation}</Typography>
+                      <SpeakButton text={answer.explanation} />
+                    </Stack>
                     <Block icon={<LightbulbRoundedIcon sx={{ fontSize: 15 }} />} title="Key takeaways" items={answer.key_takeaways} />
                     <Block icon={<TrendingUpRoundedIcon sx={{ fontSize: 15 }} />} title="Watch outs" items={answer.watch_outs} />
                   </Stack>

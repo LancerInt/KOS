@@ -141,6 +141,23 @@ def _json(action, prompt, *, system, schema, user=None, subject=None, config=Non
     )
 
 
+def transcribe(audio: bytes, *, filename: str, content_type: str, language: str = "",
+               user=None) -> AIOutcome:
+    """Speech to text for the dictation microphone.
+
+    Routed through :func:`run` like every other provider call, so a clip is
+    subject to the same master switch, the same hourly cap and the same cost
+    trail as a chat message — dictation is a paid call and must not be the one
+    thing that escapes the accounting.
+    """
+    return run(
+        AIAction.TRANSCRIBE,
+        lambda p: p.transcribe(audio, filename=filename, content_type=content_type,
+                               language=language),
+        user=user, prompt_chars=len(audio),
+    )
+
+
 def provider_status() -> dict:
     """What the settings screen shows about the current provider."""
     from .providers import api_key_for
@@ -155,6 +172,10 @@ def provider_status() -> dict:
         "key_configured": bool(api_key_for(config.provider)),
         "offline_fallback": provider.name == "mock" and config.provider != "mock",
         "automation_enabled": config.automation_enabled,
+        # Whether the server can transcribe audio. The browser asks before
+        # offering a microphone it has no speech recognition of its own for —
+        # a mic button that cannot produce words is worse than no mic button.
+        "transcription": bool(config.is_enabled and provider.supports_transcription),
     }
 
 

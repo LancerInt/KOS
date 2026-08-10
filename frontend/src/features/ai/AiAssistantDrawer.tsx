@@ -29,6 +29,9 @@ import {
   type AiConversation,
 } from "./aiApi";
 import { useAiAssistant } from "./AiContext";
+import MicButton from "./MicButton";
+import SpeakButton from "./SpeakButton";
+import { appendSpoken } from "./dictation";
 
 /**
  * The floating assistant, available from every page.
@@ -81,10 +84,18 @@ function Turn({ turn }: { turn: ChatTurn }) {
       </Box>
     );
   }
+  // The speaker sits under the reply rather than beside it: inline it would
+  // either push the text into a narrow column or land mid-paragraph, and a
+  // reply is often several lines long.
   return (
-    <Typography sx={{ fontSize: 13.5, lineHeight: 1.7, whiteSpace: "pre-wrap", color: tokens.text }}>
-      {turn.content}
-    </Typography>
+    <Box>
+      <Typography sx={{ fontSize: 13.5, lineHeight: 1.7, whiteSpace: "pre-wrap", color: tokens.text }}>
+        {turn.content}
+      </Typography>
+      <Box sx={{ ml: -0.4, mt: 0.15 }}>
+        <SpeakButton text={turn.content} />
+      </Box>
+    </Box>
   );
 }
 
@@ -318,6 +329,14 @@ export default function AiAssistantDrawer() {
               }}
               sx={{ "& .MuiOutlinedInput-root": { borderRadius: "6px" } }}
             />
+            <Box sx={{ mb: 0.25 }}>
+              <MicButton
+                onText={(text) => setInput((current) => appendSpoken(current, text))}
+                disabled={aiDisabled || busy}
+                hint="Dictate your message"
+                onError={setError}
+              />
+            </Box>
             <IconButton
               color="primary"
               onClick={() => send(input)}

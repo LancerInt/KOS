@@ -1,6 +1,7 @@
 import { Children, useState, type ReactNode } from "react";
 import {
   Alert,
+  Box,
   Button,
   CircularProgress,
   Dialog,
@@ -23,7 +24,9 @@ import { tokens } from "../../theme";
 import { aiErrorMessage, type AiOutcome } from "./aiApi";
 import { useAiAssistant } from "./AiContext";
 import AiResultView from "./AiResultView";
+import MicButton from "./MicButton";
 import SendEmailDialog from "./SendEmailDialog";
+import { appendSpoken } from "./dictation";
 
 /**
  * The "✨ …" buttons that appear throughout the ERP.
@@ -157,6 +160,7 @@ export default function AiActionButton({
   const [loading, setLoading] = useState(false);
   const [outcome, setOutcome] = useState<AiOutcome<object> | null>(null);
   const [error, setError] = useState("");
+  const [micError, setMicError] = useState("");
   const [applying, setApplying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -261,19 +265,44 @@ export default function AiActionButton({
         <DialogContent sx={{ minHeight: 150 }}>
           {needsInput && !error && (
             <Stack spacing={2} sx={{ pt: 1 }}>
+              {/* Dictation trouble gets its own slot rather than `error`: that
+                  one replaces the whole form, and losing a half-typed brief
+                  because a microphone hiccuped would be its own bug. */}
+              {micError && (
+                <Alert severity="warning" onClose={() => setMicError("")} sx={{ fontSize: 12.5 }}>
+                  {micError}
+                </Alert>
+              )}
+              {/* This dialog backs every AI action across projects, tasks, CRM
+                  and HR, so a mic here reaches all of them at once. Only the
+                  long-form fields get one — dictating a one-line title is
+                  slower than typing it. */}
               {fields!.map((field) => (
-                <TextField
-                  key={field.name}
-                  fullWidth
-                  size="small"
-                  label={field.label}
-                  placeholder={field.placeholder}
-                  required={field.required}
-                  multiline={field.multiline}
-                  minRows={field.multiline ? 4 : undefined}
-                  value={values[field.name] ?? ""}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
-                />
+                <Stack key={field.name} direction="row" alignItems="flex-start" spacing={0.5}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label={field.label}
+                    placeholder={field.placeholder}
+                    required={field.required}
+                    multiline={field.multiline}
+                    minRows={field.multiline ? 4 : undefined}
+                    value={values[field.name] ?? ""}
+                    onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
+                  />
+                  {field.multiline && (
+                    <Box sx={{ pt: 0.5 }}>
+                      <MicButton
+                        onText={(text) => setValues((prev) => ({
+                          ...prev, [field.name]: appendSpoken(prev[field.name] ?? "", text),
+                        }))}
+                        disabled={loading}
+                        hint={`Dictate ${field.label.toLowerCase()}`}
+                        onError={setMicError}
+                      />
+                    </Box>
+                  )}
+                </Stack>
               ))}
             </Stack>
           )}

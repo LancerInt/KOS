@@ -271,6 +271,21 @@ class AIStatusSerializer(serializers.Serializer):
     key_configured = serializers.BooleanField()
     offline_fallback = serializers.BooleanField()
     automation_enabled = serializers.BooleanField()
+    #: Whether /ai/transcribe/ can actually turn a clip into words. Browsers
+    #: with no speech recognition of their own check this before showing a mic.
+    transcription = serializers.BooleanField()
+
+
+class TranscribeSerializer(serializers.Serializer):
+    """One dictated clip. ``language`` is an optional BCP-47 hint from the
+    browser ("en-IN"); the models auto-detect without it."""
+
+    audio = serializers.FileField()
+    language = serializers.CharField(required=False, allow_blank=True, max_length=16)
+
+
+class TranscriptSerializer(serializers.Serializer):
+    text = serializers.CharField(allow_blank=True)
 
 
 # --------------------------------------------------------------------------- #

@@ -182,6 +182,7 @@ class AIAction(models.TextChoices):
     """Every distinct thing the ERP asks the AI to do — the log's vocabulary."""
 
     CHAT = "chat", "Chat"
+    TRANSCRIBE = "transcribe", "Transcribe speech"
     SUMMARIZE = "summarize", "Summarize"
     REWRITE = "rewrite", "Rewrite"
     TRANSLATE = "translate", "Translate"

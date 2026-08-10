@@ -17,6 +17,8 @@ import SendRoundedIcon from "@mui/icons-material/SendRounded";
 
 import { tokens } from "../../theme";
 import { aiErrorMessage, sendEmail, type SentEmail } from "./aiApi";
+import MicButton from "./MicButton";
+import { appendSpoken } from "./dictation";
 
 /**
  * Compose and send an email out of KOS.
@@ -206,10 +208,19 @@ export default function SendEmailDialog({
               value={subject} onChange={(e) => setSubject(e.target.value)}
             />
 
-            <TextField
-              fullWidth size="small" required multiline minRows={9} label="Message"
-              value={body} onChange={(e) => setBody(e.target.value)}
-            />
+            {/* The draft arrives written; dictation is for the edits you make
+                to it before sending, so the mic appends to the end. */}
+            <Box sx={{ position: "relative" }}>
+              <TextField
+                fullWidth size="small" required multiline minRows={9} label="Message"
+                value={body} onChange={(e) => setBody(e.target.value)}
+                sx={{ "& .MuiOutlinedInput-root": { pr: 5.5 } }}
+              />
+              <Box sx={{ position: "absolute", top: 6, right: 6 }}>
+                <MicButton onText={(text) => setBody((current) => appendSpoken(current, text))}
+                  disabled={sending} hint="Dictate the message" onError={setError} />
+              </Box>
+            </Box>
 
             {invalid.length > 0 && (
               <Alert severity="warning" sx={{ fontSize: 12.5 }}>

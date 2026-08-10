@@ -7,6 +7,8 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import { scaffoldWorkspace, aiErrorMessage, type ScaffoldPlan } from "./aiApi";
+import MicButton from "./MicButton";
+import { appendSpoken } from "./dictation";
 import { createProject } from "../workspaces/projectsApi";
 import { createSection } from "../workspaces/sectionsApi";
 import { fieldId, FIELD_TYPES, FIELD_GROUPS, type FieldDef, type FieldType } from "../workspaces/fields";
@@ -108,8 +110,17 @@ export default function BuildWithAiDialog({ open, onClose, workspace, workspaceL
               Describe the project you want in <b>{workspaceLabel}</b>. The assistant drafts a project with
               sections and fields — you review and edit before anything is created.
             </Typography>
-            <TextField autoFocus multiline minRows={4} fullWidth placeholder="e.g. A new product registration project with sections for documents, approvals, and label versions…"
-              value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+            {/* Describing a whole project is the longest thing anyone types in
+                KOS, which makes it the place dictation earns its keep most. */}
+            <Box sx={{ position: "relative" }}>
+              <TextField autoFocus multiline minRows={4} fullWidth placeholder="e.g. A new product registration project with sections for documents, approvals, and label versions…"
+                value={prompt} onChange={(e) => setPrompt(e.target.value)}
+                sx={{ "& .MuiOutlinedInput-root": { pr: 5.5 } }} />
+              <Box sx={{ position: "absolute", top: 6, right: 6 }}>
+                <MicButton onText={(text) => setPrompt((current) => appendSpoken(current, text))}
+                  disabled={busy} hint="Describe it out loud" onError={setErr} />
+              </Box>
+            </Box>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
               {EXAMPLES.map((ex) => (
                 <Chip key={ex} label={ex.length > 46 ? ex.slice(0, 44) + "…" : ex} size="small" onClick={() => setPrompt(ex)}

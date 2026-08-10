@@ -2,6 +2,7 @@ import { Box, Chip, LinearProgress, Stack, Typography } from "@mui/material";
 
 import { tokens } from "../../theme";
 import type { AiOutcome } from "./aiApi";
+import SpeakButton from "./SpeakButton";
 
 /**
  * One renderer for every AI action.
@@ -30,6 +31,31 @@ const SEVERITY_RANK: Record<string, number> = {
 function rank(value: unknown): number {
   return SEVERITY_RANK[String(value ?? "").toLowerCase()] ?? 4;
 }
+
+/** Every list key the JSON contracts use, with its heading. Rendered in this
+ *  order, and read aloud in it too. */
+const listSections: [string, string][] = [
+  ["key_points", "Key points"],
+  ["highlights", "Highlights"],
+  ["decisions", "Decisions"],
+  ["achievements", "Achievements"],
+  ["strengths", "Strengths"],
+  ["areas_for_improvement", "Areas for improvement"],
+  ["trends", "Trends"],
+  ["assumptions", "Assumptions"],
+  ["key_takeaways", "Key takeaways"],
+  ["watch_outs", "Watch out for"],
+  ["open_questions", "Open questions"],
+  ["responsibilities", "Responsibilities"],
+  ["required_qualifications", "Required qualifications"],
+  ["preferred_qualifications", "Preferred qualifications"],
+  ["skills", "Skills"],
+  ["recommended_order", "Recommended order"],
+  ["action_items", "Action items"],
+  ["next_actions", "Next actions"],
+  ["next_steps", "Next steps"],
+  ["recommendations", "Recommendations"],
+];
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
@@ -152,10 +178,39 @@ function ScoreBar({ score, label }: { score: number; label: string }) {
   );
 }
 
+/**
+ * A plain-text reading of a result, for the read-aloud button.
+ *
+ * Deliberately not everything on screen: scores, chips and severity labels are
+ * glanceable but tedious to listen to. What is read is the narrative — the
+ * headline, the paragraph and the lists — which is the part someone would want
+ * while their eyes are on something else.
+ */
+function narration(outcome: AiOutcome<object>): string {
+  if (!outcome.structured) return outcome.text;
+  const data = outcome.data as Record<string, unknown>;
+  const parts: string[] = [asText(data.headline)];
+
+  for (const key of ["summary", "executive_summary", "explanation", "reasoning", "text"]) {
+    const value = asText(data[key]);
+    if (value) { parts.push(value); break; }
+  }
+  for (const [key, title] of listSections) {
+    const items = asArray(data[key]).filter((i) => typeof i === "string" && i.trim()) as string[];
+    if (items.length) parts.push(`${title}. ${items.join(". ")}`);
+  }
+  return parts.filter(Boolean).join(". ");
+}
+
 export default function AiResultView({ outcome }: { outcome: AiOutcome<object> }) {
   // The model ignored the JSON contract — show what it did say rather than nothing.
   if (!outcome.structured) {
-    return <Prose text={outcome.text || "The AI returned an empty response."} />;
+    return (
+      <Box>
+        <Prose text={outcome.text || "The AI returned an empty response."} />
+        <Box sx={{ ml: -0.4 }}><SpeakButton text={outcome.text} /></Box>
+      </Box>
+    );
   }
 
   const data = outcome.data as Record<string, unknown>;
@@ -238,29 +293,6 @@ export default function AiResultView({ outcome }: { outcome: AiOutcome<object> }
   }
 
   // --- structured lists ---------------------------------------------------- //
-  const listSections: [string, string][] = [
-    ["key_points", "Key points"],
-    ["highlights", "Highlights"],
-    ["decisions", "Decisions"],
-    ["achievements", "Achievements"],
-    ["strengths", "Strengths"],
-    ["areas_for_improvement", "Areas for improvement"],
-    ["trends", "Trends"],
-    ["assumptions", "Assumptions"],
-    ["key_takeaways", "Key takeaways"],
-    ["watch_outs", "Watch out for"],
-    ["open_questions", "Open questions"],
-    ["responsibilities", "Responsibilities"],
-    ["required_qualifications", "Required qualifications"],
-    ["preferred_qualifications", "Preferred qualifications"],
-    ["skills", "Skills"],
-    ["recommended_order", "Recommended order"],
-    ["action_items", "Action items"],
-    ["next_actions", "Next actions"],
-    ["next_steps", "Next steps"],
-    ["recommendations", "Recommendations"],
-  ];
-
   for (const [key, title] of listSections) {
     const items = asArray(data[key]);
     if (!items.length) continue;
@@ -532,5 +564,11 @@ export default function AiResultView({ outcome }: { outcome: AiOutcome<object> }
   }
 
   // Spacing separates the blocks; full-width rules between every one read as noise.
-  return <Stack spacing={2.25}>{blocks}</Stack>;
+  // The speaker goes last so it doesn't sit above the answer it reads.
+  return (
+    <Stack spacing={2.25}>
+      {blocks}
+      <Box sx={{ ml: -0.4, mt: -1 }}><SpeakButton text={narration(outcome)} /></Box>
+    </Stack>
+  );
 }

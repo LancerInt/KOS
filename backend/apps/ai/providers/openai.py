@@ -15,3 +15,8 @@ class OpenAIProvider(OpenAICompatibleProvider):
     default_base_url = "https://api.openai.com/v1"
     default_model = "gpt-4o-mini"
     supports_json_mode = True
+    #: whisper-1 rather than a newer audio model: it is the transcription
+    #: endpoint's long-standing default and is available on every account tier,
+    #: which matters for a fallback that has to just work.
+    supports_transcription = True
+    transcription_model = "whisper-1"

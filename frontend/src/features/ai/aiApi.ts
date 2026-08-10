@@ -35,6 +35,9 @@ export interface AiStatus {
   /** A provider is configured but has no key, so answers come from the local stub. */
   offline_fallback: boolean;
   automation_enabled: boolean;
+  /** Whether the server can turn a recorded clip into text. Browsers with no
+   *  speech recognition of their own need this before offering a microphone. */
+  transcription: boolean;
 }
 
 export interface AiSettings {
@@ -291,6 +294,24 @@ async function post<T = Record<string, unknown>>(url: string, body?: unknown): P
 export async function getStatus(): Promise<AiStatus> {
   const { data } = await api.get<AiStatus>("/ai/status/");
   return data;
+}
+
+/** Send a recorded clip for transcription — the dictation fallback used where
+ *  the browser has no speech recognition of its own. */
+export async function transcribeAudio(clip: Blob, language = ""): Promise<string> {
+  const form = new FormData();
+  // The extension matters: the vendors read it to pick a decoder, and a blob
+  // posted as "blob" is rejected as an unknown format.
+  form.append("audio", clip, `speech.${extensionFor(clip.type)}`);
+  if (language) form.append("language", language);
+  const { data } = await api.post<{ text: string }>("/ai/transcribe/", form);
+  return data.text ?? "";
+}
+
+function extensionFor(mime: string): string {
+  const base = mime.split(";")[0].trim();
+  return { "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4",
+    "audio/mpeg": "mp3", "audio/wav": "wav" }[base] ?? "webm";
 }
 
 export async function getSettings(): Promise<AiSettings> {

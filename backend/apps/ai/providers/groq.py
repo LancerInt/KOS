@@ -19,3 +19,8 @@ class GroqProvider(OpenAICompatibleProvider):
     #: structured ERP contracts depend on. Override with AI_MODEL.
     default_model = "llama-3.3-70b-versatile"
     supports_json_mode = True
+    #: Groq hosts Whisper too, so dictation needs no second vendor or key. The
+    #: turbo variant is the one to use for a person waiting on their own words:
+    #: near-identical accuracy to whisper-large-v3, several times faster.
+    supports_transcription = True
+    transcription_model = "whisper-large-v3-turbo"
