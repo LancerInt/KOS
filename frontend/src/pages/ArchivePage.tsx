@@ -8,8 +8,8 @@ import {
   listArchivedWorkspaces, listDeletedItems, restoreDeletedItem, restoreWorkspace,
   type DeletedItem, type DynamicWorkspace,
 } from "../features/workspaces/workspacesApi";
-import { loadDynamicWorkspaces, ICON_REGISTRY, getWorkspace, useWorkspaces } from "../features/workspaces/workspaces";
-import { accentFromHex } from "../features/workspaces/accent";
+import { loadDynamicWorkspaces, ICON_REGISTRY, getWorkspaceRaw, useWorkspaces, isBuiltinWorkspace } from "../features/workspaces/workspaces";
+import { accentFromHex, workspaceAccent } from "../features/workspaces/accent";
 import { tokens } from "../theme";
 
 const KIND_LABEL: Record<string, string> = { project: "Project", section: "Section", record: "Record", field: "Field" };
@@ -44,7 +44,7 @@ export default function ArchivePage() {
     finally { setBusy(null); }
   };
 
-  const wsLabel = (key: string) => getWorkspace(key)?.label ?? key;
+  const wsLabel = (key: string) => getWorkspaceRaw(key)?.label ?? key;
 
   return (
     <Box sx={{ px: 3, py: 2.5 }}>
@@ -111,8 +111,13 @@ export default function ArchivePage() {
           </Typography>
           <Stack spacing={1.25}>
             {archived.map((w) => {
-              const accent = accentFromHex(w.accent);
-              const Icon = ICON_REGISTRY[w.icon] ?? Inventory2RoundedIcon;
+              // A hidden built-in carries only a placeholder row — resolve its
+              // real name / icon / accent from the frontend config.
+              const builtin = isBuiltinWorkspace(w.key);
+              const cfg = builtin ? getWorkspaceRaw(w.key) : undefined;
+              const label = cfg?.label ?? w.label;
+              const Icon = cfg?.Icon ?? ICON_REGISTRY[w.icon] ?? Inventory2RoundedIcon;
+              const accent = builtin ? workspaceAccent(w.key) : accentFromHex(w.accent);
               const soon = (w.days_left ?? 99) <= 7;
               return (
                 <Paper key={w.key} sx={{ p: 1.75, borderRadius: "8px", display: "flex", alignItems: "center", gap: 1.5 }}>
@@ -121,13 +126,20 @@ export default function ArchivePage() {
                     <Icon sx={{ fontSize: 21 }} />
                   </Box>
                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 15, fontWeight: 600 }} noWrap>{w.label}</Typography>
+                    <Typography sx={{ fontSize: 15, fontWeight: 600 }} noWrap>{label}</Typography>
                     <Typography sx={{ fontSize: 12, color: tokens.text3 }}>
-                      Archived {w.archived_at ? new Date(w.archived_at).toLocaleDateString() : ""}
+                      {builtin
+                        ? "Built-in workspace · hidden"
+                        : `Archived ${w.archived_at ? new Date(w.archived_at).toLocaleDateString() : ""}`}
                     </Typography>
                   </Box>
-                  <Chip size="small" label={w.days_left === 0 ? "Deletes today" : `${w.days_left}d left`}
-                    sx={{ height: 22, fontSize: 11, fontWeight: 600, color: soon ? tokens.attn : tokens.text2, bgcolor: soon ? tokens.attnWash : "#EEF0F3" }} />
+                  {builtin ? (
+                    <Chip size="small" label="Restore anytime"
+                      sx={{ height: 22, fontSize: 11, fontWeight: 600, color: tokens.text2, bgcolor: "#EEF0F3" }} />
+                  ) : (
+                    <Chip size="small" label={w.days_left === 0 ? "Deletes today" : `${w.days_left}d left`}
+                      sx={{ height: 22, fontSize: 11, fontWeight: 600, color: soon ? tokens.attn : tokens.text2, bgcolor: soon ? tokens.attnWash : "#EEF0F3" }} />
+                  )}
                   <Button size="small" variant="outlined" startIcon={<RestoreRoundedIcon sx={{ fontSize: 17 }} />}
                     disabled={busy === w.key} onClick={() => restore(w)}>
                     {busy === w.key ? "Restoring…" : "Restore"}

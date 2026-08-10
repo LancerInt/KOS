@@ -3,9 +3,9 @@
 A built-in workspace has no database row — it is declared in ``workspaces.tsx``
 and rendered from there. Renaming one therefore has nothing to write to, so the
 first edit creates a row that stands in for it (``is_builtin``). That row is not
-a workspace of its own: the frontend merges it onto the built-in by key, and it
-can never be archived, because the config entry would keep rendering and the
-name would silently revert rather than the workspace disappearing.
+a workspace of its own: the frontend merges it onto the built-in by key. An admin
+can still archive a built-in — the client then drops any archived built-in from
+the sidebar, so it disappears cleanly instead of reverting to its config name.
 """
 from __future__ import annotations
 
@@ -65,11 +65,14 @@ def test_renaming_twice_reuses_the_same_row(auth_client):
 
 
 @pytest.mark.django_db
-def test_a_builtin_workspace_cannot_be_archived(auth_client):
+def test_a_builtin_workspace_can_be_archived_and_hidden(auth_client):
+    # Renaming first creates the is_builtin row; deleting then archives that row.
     auth_client.patch(f"{WORKSPACES}{BUILTIN}/", {"label": "Amazon US"}, format="json")
     r = auth_client.delete(f"{WORKSPACES}{BUILTIN}/")
-    assert r.status_code == 400, r.data
-    assert Workspace.objects.get(key=BUILTIN).archived_at is None
+    assert r.status_code == 204, r.data
+    assert Workspace.objects.get(key=BUILTIN).archived_at is not None
+    # The client learns it's hidden, so it drops it from the sidebar.
+    assert BUILTIN in auth_client.get(f"{WORKSPACES}hidden-builtins/").data["keys"]
 
 
 @pytest.mark.django_db

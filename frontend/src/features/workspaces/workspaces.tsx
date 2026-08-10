@@ -21,7 +21,7 @@ import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import WorkRoundedIcon from "@mui/icons-material/WorkRounded";
 import RocketLaunchRoundedIcon from "@mui/icons-material/RocketLaunchRounded";
 import ShoppingCartRoundedIcon from "@mui/icons-material/ShoppingCartRounded";
-import { listWorkspaces, type DynamicWorkspace } from "./workspacesApi";
+import { listWorkspaces, listHiddenBuiltins, type DynamicWorkspace } from "./workspacesApi";
 import { registerDynamicAccents } from "./accent";
 
 /**
@@ -543,20 +543,45 @@ let dynamicLoaded = false;
 let dynamicLoading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
+// Built-in workspace keys an admin has archived — dropped from the live list for
+// everyone (they still appear in the Archive, restorable). Refreshed alongside
+// the dynamic set in loadDynamicWorkspaces().
+let hiddenBuiltins = new Set<string>();
+const BUILTIN_KEYS = new Set(WORKSPACES.map((w) => w.key));
+
+/** Whether a key belongs to a built-in (config-defined) workspace. */
+export const isBuiltinWorkspace = (key?: string): boolean => !!key && BUILTIN_KEYS.has(key);
+
+/** Apply any per-key rename override (label/description) to a built-in list. A
+ *  built-in has no row until it's renamed; from then on the row's label wins
+ *  while its sections and icon keep coming from config. */
+function withOverrides(list: Workspace[]): Workspace[] {
+  if (!builtinOverrides.size) return list;
+  return list.map((w) => {
+    const o = builtinOverrides.get(w.key);
+    return o ? { ...w, label: o.label || w.label, blurb: o.blurb || w.blurb } : w;
+  });
+}
+
+/** Every workspace, INCLUDING built-ins an admin has hidden. The Archive screen
+ *  uses this so it can display and restore hidden built-ins. */
+export function allWorkspacesRaw(): Workspace[] {
+  return [...withOverrides(WORKSPACES), ...dynamicCache];
+}
+
+/** The live workspace list — built-ins an admin archived are dropped, and any
+ *  renamed built-ins carry their custom label/description. */
 export function allWorkspaces(): Workspace[] {
-  // Overrides patch the built-in in place rather than appending, or a renamed
-  // built-in would appear twice — once from config, once from its own row.
-  const builtins = builtinOverrides.size
-    ? WORKSPACES.map((w) => {
-        const o = builtinOverrides.get(w.key);
-        return o ? { ...w, label: o.label || w.label, blurb: o.blurb || w.blurb } : w;
-      })
-    : WORKSPACES;
-  return [...builtins, ...dynamicCache];
+  const visible = hiddenBuiltins.size ? WORKSPACES.filter((w) => !hiddenBuiltins.has(w.key)) : WORKSPACES;
+  return [...withOverrides(visible), ...dynamicCache];
 }
 
 export const getWorkspace = (key?: string): Workspace | undefined =>
   allWorkspaces().find((w) => w.key === key);
+
+/** Like getWorkspace but includes hidden built-ins (for the Archive screen). */
+export const getWorkspaceRaw = (key?: string): Workspace | undefined =>
+  allWorkspacesRaw().find((w) => w.key === key);
 
 /** Whether the dynamic set has loaded — lets pages show a spinner instead of a
  *  false "not found" while a user-added workspace is still being fetched. */
@@ -564,17 +589,16 @@ export const dynamicWorkspacesReady = (): boolean => dynamicLoaded;
 
 export function loadDynamicWorkspaces(force = false): Promise<void> {
   if (dynamicLoading && !force) return dynamicLoading;
-  dynamicLoading = listWorkspaces()
-    .then((rows) => {
-      // A row whose key matches a built-in is an override, not a workspace of
-      // its own. Splitting on the key rather than on `is_builtin` alone keeps a
-      // row that somehow lost the flag from duplicating the section it renames.
-      const builtinKeys = new Set(WORKSPACES.map((w) => w.key));
-      dynamicCache = rows.filter((r) => !builtinKeys.has(r.key)).map(fromDynamic);
+  dynamicLoading = Promise.all([listWorkspaces(), listHiddenBuiltins().catch(() => [] as string[])])
+    .then(([rows, hidden]) => {
+      // A row whose key matches a built-in is a rename override, not a workspace
+      // of its own — split them so a renamed built-in doesn't duplicate config.
+      dynamicCache = rows.filter((r) => !BUILTIN_KEYS.has(r.key)).map(fromDynamic);
       builtinOverrides = new Map(
-        rows.filter((r) => builtinKeys.has(r.key))
+        rows.filter((r) => BUILTIN_KEYS.has(r.key))
           .map((r) => [r.key, { label: r.label, blurb: r.blurb }]),
       );
+      hiddenBuiltins = new Set(hidden);
       registerDynamicAccents(rows.map((r) => ({ key: r.key, accent: r.accent })));
       dynamicLoaded = true;
       listeners.forEach((l) => l());

@@ -12,7 +12,7 @@ import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 
-import { getWorkspace, useWorkspaces, loadDynamicWorkspaces, dynamicWorkspacesReady, iconNameOf } from "../features/workspaces/workspaces";
+import { getWorkspace, useWorkspaces, loadDynamicWorkspaces, dynamicWorkspacesReady, iconNameOf, isBuiltinWorkspace } from "../features/workspaces/workspaces";
 import { InlineRename } from "../features/workspaces/InlineRename";
 import BuildWithAiDialog from "../features/ai/BuildWithAiDialog";
 import MembersDialog from "../features/workspaces/MembersDialog";
@@ -135,14 +135,17 @@ export default function WorkspacePage() {
   };
 
   const archiveWs = async () => {
-    if (!window.confirm(
-      `Delete the "${ws.label}" workspace? It moves to the Archive and is permanently removed after 30 days unless restored.`
-    )) return;
+    const builtin = isBuiltinWorkspace(ws.key);
+    const msg = builtin
+      ? `Delete the built-in "${ws.label}" workspace? It's hidden for everyone and filed in the Archive, where an admin can restore it anytime.`
+      : `Delete the "${ws.label}" workspace? It moves to the Archive and is permanently removed after 30 days unless restored.`;
+    if (!window.confirm(msg)) return;
     await archiveWorkspace(ws.key);
     await loadDynamicWorkspaces(true);
     navigate("/");
   };
-  const canArchive = !!ws.dynamic && !!mine?.is_admin;
+  // Any admin can delete (archive) a workspace — built-in or user-added.
+  const canArchive = !!mine?.is_admin;
   // Renaming is administrators-only, matching the server. Built-in workspaces
   // rename too — the server creates their row on the first edit.
   const canRenameWs = !!mine?.is_admin;

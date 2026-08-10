@@ -49,8 +49,13 @@ export const updateWorkspace = (
   patch: { label?: string; blurb?: string; icon?: string; accent?: string },
 ) => api.patch<DynamicWorkspace>(`/workspaces/${key}/`, patch).then((r) => r.data);
 
-/** Archive (soft-delete) a workspace — recoverable for 30 days. */
+/** Archive (soft-delete) a workspace — recoverable from the Archive. Works for
+ *  built-ins too (admin only): the server hides them via a tombstone row. */
 export const archiveWorkspace = (key: string) => api.delete(`/workspaces/${key}/`);
+
+/** Built-in workspace keys an admin has archived (hidden for everyone). */
+export const listHiddenBuiltins = () =>
+  api.get<{ keys: string[] }>("/workspaces/hidden-builtins/").then((r) => r.data.keys);
 
 export const restoreWorkspace = (key: string) =>
   api.post<DynamicWorkspace>(`/workspaces/${key}/restore/`).then((r) => r.data);

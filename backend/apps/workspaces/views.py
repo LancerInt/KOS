@@ -81,10 +81,17 @@ def _unique_workspace_key(label: str) -> str:
 
 
 def purge_expired_workspaces() -> int:
-    """Hard-delete archived workspaces (and all their content) past the TTL."""
+    """Hard-delete archived workspaces (and all their content) past the TTL.
+
+    Built-in workspaces are exempt: they live in the frontend config and can't be
+    truly deleted, so an archived built-in is a *tombstone* that hides it
+    indefinitely (restorable anytime) — never auto-purged, and its content kept."""
     cutoff = timezone.now() - timedelta(days=Workspace.ARCHIVE_TTL_DAYS)
     n = 0
-    for ws in Workspace.objects.filter(archived_at__isnull=False, archived_at__lt=cutoff):
+    for ws in (
+        Workspace.objects.filter(archived_at__isnull=False, archived_at__lt=cutoff)
+        .exclude(key__in=BUILTIN_WORKSPACE_KEYS)
+    ):
         ws.purge_contents()
         ws.delete()
         n += 1
@@ -244,6 +251,9 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
             self._require_admin()
             purge_expired_workspaces()          # self-maintain whenever the archive is viewed
             return Workspace.objects.filter(archived_at__isnull=False)
+        # Renamed built-ins live here as is_builtin rows (the client folds them
+        # into config as label overrides); archived built-in tombstones are kept
+        # out by the archived_at filter, so nothing doubles in the sidebar.
         return Workspace.objects.filter(archived_at__isnull=True)
 
     def perform_create(self, serializer):
@@ -298,14 +308,35 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
                    new_value={"workspace": ws.key, "name": ws.label, "kind": "workspace"},
                    request=self.request)
 
-    def perform_destroy(self, instance):
-        # Delete = archive; the hard purge happens after the TTL.
+    def destroy(self, request, *args, **kwargs):
+        # Deleting a workspace archives it (recoverable from the Archive). A
+        # built-in is config, so archiving one flags a tombstone row for its key;
+        # the client drops any archived built-in from the sidebar, so it truly
+        # disappears (rather than silently reverting to its config name). Dynamic
+        # workspaces take the standard path below.
         self._require_admin()
-        if instance.is_builtin:
-            # The row only carries a customised label; the workspace itself is
-            # config. Archiving it would hide the row while the built-in kept
-            # rendering — the name would silently revert instead of disappearing.
-            raise ValidationError({"detail": "A built-in workspace can't be archived."})
+        key = kwargs.get(self.lookup_field) or ""
+        if key in BUILTIN_WORKSPACE_KEYS:
+            ws = Workspace.objects.filter(key=key).first()
+            if ws is None:
+                # Never renamed → a pure tombstone. Blank label so a later restore
+                # reverts cleanly to the config name (a rename would set one).
+                ws = Workspace.objects.create(
+                    key=key, label="", is_builtin=True,
+                    domain=BUILTIN_WORKSPACE_DOMAIN.get(key, ""), created_by=request.user,
+                )
+            ws.archived_at = timezone.now()
+            ws.save(update_fields=["archived_at"])
+            record(action=AuditAction.DELETE, obj=ws,
+                   old_value={"workspace": key, "name": ws.label or key, "kind": "workspace", "builtin": True},
+                   request=request)
+            return Response(status=204)
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        # Dynamic workspace: delete = archive; the hard purge happens after the
+        # TTL. (Built-in keys are handled in destroy() above.)
+        self._require_admin()
         instance.archived_at = timezone.now()
         instance.save(update_fields=["archived_at"])
         record(action=AuditAction.DELETE, obj=instance,
@@ -318,12 +349,31 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         ws = Workspace.objects.filter(key=key).first()
         if not ws:
             raise NotFound("Workspace not found.")
+        # A built-in that only ever held a tombstone (no custom label) returns to
+        # pure config — drop the row. One that also carried a rename keeps it.
+        if ws.is_builtin and not ws.label:
+            record(action=AuditAction.UPDATE, obj=ws,
+                   new_value={"workspace": key, "name": key, "kind": "workspace",
+                              "restored": True, "builtin": True},
+                   request=request)
+            ws.delete()
+            return Response({"restored": True, "key": key})
         ws.archived_at = None
         ws.save(update_fields=["archived_at"])
         record(action=AuditAction.UPDATE, obj=ws,
                new_value={"workspace": ws.key, "name": ws.label, "kind": "workspace", "restored": True},
                request=request)
         return Response(WorkspaceSerializer(ws).data)
+
+    @action(detail=False, methods=["get"], url_path="hidden-builtins")
+    def hidden_builtins(self, request):
+        """Built-in workspace keys an admin has archived. Every authenticated user
+        needs these to drop the hidden built-ins from their own sidebar."""
+        keys = list(
+            Workspace.objects.filter(archived_at__isnull=False, key__in=BUILTIN_WORKSPACE_KEYS)
+            .values_list("key", flat=True)
+        )
+        return Response({"keys": keys})
 
 
 class WorkspacePermissionViewSet(viewsets.ModelViewSet):
