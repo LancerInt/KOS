@@ -39,6 +39,7 @@ import { AiActionBar } from "../features/ai/AiActionButton";
 import { useAiPageContext } from "../features/ai/AiContext";
 import DailyStandupWidget from "../features/ai/DailyStandupWidget";
 import PortfolioInsightsWidget from "../features/ai/PortfolioInsightsWidget";
+import MyWorkBand from "../features/tasks/MyWorkBand";
 import { tokens, monoFont, categoryColors } from "../theme";
 
 type Filter = "all" | DurationStatus;
@@ -281,6 +282,9 @@ export default function DashboardPage() {
           <PortfolioInsightsWidget />
         </AiActionBar>
       </Box>
+
+      {/* My Work — personal task triage (Overdue / Due today / review / blocked / decision) */}
+      <MyWorkBand />
 
       {/* A · metric tiles as filters */}
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", sm: "repeat(5,1fr)" }, gap: 1.25, mb: 2 }}>
