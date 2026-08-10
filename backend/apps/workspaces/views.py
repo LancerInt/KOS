@@ -25,10 +25,12 @@ from apps.accounts.permissions import IsAdministrator
 from apps.accounts.rbac import Capability
 from apps.audit.models import AuditAction
 from apps.audit.services import record
+from apps.notifications.models import NotificationEvent
+from apps.notifications.services import notify, notify_many
 
 from .access import (
-    base_access, can_edit, can_open_project, can_view, effective_access, is_supervisor,
-    project_scope_q,
+    SUPERVISOR_ROLE_NAMES, base_access, can_edit, can_open_project, can_view,
+    effective_access, is_supervisor, project_scope_q,
 )
 from .models import (
     ARCHIVE_TTL_DAYS, Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
@@ -164,6 +166,16 @@ def _restore_name(model, row) -> str:
     if clash.exclude(pk=row.pk).exists():
         return f"{base} (restored)"[:model._meta.get_field("name").max_length]
     return base
+
+
+def approver_users():
+    """Everyone who may approve a submitted project — IT Team, Management and
+    superusers. Used to notify the pool when something is submitted."""
+    return list(
+        User.objects.filter(
+            Q(is_superuser=True) | Q(roles__name__in=SUPERVISOR_ROLE_NAMES), is_active=True
+        ).distinct()
+    )
 
 
 def _require_edit(user, workspace):
@@ -739,6 +751,87 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         project.save(update_fields=["completed_at", "duration_notified_at", "reminders_sent"])
         record(action=AuditAction.STATUS_CHANGE, obj=project,
                new_value={**_proj_val(project), "completed": bool(project.completed_at)}, request=request)
+        return Response(self.get_serializer(project).data)
+
+    # ---- Approval workflow: submit → approve / send back ------------------- #
+    def _require_approver(self, user):
+        if not is_supervisor(user):
+            raise PermissionDenied("Only IT Team or Management can approve or send back a project.")
+
+    def _project_url(self, project) -> str:
+        return f"/workspaces/{project.workspace}/projects/{project.id}"
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        """Owner/editor submits a project for approval → notifies the approvers."""
+        project = self.get_object()
+        _require_project_edit(request.user, project)
+        if project.completed_at:
+            raise ValidationError({"detail": "This project is already completed."})
+        project.review_state = WorkspaceProject.REVIEW_DECISION   # awaiting a decision
+        project.submitted_at = timezone.now()
+        project.submitted_by = request.user
+        project.review_reason = ""
+        project.reviewed_at = None
+        project.reviewed_by = None
+        project.save(update_fields=[
+            "review_state", "submitted_at", "submitted_by", "review_reason", "reviewed_at", "reviewed_by"])
+        who = request.user.get_full_name() or request.user.username
+        notify_many(approver_users(), exclude=[request.user],
+                    event=NotificationEvent.REVIEW_REQUESTED,
+                    title=f"Approval needed: {project.name}",
+                    body=f"{who} submitted “{project.name}” for approval.",
+                    url=self._project_url(project))
+        record(action=AuditAction.STATUS_CHANGE, obj=project,
+               new_value={**_proj_val(project), "submitted": True}, request=request)
+        return Response(self.get_serializer(project).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        """Approver signs off → the project is marked completed; owner notified."""
+        project = self.get_object()
+        self._require_approver(request.user)
+        project.completed_at = timezone.now()
+        project.review_state = WorkspaceProject.REVIEW_NONE
+        project.review_reason = ""
+        project.reviewed_at = timezone.now()
+        project.reviewed_by = request.user
+        project.save(update_fields=[
+            "completed_at", "review_state", "review_reason", "reviewed_at", "reviewed_by"])
+        who = request.user.get_full_name() or request.user.username
+        recipient = project.submitted_by or project.created_by
+        notify(recipient, event=NotificationEvent.REVIEW_DECISION,
+               title=f"Approved: {project.name}",
+               body=f"{who} approved “{project.name}”. It's now complete.",
+               url=self._project_url(project))
+        record(action=AuditAction.STATUS_CHANGE, obj=project,
+               new_value={**_proj_val(project), "approved": True}, request=request)
+        return Response(self.get_serializer(project).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """Approver sends the project back with a reason → owner notified."""
+        project = self.get_object()
+        self._require_approver(request.user)
+        reason = (request.data.get("reason") or "").strip()
+        if not reason:
+            raise ValidationError({"reason": "Please describe what needs to change."})
+        project.review_state = WorkspaceProject.REVIEW_BLOCKED
+        project.review_reason = reason[:500]
+        project.reviewed_at = timezone.now()
+        project.reviewed_by = request.user
+        project.completed_at = None          # sent back — not completed
+        project.save(update_fields=[
+            "review_state", "review_reason", "reviewed_at", "reviewed_by", "completed_at"])
+        who = request.user.get_full_name() or request.user.username
+        recipient = project.submitted_by or project.created_by
+        notify(recipient, event=NotificationEvent.REVIEW_DECISION,
+               title=f"Sent back: {project.name}",
+               body=f"{who} sent “{project.name}” back: {project.review_reason}",
+               url=self._project_url(project))
+        record(action=AuditAction.STATUS_CHANGE, obj=project,
+               new_value={**_proj_val(project), "rejected": True, "reason": project.review_reason},
+               request=request)
         return Response(self.get_serializer(project).data)
 
 

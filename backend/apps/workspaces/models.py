@@ -121,6 +121,17 @@ class WorkspaceProject(models.Model):
         (REVIEW_NONE, "None"), (REVIEW_BLOCKED, "Blocked"), (REVIEW_DECISION, "Needs decision"),
     ]
     review_state = models.CharField(max_length=16, choices=REVIEW_CHOICES, default=REVIEW_NONE, blank=True)
+    # Approval workflow: submitting a project for sign-off puts it in
+    # review_state="needs_decision" (awaiting approval); an approver (IT Team /
+    # Management) then approves it (→ completed) or sends it back
+    # (review_state="blocked") with a reason the owner is notified of.
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    review_reason = models.CharField(max_length=500, blank=True)
     # Soft-delete → recoverable from the Archive, auto-purged after the TTL.
     deleted_at = models.DateTimeField(null=True, blank=True)
     deleted_by = models.ForeignKey(

@@ -35,8 +35,14 @@ export interface WorkspaceProject {
   end_at: string | null;
   completed_at: string | null;
   duration: Duration;
-  /** "" (normal) · "blocked" · "needs_decision" — the review workflow flag. */
+  /** Approval workflow: "" (normal) · "needs_decision" (awaiting approval) ·
+   *  "blocked" (sent back). Moves only through submit / approve / reject. */
   review_state: ReviewState;
+  review_reason: string;          // why it was sent back
+  submitted_at: string | null;
+  submitted_by_name: string;
+  reviewed_at: string | null;
+  reviewed_by_name: string;
 }
 
 export const listProjects = (workspace: string) =>
@@ -65,8 +71,16 @@ export const updateProject = (
 export const completeProject = (id: number) =>
   api.post<WorkspaceProject>(`/workspace-projects/${id}/complete/`).then((r) => r.data);
 
-/** Flag a project as blocked / needing a decision (or clear it with ""). */
-export const setProjectReviewState = (id: number, review_state: ReviewState) =>
-  api.patch<WorkspaceProject>(`/workspace-projects/${id}/`, { review_state }).then((r) => r.data);
+/** Owner/editor submits a project for approval (notifies IT/Management). */
+export const submitProject = (id: number) =>
+  api.post<WorkspaceProject>(`/workspace-projects/${id}/submit/`).then((r) => r.data);
+
+/** Approver signs off → the project is completed (notifies the owner). */
+export const approveProject = (id: number) =>
+  api.post<WorkspaceProject>(`/workspace-projects/${id}/approve/`).then((r) => r.data);
+
+/** Approver sends the project back with a reason (notifies the owner). */
+export const rejectProject = (id: number, reason: string) =>
+  api.post<WorkspaceProject>(`/workspace-projects/${id}/reject/`, { reason }).then((r) => r.data);
 
 export const deleteProject = (id: number) => api.delete(`/workspace-projects/${id}/`);

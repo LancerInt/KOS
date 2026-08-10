@@ -12,13 +12,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton, InputAdornment, Menu, MenuItem, Paper, Select, Stack,
+  InputAdornment, MenuItem, Paper, Select, Stack,
   Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
 } from "@mui/material";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
 import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
-import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import BookmarkBorderRoundedIcon from "@mui/icons-material/BookmarkBorderRounded";
 import BookmarkAddRoundedIcon from "@mui/icons-material/BookmarkAddRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
@@ -32,8 +32,8 @@ import ViewKanbanRoundedIcon from "@mui/icons-material/ViewKanbanRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 
-import { listAllProjects, completeProject, setProjectReviewState, type WorkspaceProject } from "../features/workspaces/projectsApi";
-import type { DurationStatus, ReviewState } from "../features/workspaces/projectsApi";
+import { listAllProjects, completeProject, submitProject, approveProject, rejectProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
+import type { DurationStatus } from "../features/workspaces/projectsApi";
 import { listSavedViews, createSavedView, deleteSavedView, type SavedView } from "../features/views/savedViewsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
@@ -253,7 +253,14 @@ export default function DashboardPage() {
 
   const openWorkspace = (p: WorkspaceProject) => navigate(`/workspaces/${p.workspace}`);
   const toggleComplete = (p: WorkspaceProject) => { completeProject(p.id).then(reload).catch(() => {}); };
-  const setReviewState = (p: WorkspaceProject, state: ReviewState) => { setProjectReviewState(p.id, state).then(reload).catch(() => {}); };
+  // Approval workflow. Approving/rejecting is for supervisors (IT / Management).
+  const canApprove = !!mine?.is_admin;
+  const submitForApproval = (p: WorkspaceProject) => { submitProject(p.id).then(reload).catch(() => {}); };
+  const approve = (p: WorkspaceProject) => { approveProject(p.id).then(reload).catch(() => {}); };
+  const reject = (p: WorkspaceProject) => {
+    const reason = window.prompt(`Send “${p.name}” back — what needs to change? (the owner is notified)`);
+    if (reason && reason.trim()) rejectProject(p.id, reason.trim()).then(reload).catch(() => {});
+  };
   const dropTo = (p: WorkspaceProject, col: DurationStatus) => {
     if (!canEdit(p)) return;
     const isDone = p.duration.status === "completed";
@@ -382,7 +389,8 @@ export default function DashboardPage() {
               ) : (
                 <Stack spacing={dense ? 0.75 : 1.25}>
                   {listShown.map((p) => (
-                    <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} onOpen={() => openWorkspace(p)} onComplete={() => toggleComplete(p)} onSetReview={(s) => setReviewState(p, s)} />
+                    <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} canApprove={canApprove} onOpen={() => openWorkspace(p)} onComplete={() => toggleComplete(p)}
+                      onSubmit={() => submitForApproval(p)} onApprove={() => approve(p)} onReject={() => reject(p)} />
                   ))}
                 </Stack>
               )}
@@ -528,29 +536,29 @@ function Segmented({ value, onChange, options }: { value: string; onChange: (v: 
 }
 
 const REVIEW_UI: Record<"blocked" | "needs_decision", { label: string; color: string; wash: string }> = {
-  blocked: { label: "Blocked", color: "#8A5A0F", wash: "#FBF2DF" },
-  needs_decision: { label: "Needs decision", color: "#9C2E5E", wash: "#FAE7F0" },
+  needs_decision: { label: "Awaiting approval", color: "#9C2E5E", wash: "#FAE7F0" },
+  blocked: { label: "Sent back", color: "#8A5A0F", wash: "#FBF2DF" },
 };
 
-function ReviewBadge({ state }: { state: "blocked" | "needs_decision" }) {
+function ReviewBadge({ state, reason }: { state: "blocked" | "needs_decision"; reason?: string }) {
   const r = REVIEW_UI[state];
-  return (
+  const badge = (
     <Box sx={{ display: "inline-flex", alignItems: "center", px: 0.85, py: 0.2, borderRadius: "5px", bgcolor: r.wash }}>
       <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: r.color }}>{r.label}</Typography>
     </Box>
   );
+  return reason ? <Tooltip title={reason}>{badge}</Tooltip> : badge;
 }
 
-function ProjectCard({ p, dense, canEdit, onOpen, onComplete, onSetReview }: {
-  p: WorkspaceProject; dense: boolean; canEdit: boolean; onOpen: () => void; onComplete: () => void;
-  onSetReview: (state: ReviewState) => void;
+function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onComplete, onSubmit, onApprove, onReject }: {
+  p: WorkspaceProject; dense: boolean; canEdit: boolean; canApprove: boolean;
+  onOpen: () => void; onComplete: () => void; onSubmit: () => void; onApprove: () => void; onReject: () => void;
 }) {
   const ws = getWorkspace(p.workspace);
   const s = STATUS_UI[p.duration.status];
   const meta = durMeta(p);
-  const [menuEl, setMenuEl] = useState<null | HTMLElement>(null);
-  const pick = (state: ReviewState) => { setMenuEl(null); onSetReview(state); };
   const review = p.review_state === "blocked" || p.review_state === "needs_decision" ? p.review_state : null;
+  const isCompleted = p.duration.status === "completed";
   return (
     <Paper onClick={onOpen}
       sx={{ p: dense ? 1.25 : 1.75, borderRadius: "8px", cursor: "pointer", display: "grid", gridTemplateColumns: "auto 1fr auto", gap: `${dense ? 2 : 4}px 13px`,
@@ -563,7 +571,7 @@ function ProjectCard({ p, dense, canEdit, onOpen, onComplete, onSetReview }: {
         <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: "wrap" }} useFlexGap>
           <Typography sx={{ fontSize: dense ? 13.5 : 14.5, fontWeight: 600 }}>{p.name}</Typography>
           <StatusPill status={p.duration.status} />
-          {review && <ReviewBadge state={review} />}
+          {review && <ReviewBadge state={review} reason={review === "blocked" ? p.review_reason : undefined} />}
         </Stack>
         <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mt: 0.6, flexWrap: "wrap" }} useFlexGap>
           <Box component="span" sx={{ fontFamily: monoFont, fontSize: 10.5, fontWeight: 600, px: 0.75, py: 0.15, borderRadius: "4px", bgcolor: tokens.kriyaWash, color: tokens.kriyaInk }}>{ws?.label ?? p.workspace}</Box>
@@ -583,44 +591,44 @@ function ProjectCard({ p, dense, canEdit, onOpen, onComplete, onSetReview }: {
         </Stack>
         <Stack className="qa" direction="row" spacing={0.5} sx={{ mt: 1 }} alignItems="center">
           <QuickAction icon={<LaunchRoundedIcon sx={{ fontSize: 14 }} />} label="Open" onClick={onOpen} />
-          {canEdit && p.duration.status !== "completed" && p.duration.status !== "none" && (
-            <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Done" onClick={onComplete} accent />
+          {/* Awaiting approval → approvers decide */}
+          {review === "needs_decision" && canApprove && <>
+            <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Approve" onClick={onApprove} accent />
+            <QuickAction icon={<BlockRoundedIcon sx={{ fontSize: 14 }} />} label="Send back" onClick={onReject} danger />
+          </>}
+          {/* Sent back → owner fixes and resubmits */}
+          {review === "blocked" && canEdit && (
+            <QuickAction icon={<SendRoundedIcon sx={{ fontSize: 14 }} />} label="Resubmit" onClick={onSubmit} primary />
           )}
-          {canEdit && (
-            <Tooltip title="Flag project">
-              <IconButton size="small" onClick={(e) => { e.stopPropagation(); setMenuEl(e.currentTarget); }}
-                sx={{ border: `1px solid ${tokens.line}`, borderRadius: 1.5, p: 0.35, color: tokens.text2, "&:hover": { borderColor: "#C5CAD2" } }}>
-                <MoreVertRoundedIcon sx={{ fontSize: 15 }} />
-              </IconButton>
-            </Tooltip>
+          {/* Normal → approvers complete directly; everyone else submits for sign-off */}
+          {!review && !isCompleted && (
+            canApprove
+              ? (p.duration.status !== "none" &&
+                  <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Done" onClick={onComplete} accent />)
+              : (canEdit &&
+                  <QuickAction icon={<SendRoundedIcon sx={{ fontSize: 14 }} />} label="Submit" onClick={onSubmit} primary />)
           )}
         </Stack>
-        <Menu anchorEl={menuEl} open={Boolean(menuEl)} onClose={() => setMenuEl(null)} onClick={(e) => e.stopPropagation()}
-          transformOrigin={{ horizontal: "right", vertical: "top" }} anchorOrigin={{ horizontal: "right", vertical: "bottom" }}>
-          <MenuItem onClick={() => pick("blocked")} sx={{ fontSize: 13, gap: 1 }} selected={review === "blocked"}>
-            <BlockRoundedIcon sx={{ fontSize: 16, color: "#C7891B" }} /> Blocked
-          </MenuItem>
-          <MenuItem onClick={() => pick("needs_decision")} sx={{ fontSize: 13, gap: 1 }} selected={review === "needs_decision"}>
-            <GavelRoundedIcon sx={{ fontSize: 16, color: "#C0417A" }} /> Needs decision
-          </MenuItem>
-          {review && (
-            <MenuItem onClick={() => pick("")} sx={{ fontSize: 13, gap: 1, color: tokens.text2 }}>
-              <CheckCircleRoundedIcon sx={{ fontSize: 16, color: tokens.text3 }} /> Clear flag
-            </MenuItem>
-          )}
-        </Menu>
       </Stack>
     </Paper>
   );
 }
 
-function QuickAction({ icon, label, onClick, accent }: { icon: ReactNode; label: string; onClick: () => void; accent?: boolean }) {
+function QuickAction({ icon, label, onClick, accent, danger, primary }: {
+  icon: ReactNode; label: string; onClick: () => void; accent?: boolean; danger?: boolean; primary?: boolean;
+}) {
+  const v = danger
+    ? { border: `${tokens.attn}55`, bg: tokens.attnWash, color: tokens.attn, hover: tokens.attn }
+    : primary
+      ? { border: `${tokens.kriya}55`, bg: tokens.kriyaWash, color: tokens.kriyaInk, hover: tokens.kriya }
+      : accent
+        ? { border: `${categoryColors.done}66`, bg: STATUS_UI.completed.bg, color: STATUS_UI.completed.fg, hover: categoryColors.done }
+        : { border: tokens.line, bg: "#fff", color: tokens.text2, hover: "#C5CAD2" };
   return (
     <Box component="button" onClick={(e) => { e.stopPropagation(); onClick(); }}
       sx={{ display: "inline-flex", alignItems: "center", gap: 0.4, px: 0.75, py: 0.35, borderRadius: 1.5, cursor: "pointer",
-        border: `1px solid ${accent ? `${categoryColors.done}66` : tokens.line}`, bgcolor: accent ? STATUS_UI.completed.bg : "#fff",
-        color: accent ? STATUS_UI.completed.fg : tokens.text2, fontSize: 11, fontWeight: 600,
-        "&:hover": { borderColor: accent ? categoryColors.done : "#C5CAD2" } }}>
+        border: `1px solid ${v.border}`, bgcolor: v.bg, color: v.color, fontSize: 11, fontWeight: 600,
+        "&:hover": { borderColor: v.hover } }}>
       {icon}{label}
     </Box>
   );

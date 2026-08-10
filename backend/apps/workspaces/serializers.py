@@ -102,6 +102,8 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
     record_count = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
     duration = serializers.SerializerMethodField()
+    submitted_by_name = serializers.SerializerMethodField()
+    reviewed_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkspaceProject
@@ -109,9 +111,24 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             "id", "workspace", "name",
             "created_by", "created_by_name", "created_at",
             "section_count", "record_count", "member_count",
-            "start_at", "end_at", "completed_at", "duration", "review_state",
+            "start_at", "end_at", "completed_at", "duration",
+            "review_state", "review_reason", "submitted_at", "submitted_by_name",
+            "reviewed_at", "reviewed_by_name",
         )
-        read_only_fields = ("created_by", "created_at", "completed_at")
+        # review_state and the workflow stamps move only through the submit /
+        # approve / reject actions — never a plain PATCH.
+        read_only_fields = (
+            "created_by", "created_at", "completed_at",
+            "review_state", "review_reason", "submitted_at", "reviewed_at",
+        )
+
+    def get_submitted_by_name(self, obj) -> str:
+        u = obj.submitted_by
+        return (u.get_full_name() or u.username) if u else ""
+
+    def get_reviewed_by_name(self, obj) -> str:
+        u = obj.reviewed_by
+        return (u.get_full_name() or u.username) if u else ""
 
     def get_duration(self, obj) -> dict:
         return obj.duration_state()
