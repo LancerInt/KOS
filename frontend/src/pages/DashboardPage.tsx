@@ -583,7 +583,7 @@ function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onComplete, onSubm
           <Box sx={{ width: 3, height: 3, borderRadius: "50%", bgcolor: tokens.text3 }} />
           <Typography sx={{ fontSize: 11.5, color: tokens.text3, fontFamily: monoFont }}>{p.record_count} record{p.record_count === 1 ? "" : "s"}</Typography>
         </Stack>
-        <Box sx={{ mt: dense ? 0.85 : 1.1 }}><StageRail status={p.duration.status} progress={progressPct(p)} /></Box>
+        <Box sx={{ mt: dense ? 0.85 : 1.1 }}><StageRail p={p} /></Box>
       </Box>
       <Stack alignItems="flex-end" justifyContent="space-between">
         <Stack direction="row" alignItems="center">
@@ -635,27 +635,36 @@ function QuickAction({ icon, label, onClick, accent, danger, primary }: {
   );
 }
 
-const STAGES = ["Started", "In progress", "Ending soon", "Due", "Completed"];
-const STAGE_INDEX: Record<DurationStatus, number> = { none: -1, active: 1, ending_soon: 2, due: 3, completed: 4 };
+// The approval lifecycle rail. Duration (overdue / ending soon) still shows in
+// the status pill + time text; this rail tracks the sign-off flow instead.
+const STAGES = ["Started", "In progress", "Submitted", "Approval", "Blocked", "Completed"];
 
-function StageRail({ status, progress }: { status: DurationStatus; progress: number }) {
-  if (status === "none") return <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>No duration set — add one in the workspace to track progress.</Typography>;
-  const cur = STAGE_INDEX[status];
-  const color = STATUS_UI[status].ring;
+/** A project's current lifecycle stage (index into STAGES) and its colour. */
+function railStage(p: WorkspaceProject): { cur: number; color: string } {
+  if (p.duration.status === "completed") return { cur: 5, color: "#2FA36B" };
+  if (p.review_state === "blocked") return { cur: 4, color: "#C7891B" };
+  if (p.review_state === "needs_decision") return { cur: 3, color: "#C0417A" };
+  if (p.duration.status === "none") return { cur: 0, color: tokens.kriya };
+  return { cur: 1, color: tokens.kriya };   // active / ending soon / due → In progress
+}
+
+function StageRail({ p }: { p: WorkspaceProject }) {
+  const { cur, color } = railStage(p);
+  // The happy path reaches Completed without passing through Blocked, so a
+  // completed project lights every segment except Blocked.
+  const lit = (i: number) => (cur === 5 ? i <= 3 || i === 5 : i <= cur);
   return (
     <Box>
-      <Box sx={{ position: "relative", height: 12 }}>
-        <Box sx={{ position: "absolute", top: -2, left: `calc(${Math.min(100, Math.max(0, progress))}% - 4px)`, transition: "left .3s",
-          width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: `5px solid ${tokens.ink}` }} />
-        <Box sx={{ display: "flex", gap: 0.5, position: "absolute", top: 5, left: 0, right: 0 }}>
-          {STAGES.map((_, i) => (
-            <Box key={i} sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: i <= cur ? color : tokens.line, transition: "background-color .2s" }} />
-          ))}
-        </Box>
+      <Box sx={{ display: "flex", gap: 0.5 }}>
+        {STAGES.map((_, i) => (
+          <Box key={i} sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: lit(i) ? color : tokens.line, transition: "background-color .2s" }} />
+        ))}
       </Box>
       <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
         {STAGES.map((label, i) => (
-          <Typography key={label} sx={{ flex: 1, textAlign: "center", fontSize: 10, lineHeight: 1.2, color: i === cur ? color : tokens.text3, fontWeight: i === cur ? 700 : 400 }}>{label}</Typography>
+          <Typography key={label} sx={{ flex: 1, textAlign: "center", fontSize: 10, lineHeight: 1.2,
+            color: i === cur ? color : tokens.text3, fontWeight: i === cur ? 700 : 400,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</Typography>
         ))}
       </Box>
     </Box>
