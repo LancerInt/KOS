@@ -236,9 +236,23 @@ export default function WorkspacePage() {
     );
   }
 
+  const overdueCount = (projects ?? []).filter((p) => p.duration.status === "due").length;
+  const inProgressCount = (projects ?? []).filter(
+    (p) => p.duration.status === "active" || p.duration.status === "ending_soon").length;
+  const recordCount = (projects ?? []).reduce((s, p) => s + p.record_count, 0);
+
   return (
     <Box sx={{ px: 3, py: 2.5 }}>
       {header}
+
+      {projects && projects.length > 0 && (
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", sm: "repeat(4,1fr)" }, gap: 1.25, mt: 2 }}>
+          <StatTile label="Projects" value={projects.length} accent={acc} />
+          <StatTile label="Overdue" value={overdueCount} accent={acc} attn />
+          <StatTile label="In progress" value={inProgressCount} accent={acc} />
+          <StatTile label="Records" value={recordCount} accent={acc} />
+        </Box>
+      )}
 
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 2.5, mb: 1.75 }}>
         <Stack direction="row" alignItems="center" spacing={1}>
@@ -326,7 +340,7 @@ export default function WorkspacePage() {
                     </Box>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 0.9 }}>
                       <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3 }}>
-                        {sections} sec · {p.record_count} rec{p.record_count === 1 ? "" : "s"}
+                        {sections} section{sections === 1 ? "" : "s"} · {p.record_count} record{p.record_count === 1 ? "" : "s"}
                       </Typography>
                       <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: overdue ? tokens.attn : tokens.text3, fontWeight: overdue ? 600 : 400 }}>
                         {p.duration.end_label ?? "—"}
@@ -377,5 +391,19 @@ export default function WorkspacePage() {
         </DialogActions>
       </Dialog>
     </Box>
+  );
+}
+
+/** A small at-a-glance metric on the workspace landing (projects / overdue / …). */
+function StatTile({ label, value, accent, attn }: {
+  label: string; value: number; accent: { ink: string }; attn?: boolean;
+}) {
+  const hot = Boolean(attn) && value > 0;
+  return (
+    <Paper sx={{ p: 1.5, borderRadius: "10px", border: `1px solid ${tokens.line}`, display: "flex", flexDirection: "column", gap: 0.3 }}>
+      <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 24, fontWeight: 700, lineHeight: 1,
+        color: hot ? tokens.attn : value > 0 ? accent.ink : tokens.text3 }}>{value}</Typography>
+      <Typography sx={{ fontSize: 11.5, color: tokens.text2 }}>{label}</Typography>
+    </Paper>
   );
 }
