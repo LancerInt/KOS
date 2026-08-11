@@ -769,6 +769,9 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         instance.deleted_at = timezone.now()
         instance.deleted_by = self.request.user
         instance.save(update_fields=["deleted_at", "deleted_by"])
+        # A removed project has nothing to approve — drop any pending request so
+        # it doesn't 404 in an approver's queue.
+        self._clear_review_requests(instance)
         record(action=AuditAction.DELETE, obj=instance, old_value=_proj_val(instance), request=self.request)
 
     @action(detail=True, methods=["post"])

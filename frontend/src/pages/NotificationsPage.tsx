@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, TextField, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, IconButton, Paper, Snackbar, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
@@ -71,6 +71,7 @@ export default function NotificationsPage() {
   // Per-approval button state so a click reads "Approving…" → "Approved ✓"
   // (and "Sending…" → "Sent back") before the card clears on reload.
   const [pending, setPending] = useState<Record<number, "approving" | "approved" | "rejecting" | "sent">>({});
+  const [toast, setToast] = useState<string | null>(null);
   // Always compact — a long list stays readable without running far down the page.
   const dense = true;
 
@@ -103,6 +104,19 @@ export default function NotificationsPage() {
     return m ? Number(m[1]) : null;
   };
   const clearPending = (nid: number) => setPending((p) => { const q = { ...p }; delete q[nid]; return q; });
+  // A stale request — the project was completed or removed elsewhere, so the
+  // endpoint 404s (gone) or 400s (already done). Clear the dead card instead of
+  // failing silently; any other error just re-enables the buttons to retry.
+  const onActionError = (n: Notification, e: unknown) => {
+    const status = (e as { response?: { status?: number } })?.response?.status;
+    if (status === 404 || status === 400 || status === 410) {
+      setToast("That project is no longer awaiting approval — removed from your queue.");
+      dismissNotification(n.id).then(load).catch(() => clearPending(n.id));
+    } else {
+      setToast("Couldn't complete that — please try again.");
+      clearPending(n.id);
+    }
+  };
   const doApprove = (n: Notification) => {
     const id = projectIdOf(n);
     if (!id || pending[n.id]) return;
@@ -110,7 +124,7 @@ export default function NotificationsPage() {
     approveProject(id)
       // Show "Approved ✓" briefly, then reload — the item is gone server-side.
       .then(() => { setPending((p) => ({ ...p, [n.id]: "approved" })); setTimeout(load, 850); })
-      .catch(() => clearPending(n.id));
+      .catch((e) => onActionError(n, e));
   };
   const doReject = (n: Notification) => {
     const id = projectIdOf(n);
@@ -120,7 +134,7 @@ export default function NotificationsPage() {
     setPending((p) => ({ ...p, [n.id]: "rejecting" }));
     rejectProject(id, reason)
       .then(() => { setPending((p) => ({ ...p, [n.id]: "sent" })); setTimeout(load, 850); })
-      .catch(() => clearPending(n.id));
+      .catch((e) => onActionError(n, e));
   };
 
   const openTarget = (n: Notification): string | null => {
@@ -309,6 +323,9 @@ export default function NotificationsPage() {
         )}
 
       </Box>
+
+      <Snackbar open={!!toast} autoHideDuration={4000} onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }} message={toast} />
     </Box>
   );
 }

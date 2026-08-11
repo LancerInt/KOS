@@ -118,6 +118,15 @@ def test_reject_clears_the_approval_requests(owner, approver, project):
     assert not _requests(project).exists()
 
 
+def test_deleting_a_project_clears_its_approval_requests(owner, approver, project):
+    # Otherwise the request lingers and 404s in the approver's queue.
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
+    assert _requests(project).exists()
+    r = client(owner).delete(f"/api/workspace-projects/{project.id}/")
+    assert r.status_code in (200, 204), getattr(r, "data", r.status_code)
+    assert not _requests(project).exists()
+
+
 def test_completing_clears_any_pending_review(owner, approver, project):
     # submit → sent back (blocked) → then completed directly: no stale flag remains,
     # so the client never offers Resubmit on a done project.
