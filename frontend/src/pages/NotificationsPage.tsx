@@ -119,23 +119,27 @@ export default function NotificationsPage() {
       clearPending(n.id);
     }
   };
+  // Approving / blocking here changes a project's state, so tell the Dashboard
+  // (and anything else showing projects) to re-read — otherwise it stays stale
+  // until it's remounted.
+  const projectsChanged = () => window.dispatchEvent(new Event("kos:projects-changed"));
   const doApprove = (n: Notification) => {
     const id = projectIdOf(n);
     if (!id || pending[n.id]) return;
     setPending((p) => ({ ...p, [n.id]: "approving" }));
     approveProject(id)
       // Show "Approved ✓" briefly, then reload — the item is gone server-side.
-      .then(() => { setPending((p) => ({ ...p, [n.id]: "approved" })); setTimeout(load, 850); })
+      .then(() => { setPending((p) => ({ ...p, [n.id]: "approved" })); projectsChanged(); setTimeout(load, 850); })
       .catch((e) => onActionError(n, e));
   };
   const doReject = (n: Notification) => {
     const id = projectIdOf(n);
     if (!id || pending[n.id]) return;
-    const reason = (window.prompt("What needs to change? This is sent back to the owner.") || "").trim();
+    const reason = (window.prompt("What needs to change? The project is blocked and the owner is notified.") || "").trim();
     if (!reason) return;
     setPending((p) => ({ ...p, [n.id]: "rejecting" }));
     rejectProject(id, reason)
-      .then(() => { setPending((p) => ({ ...p, [n.id]: "sent" })); setTimeout(load, 850); })
+      .then(() => { setPending((p) => ({ ...p, [n.id]: "sent" })); projectsChanged(); setTimeout(load, 850); })
       .catch((e) => onActionError(n, e));
   };
 
@@ -233,7 +237,7 @@ export default function NotificationsPage() {
                         const st = pending[n.id];
                         const done = st === "approved" || st === "sent";
                         const approveLabel = st === "approving" ? "Approving…" : st === "approved" ? "Approved ✓" : "Approve";
-                        const rejectLabel = st === "rejecting" ? "Sending…" : st === "sent" ? "Sent back ✓" : "Send back";
+                        const rejectLabel = st === "rejecting" ? "Blocking…" : st === "sent" ? "Blocked ✓" : "Block";
                         return (
                         <Stack direction="row" spacing={1} sx={{ mt: dense ? 1 : 1.25 }}>
                           <Button size="small" variant="contained" onClick={() => doApprove(n)} disabled={!!st}

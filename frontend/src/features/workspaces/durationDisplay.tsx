@@ -147,7 +147,7 @@ export function DurationPanel({
         <Stack direction="row" spacing={1}>
           <Button size="small" variant="contained" onClick={run(onApprove)} disabled={busy}>Approve</Button>
           <Button size="small" variant="outlined" onClick={run(onReject)} disabled={busy}
-            sx={{ color: tokens.text2, borderColor: tokens.line }}>Send back</Button>
+            sx={{ color: tokens.text2, borderColor: tokens.line }}>Block</Button>
         </Stack>
       ) : null;
     if (review === "blocked") return canEdit ? <Button size="small" variant="contained" onClick={run(onSubmit)} disabled={busy}>Resubmit</Button> : null;

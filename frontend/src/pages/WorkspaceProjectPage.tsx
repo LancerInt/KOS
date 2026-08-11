@@ -335,7 +335,7 @@ export default function WorkspaceProjectPage() {
             onSubmit={() => submitProject(pid).then(setProject)}
             onApprove={() => approveProject(pid).then(setProject)}
             onReject={() => {
-              const r = window.prompt(`Send “${project.name}” back — what needs to change? (the owner is notified)`);
+              const r = window.prompt(`Block “${project.name}” — what needs to change? (the owner is notified)`);
               return r && r.trim() ? rejectProject(pid, r.trim()).then(setProject) : undefined;
             }}
           />

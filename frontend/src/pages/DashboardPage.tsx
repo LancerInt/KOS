@@ -173,6 +173,14 @@ export default function DashboardPage() {
   const loadViews = () => listSavedViews(VIEW_SURFACE).then(setSavedViews).catch(() => setSavedViews([]));
   useEffect(() => { reload(); loadViews(); }, []);
 
+  // Reflect approvals/blocks made elsewhere (e.g. the Notifications action tab)
+  // without waiting for a remount.
+  useEffect(() => {
+    const onChange = () => reload();
+    window.addEventListener("kos:projects-changed", onChange);
+    return () => window.removeEventListener("kos:projects-changed", onChange);
+  }, []);
+
   const applyView = (v: SavedView) => {
     const c = v.config as Partial<DashConfig>;
     setFilter((c.filter as Filter) ?? "all");
@@ -263,7 +271,7 @@ export default function DashboardPage() {
   const submitForApproval = (p: WorkspaceProject) => { submitProject(p.id).then(reload).catch(() => {}); };
   const approve = (p: WorkspaceProject) => { approveProject(p.id).then(reload).catch(() => {}); };
   const reject = (p: WorkspaceProject) => {
-    const reason = window.prompt(`Send “${p.name}” back — what needs to change? (the owner is notified)`);
+    const reason = window.prompt(`Block “${p.name}” — what needs to change? (the owner is notified)`);
     if (reason && reason.trim()) rejectProject(p.id, reason.trim()).then(reload).catch(() => {});
   };
   const dropTo = (p: WorkspaceProject, col: DurationStatus) => {
@@ -640,7 +648,7 @@ function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onSubmit, onApprov
           {/* Awaiting approval → a *different* approver decides (not the submitter) */}
           {review === "needs_decision" && canApprove && !p.submitted_by_me && <>
             <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Approve" onClick={onApprove} accent />
-            <QuickAction icon={<BlockRoundedIcon sx={{ fontSize: 14 }} />} label="Send back" onClick={onReject} danger />
+            <QuickAction icon={<BlockRoundedIcon sx={{ fontSize: 14 }} />} label="Block" onClick={onReject} danger />
           </>}
           {/* Sent back → whoever can edit fixes and resubmits */}
           {review === "blocked" && canEdit && (
