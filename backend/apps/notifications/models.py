@@ -23,6 +23,7 @@ class NotificationEvent(models.TextChoices):
     REVIEW_DECISION = "review_decision", "Review decision"
     MENTION = "mention", "Mention"
     COMMENT = "comment", "Comment"
+    DIRECT_MESSAGE = "direct_message", "Direct message"
     BLOCKER_RAISED = "blocker_raised", "Blocker raised"
     DECISION_REQUESTED = "decision_requested", "Decision requested"
     PROJECT_AT_RISK = "project_at_risk", "Project at risk"

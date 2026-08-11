@@ -10,6 +10,7 @@ import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import RuleRoundedIcon from "@mui/icons-material/RuleRounded";
 import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedInRounded";
+import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 import {
@@ -31,6 +32,7 @@ const EVENT_META: Record<string, EventMeta> = {
   ack_received: { Icon: CheckCircleRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Acknowledgement received" },
   review_requested: { Icon: RuleRoundedIcon, fg: "#9C2E5E", bg: "#FAE7F0", label: "Approval needed" },
   review_decision: { Icon: AssignmentTurnedInRoundedIcon, fg: "#1E7A50", bg: "#E7F4EC", label: "Approval update" },
+  direct_message: { Icon: ForumRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Direct message" },
 };
 function eventMeta(ev: string): EventMeta {
   return EVENT_META[ev] ?? { Icon: NotificationsActiveRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: (ev || "update").replace(/_/g, " ") };

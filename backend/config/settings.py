@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.dependencies",
     "apps.approvals",
     "apps.notifications",
+    "apps.messaging",
     "apps.registers",
     "apps.documents",
     "apps.reports",

@@ -5,6 +5,7 @@ import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
+import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
 import HubRoundedIcon from "@mui/icons-material/HubRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
@@ -17,6 +18,7 @@ import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import { useAppDispatch, useAppSelector } from "../hooks";
 import { logout } from "../features/auth/authSlice";
 import { unreadCount } from "../features/notifications/notificationsApi";
+import { messagesUnreadCount } from "../features/messages/messagesApi";
 import { useWorkspaces } from "../features/workspaces/workspaces";
 import NewWorkspaceDialog from "../features/workspaces/NewWorkspaceDialog";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
@@ -47,6 +49,7 @@ const NAV_TOP: NavGroup = {
   items: [
     { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
     { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
+    { to: "/messages", label: "Messages", icon: <ForumRoundedIcon fontSize="small" /> },
   ],
 };
 const NAV_PLATFORM: NavGroup = {
@@ -98,23 +101,30 @@ export default function AppShell() {
   ];
 
   const [unread, setUnread] = useState(0);
+  const [msgUnread, setMsgUnread] = useState(0);
   useEffect(() => {
     let active = true;
-    const refresh = () => { unreadCount().then((r) => { if (active) setUnread(r.unread); }).catch(() => {}); };
+    const refresh = () => {
+      unreadCount().then((r) => { if (active) setUnread(r.unread); }).catch(() => {});
+      messagesUnreadCount().then((r) => { if (active) setMsgUnread(r.unread); }).catch(() => {});
+    };
     refresh();
-    // Keep the sidebar badge honest without a full navigation: the Notifications
-    // page marks items read in place (no route change), other tabs/devices add
-    // new ones. Re-read on focus, on an explicit change event the page fires,
-    // and on a slow interval as a backstop.
+    // Keep the sidebar badges honest without a full navigation: the
+    // Notifications and Messages pages both clear items in place (no route
+    // change), other tabs/devices add new ones. Re-read on focus, on the
+    // explicit change events those pages fire, and on a slow interval as a
+    // backstop.
     const onChanged = () => refresh();
     const onFocus = () => { if (document.visibilityState !== "hidden") refresh(); };
     window.addEventListener("kos:notifications-changed", onChanged);
+    window.addEventListener("kos:messages-changed", onChanged);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
     const timer = window.setInterval(refresh, 60000);
     return () => {
       active = false;
       window.removeEventListener("kos:notifications-changed", onChanged);
+      window.removeEventListener("kos:messages-changed", onChanged);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
       window.clearInterval(timer);
@@ -252,7 +262,8 @@ export default function AppShell() {
                 <Stack spacing={0.5}>
                   {items.map((n) => {
                     const active = n.to === "/" ? location.pathname === "/" : location.pathname.startsWith(n.to);
-                    const showBadge = n.to === "/notifications" && unread > 0;
+                    const badge = n.to === "/notifications" ? unread : n.to === "/messages" ? msgUnread : 0;
+                    const showBadge = badge > 0;
                     return (
                       <Tooltip key={n.to} title={railCollapsed ? n.label : ""} placement="right" arrow>
                         <Box component={Link} to={n.to}
@@ -268,7 +279,7 @@ export default function AppShell() {
                           {!railCollapsed && n.label}
                           {!railCollapsed && showBadge && (
                             <Box sx={{ ml: "auto", minWidth: 18, height: 18, px: 0.5, borderRadius: 9, bgcolor: tokens.attn, color: "#fff", fontSize: 10.5, fontWeight: 700, display: "grid", placeItems: "center" }}>
-                              {unread}
+                              {badge}
                             </Box>
                           )}
                           {railCollapsed && showBadge && (
@@ -357,9 +368,9 @@ export default function AppShell() {
                 cursor: "pointer", display: "flex", p: 0.75, borderRadius: 1, flexShrink: 0,
                 "&:hover": { color: RAIL.textHover, bgcolor: RAIL.hoverBg } }}>
               <MenuRoundedIcon />
-              {/* The unread badge lives on a nav row that is now hidden, so it
-                  has to surface on the thing that opens the nav. */}
-              {unread > 0 && (
+              {/* The unread badges live on nav rows that are now hidden, so
+                  they have to surface on the thing that opens the nav. */}
+              {unread + msgUnread > 0 && (
                 <Box sx={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%",
                   bgcolor: tokens.attn, border: `1.5px solid ${RAIL.bg}` }} />
               )}

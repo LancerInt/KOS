@@ -23,6 +23,8 @@ api_patterns = [
     path("", include("apps.approvals.urls")),
     # Module 8 — notifications & escalation
     path("", include("apps.notifications.urls")),
+    # One-to-one direct messages between people
+    path("", include("apps.messaging.urls")),
     # Module 9 — registers (risk / issue / decision)
     path("", include("apps.registers.urls")),
     # Module 10 — documents & SOPs

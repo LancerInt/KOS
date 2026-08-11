@@ -13,6 +13,7 @@ import ProjectDetailPage from "./pages/ProjectDetailPage";
 import WorkflowPage from "./pages/WorkflowPage";
 import SprintBoardPage from "./pages/SprintBoardPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import MessagesPage from "./pages/MessagesPage";
 import RegistersPage from "./pages/RegistersPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import SOPsPage from "./pages/SOPsPage";
@@ -71,6 +72,8 @@ export default function App() {
             <Route path="/crm" element={<CrmPage />} />
             <Route path="/regulatory" element={<RegulatoryPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/messages" element={<MessagesPage />} />
+            <Route path="/messages/:id" element={<MessagesPage />} />
             <Route path="/email" element={<EmailPage />} />
             <Route path="/admin/roles" element={<RolesPage />} />
             <Route path="/admin/permissions" element={<WorkspacePermissionsPage />} />
