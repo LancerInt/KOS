@@ -7,6 +7,7 @@ import math
 from django.utils import timezone
 from rest_framework import serializers
 
+from .access import approver_ids, is_supervisor
 from .models import (
     MAX_SECTION_DEPTH, Workspace, WorkspaceMember, WorkspacePermission,
     WorkspaceProject, WorkspaceProjectMember, WorkspaceRecord, WorkspaceRecordAttachment,
@@ -106,6 +107,7 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
     reviewed_by_name = serializers.SerializerMethodField()
     review_state = serializers.SerializerMethodField()
     submitted_by_me = serializers.SerializerMethodField()
+    can_approve = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkspaceProject
@@ -115,7 +117,7 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             "section_count", "record_count", "member_count",
             "start_at", "end_at", "completed_at", "duration",
             "review_state", "review_reason", "submitted_at", "submitted_by_name",
-            "reviewed_at", "reviewed_by_name", "submitted_by_me",
+            "reviewed_at", "reviewed_by_name", "submitted_by_me", "can_approve",
         )
         # The workflow stamps move only through the submit / approve / reject
         # actions — never a plain PATCH.
@@ -135,10 +137,30 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
         return (u.get_full_name() or u.username) if u else ""
 
     def get_submitted_by_me(self, obj) -> bool:
-        # Drives "no self-approval" in the UI: the person who submitted can't be
-        # the one who approves it, so their client hides Approve / Send back.
         req = self.context.get("request")
         return bool(req and obj.submitted_by_id and obj.submitted_by_id == req.user.id)
+
+    def _approver_ids(self) -> set:
+        # The approver pool is constant per request — resolve it once and reuse
+        # across every project in the list (one query, not N).
+        ids = self.context.get("_approver_ids")
+        if ids is None:
+            ids = approver_ids()
+            self.context["_approver_ids"] = ids
+        return ids
+
+    def get_can_approve(self, obj) -> bool:
+        """Whether the current user may sign this project off *right now*: an
+        awaiting-approval project, they're an approver, and either they didn't
+        submit it — or they're the only approver there is (one-person fallback)."""
+        req = self.context.get("request")
+        if not req or obj.completed_at or obj.review_state != WorkspaceProject.REVIEW_DECISION:
+            return False
+        if not is_supervisor(req.user):
+            return False
+        if obj.submitted_by_id != req.user.id:
+            return True
+        return not (self._approver_ids() - {req.user.id})   # sole approver → may self-approve
 
     def get_reviewed_by_name(self, obj) -> str:
         u = obj.reviewed_by

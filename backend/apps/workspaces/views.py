@@ -30,7 +30,7 @@ from apps.notifications.models import NotificationEvent
 from apps.notifications.services import notify, notify_many
 
 from .access import (
-    SUPERVISOR_ROLE_NAMES, base_access, can_edit, can_open_project, can_view,
+    SUPERVISOR_ROLE_NAMES, approver_ids, base_access, can_edit, can_open_project, can_view,
     effective_access, is_supervisor, project_scope_q,
 )
 from .export import build_workbook, project_rows
@@ -798,11 +798,13 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only IT Team or Management can approve or send back a project.")
 
     def _require_other_approver(self, user, project):
-        """Sign-off must come from someone other than the submitter — no one
-        approves their own work, even an approver who submitted it."""
+        """Sign-off should come from someone other than the submitter — no one
+        approves their own work. The one exception: if they're the *only*
+        approver in the org, there's no one else, so it's allowed."""
         self._require_approver(user)
         if project.submitted_by_id and project.submitted_by_id == user.id:
-            raise PermissionDenied("You can't approve your own submission — another approver must sign off.")
+            if approver_ids() - {user.id}:
+                raise PermissionDenied("You can't approve your own submission — another approver must sign off.")
 
     def _project_url(self, project) -> str:
         return f"/workspaces/{project.workspace}/projects/{project.id}"
@@ -834,7 +836,12 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
             "review_state", "submitted_at", "submitted_by", "review_reason", "reviewed_at", "reviewed_by"])
         who = request.user.get_full_name() or request.user.username
         self._clear_review_requests(project)   # a resubmit shouldn't stack requests
-        notify_many(approver_users(), exclude=[request.user],
+        # Ping the *other* approvers; but if the submitter is the only approver
+        # there is, ping them so it still lands in an action queue (and they can
+        # sign it off themselves — see _require_other_approver).
+        approvers = approver_users()
+        recipients = [u for u in approvers if u.id != request.user.id] or approvers
+        notify_many(recipients,
                     event=NotificationEvent.REVIEW_REQUESTED,
                     title=f"Approval needed: {project.name}",
                     body=f"{who} submitted “{project.name}” for approval.",

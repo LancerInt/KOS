@@ -285,8 +285,8 @@ export default function DashboardPage() {
 
   const openWorkspace = (p: WorkspaceProject) => navigate(`/workspaces/${p.workspace}`);
   const toggleComplete = (p: WorkspaceProject) => { completeProject(p.id).then(reload).catch(() => {}); };
-  // Approval workflow. Approving/rejecting is for supervisors (IT / Management).
-  const canApprove = !!mine?.is_admin;
+  // Approval workflow. Who may approve which project is decided server-side
+  // (p.can_approve) so the "no self-approval / lone-approver" rules live in one place.
   const submitForApproval = (p: WorkspaceProject) => { submitProject(p.id).then(reload).catch(() => {}); };
   const approve = (p: WorkspaceProject) => { approveProject(p.id).then(reload).catch(() => {}); };
   const reject = (p: WorkspaceProject) => {
@@ -460,7 +460,7 @@ export default function DashboardPage() {
               ) : (
                 <Stack spacing={dense ? 0.75 : 1.25}>
                   {listShown.map((p) => (
-                    <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} canApprove={canApprove} onOpen={() => openWorkspace(p)}
+                    <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} onOpen={() => openWorkspace(p)}
                       onSubmit={() => submitForApproval(p)} onApprove={() => approve(p)} onReject={() => reject(p)} />
                   ))}
                 </Stack>
@@ -621,8 +621,8 @@ function ReviewBadge({ state, reason }: { state: "blocked" | "needs_decision"; r
   return reason ? <Tooltip title={reason}>{badge}</Tooltip> : badge;
 }
 
-function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onSubmit, onApprove, onReject }: {
-  p: WorkspaceProject; dense: boolean; canEdit: boolean; canApprove: boolean;
+function ProjectCard({ p, dense, canEdit, onOpen, onSubmit, onApprove, onReject }: {
+  p: WorkspaceProject; dense: boolean; canEdit: boolean;
   onOpen: () => void; onSubmit: () => void; onApprove: () => void; onReject: () => void;
 }) {
   const ws = getWorkspace(p.workspace);
@@ -664,8 +664,8 @@ function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onSubmit, onApprov
         </Stack>
         <Stack className="qa" direction="row" spacing={0.5} sx={{ mt: 1 }} alignItems="center">
           <QuickAction icon={<LaunchRoundedIcon sx={{ fontSize: 14 }} />} label="Open" onClick={onOpen} />
-          {/* Awaiting approval → a *different* approver decides (not the submitter) */}
-          {review === "needs_decision" && canApprove && !p.submitted_by_me && <>
+          {/* Awaiting approval → a *different* approver decides (or the lone approver) */}
+          {review === "needs_decision" && p.can_approve && <>
             <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Approve" onClick={onApprove} accent />
             <QuickAction icon={<BlockRoundedIcon sx={{ fontSize: 14 }} />} label="Block" onClick={onReject} danger />
           </>}

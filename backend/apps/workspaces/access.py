@@ -49,6 +49,20 @@ def is_supervisor(user) -> bool:
     return user.roles.filter(name__in=SUPERVISOR_ROLE_NAMES).exists()
 
 
+def approver_ids() -> set[int]:
+    """IDs of everyone who may approve a submitted project — superusers, IT Team
+    and Management. Used both to notify the pool and to decide, in a one-approver
+    org, whether self-approval is the only way forward."""
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    return set(
+        User.objects.filter(
+            Q(is_superuser=True) | Q(roles__name__in=SUPERVISOR_ROLE_NAMES), is_active=True
+        ).values_list("id", flat=True)
+    )
+
+
 def base_access(user) -> dict[str, str] | None:
     """Role + team-membership grants, *before* per-user admin overrides.
 

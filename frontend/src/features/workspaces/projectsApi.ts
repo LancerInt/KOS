@@ -41,9 +41,12 @@ export interface WorkspaceProject {
   review_reason: string;          // why it was sent back
   submitted_at: string | null;
   submitted_by_name: string;
-  /** True when *you* are the one who submitted it — used to enforce no
-   *  self-approval (your client won't offer Approve / Send back). */
+  /** True when *you* are the one who submitted it. */
   submitted_by_me: boolean;
+  /** Whether *you* may sign this off right now: it's awaiting approval, you're
+   *  an approver, and either you didn't submit it — or you're the only approver
+   *  there is (one-person fallback). Drives the Approve / Block buttons. */
+  can_approve: boolean;
   reviewed_at: string | null;
   reviewed_by_name: string;
 }

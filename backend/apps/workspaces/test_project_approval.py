@@ -149,6 +149,23 @@ def test_a_different_approver_can_approve(approver, approver2, project):
     assert project.completed_at is not None
 
 
+def test_sole_approver_is_notified_of_their_own_submission(approver, project):
+    # Only one approver in the org → the request has to land in *their* queue,
+    # or a project they submit could never be approved.
+    r = client(approver).post(f"/api/workspace-projects/{project.id}/submit/")
+    assert r.status_code == 200, r.data
+    assert Notification.objects.filter(recipient=approver, event="review_requested").exists()
+
+
+def test_sole_approver_may_approve_their_own(approver, project):
+    # With no one else to sign off, the lone approver can approve their own.
+    client(approver).post(f"/api/workspace-projects/{project.id}/submit/")
+    r = client(approver).post(f"/api/workspace-projects/{project.id}/approve/")
+    assert r.status_code == 200, r.data
+    project.refresh_from_db()
+    assert project.completed_at is not None
+
+
 def test_complete_endpoint_only_reopens(owner, approver, project):
     # You can't self-complete via /complete/ — that path only reopens a done one.
     r = client(owner).post(f"/api/workspace-projects/{project.id}/complete/")

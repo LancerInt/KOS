@@ -330,8 +330,7 @@ export default function WorkspaceProjectPage() {
             onToggleComplete={() => completeProject(pid).then(setProject)}
             reviewState={project.review_state}
             reviewReason={project.review_reason}
-            canApprove={!!mine?.is_admin}
-            submittedByMe={project.submitted_by_me}
+            canApprove={project.can_approve}
             onSubmit={() => submitProject(pid).then(setProject)}
             onApprove={() => approveProject(pid).then(setProject)}
             onReject={() => {

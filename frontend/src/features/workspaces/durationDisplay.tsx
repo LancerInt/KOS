@@ -86,7 +86,7 @@ function toLocalInput(iso?: string | null): string {
  */
 export function DurationPanel({
   duration, completedAt, canEdit, allowSet, onSet, onToggleComplete,
-  reviewState = "", reviewReason = "", canApprove = false, submittedByMe = false, onSubmit, onApprove, onReject,
+  reviewState = "", reviewReason = "", canApprove = false, onSubmit, onApprove, onReject,
 }: {
   duration: Duration;
   completedAt?: string | null;
@@ -97,9 +97,9 @@ export function DurationPanel({
   /** Approval workflow: "" · "needs_decision" (awaiting) · "blocked" (sent back). */
   reviewState?: "" | "needs_decision" | "blocked";
   reviewReason?: string;
+  /** Whether *you* may approve/block this now (already accounts for no
+   *  self-approval, and the lone-approver exception). */
   canApprove?: boolean;
-  /** You submitted this — so you can't be the one who approves it. */
-  submittedByMe?: boolean;
   onSubmit?: () => Promise<unknown> | void;
   onApprove?: () => Promise<unknown> | void;
   onReject?: () => Promise<unknown> | void;
@@ -143,7 +143,7 @@ export function DurationPanel({
   const actions = () => {
     if (completed) return canEdit ? <Button size="small" variant="outlined" onClick={toggle} disabled={busy}>Reopen</Button> : null;
     if (review === "needs_decision")
-      return canApprove && !submittedByMe ? (
+      return canApprove ? (
         <Stack direction="row" spacing={1}>
           <Button size="small" variant="contained" onClick={run(onApprove)} disabled={busy}>Approve</Button>
           <Button size="small" variant="outlined" onClick={run(onReject)} disabled={busy}
