@@ -9,6 +9,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from .models import Conversation, DirectMessage
+from .services import can_edit
 
 
 class PersonSerializer(serializers.Serializer):
@@ -33,18 +34,33 @@ class PersonSerializer(serializers.Serializer):
 class DirectMessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.SerializerMethodField()
     mine = serializers.SerializerMethodField()
+    deleted = serializers.BooleanField(source="is_deleted", read_only=True)
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = DirectMessage
-        fields = ("id", "conversation", "sender", "sender_name", "mine", "body", "created_at", "read_at")
-        read_only_fields = ("conversation", "sender", "created_at", "read_at")
+        fields = (
+            "id", "conversation", "sender", "sender_name", "mine", "body",
+            "created_at", "read_at", "edited_at", "deleted", "can_edit",
+        )
+        read_only_fields = ("conversation", "sender", "created_at", "read_at", "edited_at")
+
+    def _viewer(self):
+        request = self.context.get("request")
+        return request.user if request else None
 
     def get_sender_name(self, obj) -> str:
         return obj.sender.get_full_name() or obj.sender.username
 
     def get_mine(self, obj) -> bool:
-        user = self.context.get("request").user if self.context.get("request") else None
+        user = self._viewer()
         return bool(user and obj.sender_id == user.id)
+
+    def get_can_edit(self, obj) -> bool:
+        """Whether the *viewer* may still correct this one — the UI shows or
+        hides the Edit action from this rather than re-deriving the window."""
+        user = self._viewer()
+        return bool(user and can_edit(obj, user))
 
 
 class ConversationSerializer(serializers.ModelSerializer):
@@ -70,13 +86,15 @@ class ConversationSerializer(serializers.ModelSerializer):
         return getattr(obj, "unread_count", 0) or 0
 
     def get_last_message(self, obj):
-        body = getattr(obj, "last_body", None)
-        if not body:
-            return None
-        viewer = self._viewer()
         sender_id = getattr(obj, "last_sender_id", None)
+        if sender_id is None:
+            return None
+        # A retracted last message still belongs in the preview — the row is
+        # gated on the sender, not the body, because a tombstone has no body.
+        viewer = self._viewer()
         return {
-            "body": body,
+            "body": getattr(obj, "last_body", None) or "",
             "sender": sender_id,
             "mine": bool(viewer and sender_id == viewer.id),
+            "deleted": getattr(obj, "last_deleted_at", None) is not None,
         }

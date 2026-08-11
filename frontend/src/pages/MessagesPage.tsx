@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Avatar, Box, Button, CircularProgress, IconButton, InputBase, Paper, Stack,
-  Tooltip, Typography, useMediaQuery, useTheme,
+  Alert, Avatar, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, IconButton, InputBase, Menu, MenuItem, Paper, Snackbar,
+  Stack, Tooltip, Typography, useMediaQuery, useTheme,
 } from "@mui/material";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import MapsUgcRoundedIcon from "@mui/icons-material/MapsUgcRounded";
@@ -11,10 +12,16 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import DoneAllRoundedIcon from "@mui/icons-material/DoneAllRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 
 import {
-  announceMessagesChanged, directory, listConversations, listMessages, markThreadRead,
-  sendMessage, type Conversation, type DirectMessage,
+  announceMessagesChanged, deleteConversation, deleteMessage, directory, editMessage,
+  listConversations, listMessages, markThreadRead, sendMessage,
+  type Conversation, type DirectMessage,
 } from "../features/messages/messagesApi";
 import MessagePersonDialog, { initialsOf } from "../features/messages/MessagePersonDialog";
 import { tokens, monoFont } from "../theme";
@@ -58,6 +65,12 @@ export default function MessagesPage() {
   const [filter, setFilter] = useState("");
   const [canStart, setCanStart] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [editing, setEditing] = useState<DirectMessage | null>(null);
+  const [menu, setMenu] = useState<{ el: HTMLElement; message: DirectMessage } | null>(null);
+  const [confirmMessage, setConfirmMessage] = useState<DirectMessage | null>(null);
+  const [threadMenu, setThreadMenu] = useState<HTMLElement | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [error, setError] = useState("");
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastSeenId = useRef<number | null>(null);
@@ -103,6 +116,8 @@ export default function MessagesPage() {
     setMessages(null);
     lastSeenId.current = null;
     setDraft("");
+    setEditing(null);
+    setError("");
     loadThread(activeId, true);
   }, [activeId, loadThread]);
 
@@ -123,18 +138,70 @@ export default function MessagesPage() {
     }
   }, [messages]);
 
+  // The composer doubles as the edit box: while `editing` is set, the same
+  // field and send button correct that message instead of adding a new one.
   const send = () => {
     const body = draft.trim();
     if (!body || activeId === null || sending) return;
     setSending(true);
+
+    if (editing) {
+      const id = editing.id;
+      editMessage(id, body)
+        .then((m) => {
+          setDraft("");
+          setEditing(null);
+          setMessages((rows) => (rows ?? []).map((r) => (r.id === id ? m : r)));
+          loadConversations();
+        })
+        .catch((e) => setError(e?.response?.data?.detail ?? "Could not save that edit."))
+        .finally(() => setSending(false));
+      return;
+    }
+
     sendMessage(activeId, body)
       .then((m) => {
         setDraft("");
         setMessages((rows) => [...(rows ?? []), m]);
         loadConversations();
       })
-      .catch(() => {})
+      .catch(() => setError("Could not send that message."))
       .finally(() => setSending(false));
+  };
+
+  const startEditing = (m: DirectMessage) => {
+    setMenu(null);
+    setEditing(m);
+    setDraft(m.body);
+  };
+
+  const cancelEditing = () => { setEditing(null); setDraft(""); };
+
+  const doDeleteMessage = () => {
+    const m = confirmMessage;
+    if (!m) return;
+    setConfirmMessage(null);
+    if (editing?.id === m.id) cancelEditing();
+    deleteMessage(m.id)
+      .then((tomb) => {
+        setMessages((rows) => (rows ?? []).map((r) => (r.id === tomb.id ? tomb : r)));
+        loadConversations();
+        announceMessagesChanged();
+      })
+      .catch(() => setError("Could not delete that message."));
+  };
+
+  const doDeleteConversation = () => {
+    if (activeId === null) return;
+    setConfirmClear(false);
+    setThreadMenu(null);
+    deleteConversation(activeId)
+      .then(() => {
+        announceMessagesChanged();
+        return loadConversations();
+      })
+      .then(() => navigate("/messages"))
+      .catch(() => setError("Could not delete that conversation."));
   };
 
   const shown = useMemo(() => {
@@ -216,10 +283,13 @@ export default function MessagesPage() {
                 </Stack>
                 <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 0.15 }}>
                   <Typography noWrap sx={{ flex: 1, fontSize: 12, color: c.unread ? tokens.text : tokens.text3,
-                    fontWeight: c.unread ? 600 : 400 }}>
-                    {c.last_message
-                      ? `${c.last_message.mine ? "You: " : ""}${c.last_message.body}`
-                      : "No messages yet"}
+                    fontWeight: c.unread ? 600 : 400,
+                    fontStyle: c.last_message?.deleted ? "italic" : "normal" }}>
+                    {!c.last_message
+                      ? "No messages yet"
+                      : c.last_message.deleted
+                        ? "This message was deleted"
+                        : `${c.last_message.mine ? "You: " : ""}${c.last_message.body}`}
                   </Typography>
                   {c.unread > 0 && (
                     <Box sx={{ minWidth: 18, height: 18, px: 0.5, borderRadius: 9, flexShrink: 0,
@@ -262,7 +332,7 @@ export default function MessagesPage() {
             <Avatar sx={{ width: 34, height: 34, fontSize: 13, bgcolor: tokens.kriyaInk }}>
               {initialsOf(active.other.name)}
             </Avatar>
-            <Box sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography noWrap sx={{ fontSize: 14.5, fontWeight: 700, color: tokens.ink }}>
                 {active.other.name}
               </Typography>
@@ -270,6 +340,12 @@ export default function MessagesPage() {
                 {active.other.role || active.other.email}
               </Typography>
             </Box>
+            <Tooltip title="Conversation options">
+              <IconButton size="small" aria-label="Conversation options"
+                onClick={(e) => setThreadMenu(e.currentTarget)}>
+                <MoreVertRoundedIcon sx={{ fontSize: 19, color: tokens.text3 }} />
+              </IconButton>
+            </Tooltip>
           </Stack>
 
           {/* thread */}
@@ -296,23 +372,52 @@ export default function MessagesPage() {
                         </Box>
                       </Stack>
                     )}
-                    <Stack direction="row" justifyContent={m.mine ? "flex-end" : "flex-start"}>
+                    <Stack direction="row" alignItems="center" spacing={0.5}
+                      justifyContent={m.mine ? "flex-end" : "flex-start"}
+                      // The actions button is revealed by hovering the row on a
+                      // desktop; on touch there is no hover, so it just stays put.
+                      sx={{ "&:hover .msg-actions": { opacity: 1 } }}>
+                      {m.mine && !m.deleted && (
+                        <IconButton size="small" className="msg-actions" aria-label="Message actions"
+                          onClick={(e) => setMenu({ el: e.currentTarget, message: m })}
+                          sx={{ order: -1, opacity: isNarrow ? 1 : 0, transition: "opacity .12s",
+                            "&:focus-visible": { opacity: 1 } }}>
+                          <MoreVertRoundedIcon sx={{ fontSize: 16, color: tokens.text3 }} />
+                        </IconButton>
+                      )}
                       <Paper elevation={0}
                         sx={{ maxWidth: "min(78%, 560px)", px: 1.5, py: 1, borderRadius: "12px",
-                          border: `1px solid ${m.mine ? "transparent" : tokens.line}`,
+                          border: `1px solid ${m.deleted ? tokens.line : m.mine ? "transparent" : tokens.line}`,
                           borderTopRightRadius: m.mine ? "4px" : "12px",
                           borderTopLeftRadius: m.mine ? "12px" : "4px",
-                          bgcolor: m.mine ? tokens.kriya : tokens.surface,
-                          color: m.mine ? "#fff" : tokens.text }}>
-                        <Typography sx={{ fontSize: 13.5, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                          {m.body}
-                        </Typography>
+                          bgcolor: m.deleted ? "transparent" : m.mine ? tokens.kriya : tokens.surface,
+                          color: m.deleted ? tokens.text3 : m.mine ? "#fff" : tokens.text,
+                          outline: editing?.id === m.id ? `2px solid ${tokens.kriyaGlow}` : "none",
+                          outlineOffset: 2 }}>
+                        {m.deleted ? (
+                          <Stack direction="row" alignItems="center" spacing={0.6}>
+                            <BlockRoundedIcon sx={{ fontSize: 14 }} />
+                            <Typography sx={{ fontSize: 13, fontStyle: "italic" }}>
+                              {m.mine ? "You deleted this message" : "This message was deleted"}
+                            </Typography>
+                          </Stack>
+                        ) : (
+                          <Typography sx={{ fontSize: 13.5, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {m.body}
+                          </Typography>
+                        )}
                         <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={0.4} sx={{ mt: 0.35 }}>
+                          {m.edited_at && !m.deleted && (
+                            <Typography sx={{ fontSize: 9.5, fontStyle: "italic",
+                              color: m.mine ? "rgba(255,255,255,.75)" : tokens.text3 }}>
+                              edited
+                            </Typography>
+                          )}
                           <Typography sx={{ fontFamily: monoFont, fontSize: 9.5,
-                            color: m.mine ? "rgba(255,255,255,.75)" : tokens.text3 }}>
+                            color: m.deleted ? tokens.text3 : m.mine ? "rgba(255,255,255,.75)" : tokens.text3 }}>
                             {clockTime(m.created_at)}
                           </Typography>
-                          {m.mine && (m.read_at
+                          {m.mine && !m.deleted && (m.read_at
                             ? <DoneAllRoundedIcon sx={{ fontSize: 13, color: "#BFF0F6" }} />
                             : <CheckRoundedIcon sx={{ fontSize: 13, color: "rgba(255,255,255,.65)" }} />)}
                         </Stack>
@@ -324,23 +429,49 @@ export default function MessagesPage() {
             </Stack>
           </Box>
 
-          {/* composer */}
-          <Stack direction="row" alignItems="flex-end" spacing={1}
-            sx={{ p: 1.5, borderTop: `1px solid ${tokens.line}`, bgcolor: tokens.surface, flexShrink: 0 }}>
-            <Box sx={{ flex: 1, px: 1.5, py: 1, borderRadius: "12px", bgcolor: tokens.paper,
-              border: `1px solid ${tokens.line}`, maxHeight: 160, overflowY: "auto" }}>
-              <InputBase
-                multiline maxRows={6} fullWidth value={draft} placeholder="Type a message…"
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                sx={{ fontSize: 13.5 }}
-              />
-            </Box>
-            <Button variant="contained" onClick={send} disabled={!draft.trim() || sending}
-              sx={{ minWidth: 0, width: 42, height: 42, borderRadius: "50%", p: 0, flexShrink: 0 }}>
-              {sending ? <CircularProgress size={16} color="inherit" /> : <SendRoundedIcon sx={{ fontSize: 19 }} />}
-            </Button>
-          </Stack>
+          {/* composer — also the edit box while `editing` is set */}
+          <Box sx={{ borderTop: `1px solid ${tokens.line}`, bgcolor: tokens.surface, flexShrink: 0 }}>
+            {editing && (
+              <Stack direction="row" alignItems="center" spacing={1}
+                sx={{ px: 1.75, pt: 1.25, pb: 0.25 }}>
+                <EditRoundedIcon sx={{ fontSize: 15, color: tokens.kriyaInk }} />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: tokens.kriyaInk }}>
+                    Editing message
+                  </Typography>
+                  <Typography noWrap sx={{ fontSize: 11.5, color: tokens.text3 }}>
+                    {editing.body}
+                  </Typography>
+                </Box>
+                <Tooltip title="Cancel edit">
+                  <IconButton size="small" onClick={cancelEditing} aria-label="Cancel edit">
+                    <CloseRoundedIcon sx={{ fontSize: 16, color: tokens.text3 }} />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            )}
+            <Stack direction="row" alignItems="flex-end" spacing={1} sx={{ p: 1.5, pt: editing ? 1 : 1.5 }}>
+              <Box sx={{ flex: 1, px: 1.5, py: 1, borderRadius: "12px", bgcolor: tokens.paper,
+                border: `1px solid ${editing ? tokens.kriyaGlow : tokens.line}`, maxHeight: 160, overflowY: "auto" }}>
+                <InputBase
+                  multiline maxRows={6} fullWidth value={draft}
+                  placeholder={editing ? "Edit your message…" : "Type a message…"}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+                    if (e.key === "Escape" && editing) { e.preventDefault(); cancelEditing(); }
+                  }}
+                  sx={{ fontSize: 13.5 }}
+                />
+              </Box>
+              <Button variant="contained" onClick={send} disabled={!draft.trim() || sending}
+                sx={{ minWidth: 0, width: 42, height: 42, borderRadius: "50%", p: 0, flexShrink: 0 }}>
+                {sending ? <CircularProgress size={16} color="inherit" />
+                  : editing ? <CheckRoundedIcon sx={{ fontSize: 20 }} />
+                  : <SendRoundedIcon sx={{ fontSize: 19 }} />}
+              </Button>
+            </Stack>
+          </Box>
         </>
       )}
     </Box>
@@ -359,6 +490,78 @@ export default function MessagesPage() {
 
       <MessagePersonDialog open={composeOpen} onClose={() => setComposeOpen(false)}
         onSent={(conversationId) => { loadConversations(); navigate(`/messages/${conversationId}`); }} />
+
+      {/* per-message actions */}
+      <Menu anchorEl={menu?.el ?? null} open={menu !== null} onClose={() => setMenu(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}>
+        <MenuItem disabled={!menu?.message.can_edit}
+          onClick={() => menu && startEditing(menu.message)}>
+          <EditRoundedIcon sx={{ fontSize: 17, mr: 1.25, color: tokens.text2 }} />
+          <Box>
+            <Typography sx={{ fontSize: 13.5 }}>Edit</Typography>
+            {menu && !menu.message.can_edit && (
+              // Explaining the greyed-out row beats leaving the sender to guess
+              // why the option they used ten minutes ago has stopped working.
+              <Typography sx={{ fontSize: 11, color: tokens.text3 }}>
+                Too old to edit — send a follow-up
+              </Typography>
+            )}
+          </Box>
+        </MenuItem>
+        <MenuItem onClick={() => { setConfirmMessage(menu?.message ?? null); setMenu(null); }}>
+          <DeleteOutlineRoundedIcon sx={{ fontSize: 17, mr: 1.25, color: tokens.attn }} />
+          <Typography sx={{ fontSize: 13.5, color: tokens.attn }}>Delete</Typography>
+        </MenuItem>
+      </Menu>
+
+      {/* conversation actions */}
+      <Menu anchorEl={threadMenu} open={threadMenu !== null} onClose={() => setThreadMenu(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}>
+        <MenuItem onClick={() => { setConfirmClear(true); setThreadMenu(null); }}>
+          <DeleteOutlineRoundedIcon sx={{ fontSize: 17, mr: 1.25, color: tokens.attn }} />
+          <Typography sx={{ fontSize: 13.5, color: tokens.attn }}>Delete conversation</Typography>
+        </MenuItem>
+      </Menu>
+
+      <Dialog open={confirmMessage !== null} onClose={() => setConfirmMessage(null)}
+        PaperProps={{ sx: { borderRadius: "14px" } }}>
+        <DialogTitle sx={{ fontFamily: '"Manrope Variable"', fontWeight: 700, fontSize: 17 }}>
+          Delete this message?
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ fontSize: 13.5 }}>
+            The text is removed for both of you and can't be recovered. The thread will
+            show that a message was deleted.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setConfirmMessage(null)} sx={{ color: tokens.text2 }}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={doDeleteMessage}>Delete</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmClear} onClose={() => setConfirmClear(false)}
+        PaperProps={{ sx: { borderRadius: "14px" } }}>
+        <DialogTitle sx={{ fontFamily: '"Manrope Variable"', fontWeight: 700, fontSize: 17 }}>
+          Delete this conversation?
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ fontSize: 13.5 }}>
+            It's removed from <b>your</b> list only — {active?.other.name ?? "the other person"} keeps
+            their copy. If they write again, the thread comes back with just the new messages.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setConfirmClear(false)} sx={{ color: tokens.text2 }}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={doDeleteConversation}>Delete for me</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={!!error} autoHideDuration={5000} onClose={() => setError("")}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}>
+        <Alert severity="error" onClose={() => setError("")} sx={{ fontSize: 13 }}>{error}</Alert>
+      </Snackbar>
     </>
   );
 }

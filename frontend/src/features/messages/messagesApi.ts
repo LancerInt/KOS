@@ -22,6 +22,7 @@ export interface LastMessage {
   body: string;
   sender: number;
   mine: boolean;
+  deleted: boolean;
 }
 
 export interface Conversation {
@@ -42,6 +43,12 @@ export interface DirectMessage {
   body: string;
   created_at: string;
   read_at: string | null;
+  /** Set when the sender corrected it — the bubble is marked "edited". */
+  edited_at: string | null;
+  /** Retracted by its sender; `body` is empty and a tombstone is shown. */
+  deleted: boolean;
+  /** Whether *you* may still edit it (own message, inside the time window). */
+  can_edit: boolean;
 }
 
 export async function listConversations(): Promise<Conversation[]> {
@@ -63,6 +70,26 @@ export async function sendMessage(conversationId: number, body: string): Promise
 export async function startConversation(recipient: number, body?: string): Promise<Conversation> {
   const { data } = await api.post<Conversation>("/conversations/", { recipient, body });
   return data;
+}
+
+/** Correct your own message. Only allowed inside the server's edit window. */
+export async function editMessage(messageId: number, body: string): Promise<DirectMessage> {
+  const { data } = await api.patch<DirectMessage>(`/direct-messages/${messageId}/`, { body });
+  return data;
+}
+
+/** Retract your own message. Returns the tombstone that replaces it. */
+export async function deleteMessage(messageId: number): Promise<DirectMessage> {
+  const { data } = await api.delete<DirectMessage>(`/direct-messages/${messageId}/`);
+  return data;
+}
+
+/**
+ * Delete a conversation from *your* list. The other person's copy is untouched,
+ * and a later message brings the thread back with only what follows.
+ */
+export async function deleteConversation(conversationId: number): Promise<void> {
+  await api.delete(`/conversations/${conversationId}/`);
 }
 
 export async function markThreadRead(conversationId: number): Promise<{ marked: number }> {

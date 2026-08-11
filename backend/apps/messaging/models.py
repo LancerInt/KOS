@@ -15,6 +15,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
+from django.utils import timezone
 
 
 class Conversation(models.Model):
@@ -31,6 +32,9 @@ class Conversation(models.Model):
     # Stamped on creation as well as on each message, so a thread that has been
     # opened but not yet written in still sorts sensibly in the list.
     last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # When each side last deleted the thread from their own list. Null = never.
+    low_cleared_at = models.DateTimeField(null=True, blank=True)
+    high_cleared_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ("-last_message_at", "-created_at")
@@ -51,8 +55,6 @@ class Conversation(models.Model):
         Returns ``(conversation, created)``. Ordering the pair by id here is
         what makes the lookup symmetric.
         """
-        from django.utils import timezone
-
         low, high = (a, b) if a.id < b.id else (b, a)
         return cls.objects.get_or_create(
             user_low=low,
@@ -72,6 +74,27 @@ class Conversation(models.Model):
         """The person on the far side of the thread from ``user``."""
         return self.user_high if user.id == self.user_low_id else self.user_low
 
+    # --- Per-person clearing ------------------------------------------------ #
+    # Deleting a conversation is one-sided: it clears the thread from *your*
+    # list, and the other person's copy is untouched. One participant must not
+    # be able to destroy the other's record of what was said. Everything sent
+    # up to that moment is hidden from you; anything sent afterwards brings the
+    # thread back, which is what people expect from every other messenger.
+
+    def cleared_at_for(self, user):
+        return self.low_cleared_at if user.id == self.user_low_id else self.high_cleared_at
+
+    def clear_for(self, user) -> None:
+        field = "low_cleared_at" if user.id == self.user_low_id else "high_cleared_at"
+        setattr(self, field, timezone.now())
+        self.save(update_fields=[field])
+
+    def visible_messages(self, user):
+        """The messages ``user`` can still see in this thread."""
+        cleared = self.cleared_at_for(user)
+        rows = self.messages.all()
+        return rows if cleared is None else rows.filter(created_at__gt=cleared)
+
 
 class DirectMessage(models.Model):
     conversation = models.ForeignKey(
@@ -80,19 +103,36 @@ class DirectMessage(models.Model):
     sender = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_direct_messages"
     )
-    body = models.TextField()
+    body = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     # When the *other* party read it. Null means still unread by them; a message
     # is never unread for its own sender.
     read_at = models.DateTimeField(null=True, blank=True)
+    # Set when the sender corrected the text; the UI marks the bubble "edited"
+    # so the other person is never shown a silently rewritten message.
+    edited_at = models.DateTimeField(null=True, blank=True)
+    # Retracted by its sender. The row survives as a tombstone so the thread
+    # still shows that something was said and withdrawn, but ``body`` is emptied
+    # on deletion — we don't log message contents anywhere else, and keeping the
+    # text of a retracted message would be the one place that we did.
+    deleted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ("created_at",)
         indexes = [models.Index(fields=["conversation", "created_at"])]
 
     def __str__(self) -> str:
-        return f"{self.sender_id}: {self.body[:40]}"
+        return f"{self.sender_id}: {self.body[:40] if not self.deleted_at else '(deleted)'}"
 
     @property
     def recipient(self):
         return self.conversation.other_party(self.sender)
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    def soft_delete(self) -> None:
+        self.deleted_at = timezone.now()
+        self.body = ""
+        self.save(update_fields=["deleted_at", "body"])
