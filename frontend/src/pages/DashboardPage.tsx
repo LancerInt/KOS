@@ -64,6 +64,25 @@ const STATUS_UI: Record<DurationStatus, { label: string; fg: string; bg: string;
 };
 
 const ORDER: Record<DurationStatus, number> = { due: 0, ending_soon: 1, active: 2, none: 3, completed: 4 };
+
+/** Every value a filter chip can hold, so a saved view restoring a stale or
+ *  hand-edited config can't seat one the UI has no name for. */
+const FILTERS: Filter[] = ["all", "due", "ending_soon", "active", "none", "completed", "blocked", "needs_decision"];
+const asFilter = (value: unknown): Filter =>
+  FILTERS.includes(value as Filter) ? (value as Filter) : "all";
+
+/** The human name for the active filter.
+ *
+ *  `Filter` is wider than `DurationStatus` — it also carries the two review
+ *  states — so this cannot be a plain `STATUS_UI` lookup. It used to be one,
+ *  behind an `as DurationStatus` cast, which type-checked and then read
+ *  `undefined.label` the moment anyone filtered by "Needs decision". Narrowing
+ *  instead of casting means the compiler now catches the next filter added. */
+function filterLabel(filter: Filter): string {
+  if (filter === "all") return "All";
+  if (filter === "blocked" || filter === "needs_decision") return REVIEW_UI[filter].label;
+  return STATUS_UI[filter].label;
+}
 const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 
 /** Compact "time since" for overdue items: "3h", "2d 4h", "45m". */
@@ -183,7 +202,7 @@ export default function DashboardPage() {
 
   const applyView = (v: SavedView) => {
     const c = v.config as Partial<DashConfig>;
-    setFilter((c.filter as Filter) ?? "all");
+    setFilter(asFilter(c.filter));
     setQuery(typeof c.query === "string" ? c.query : "");
     setSort((c.sort as SortKey) ?? "urgency");
     setLayout((c.layout as Layout) ?? "list");
@@ -505,7 +524,7 @@ export default function DashboardPage() {
             onKeyDown={(e) => { if (e.key === "Enter") saveCurrent(); }}
             placeholder="e.g. Overdue this week" error={Boolean(saveErr)} helperText={saveErr || " "} />
           <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", mt: 0.5 }} useFlexGap>
-            <ViewChipHint label={`Status: ${filter === "all" ? "All" : STATUS_UI[filter as DurationStatus].label}`} />
+            <ViewChipHint label={`Status: ${filterLabel(filter)}`} />
             {query.trim() && <ViewChipHint label={`Search: "${query.trim()}"`} />}
             <ViewChipHint label={`Sort: ${sort}`} />
             <ViewChipHint label={`Layout: ${layout}`} />
