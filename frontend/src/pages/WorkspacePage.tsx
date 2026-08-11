@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton, Paper, Stack, TextField, Tooltip, Typography,
+  IconButton, MenuItem, Paper, Stack, TextField, Tooltip, Typography,
 } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
@@ -18,7 +19,10 @@ import { InlineRename } from "../features/workspaces/InlineRename";
 import BuildWithAiDialog from "../features/ai/BuildWithAiDialog";
 import MembersDialog from "../features/workspaces/MembersDialog";
 import { listMembers, workspaceMemberScope } from "../features/workspaces/workspaceMembersApi";
-import { listProjects, createProject, deleteProject, type WorkspaceProject } from "../features/workspaces/projectsApi";
+import {
+  listProjects, createProject, deleteProject, addMonths, repeatLabel,
+  REPEAT_OPTIONS, type WorkspaceProject, type RepeatFrequency,
+} from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
 import { archiveWorkspace, updateWorkspace } from "../features/workspaces/workspacesApi";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
@@ -33,6 +37,9 @@ function progressPct(p: WorkspaceProject): number {
   if (d.status === "completed" || d.status === "due") return 100;
   return d.pct ?? 0;
 }
+
+const repeatMonths = (f: RepeatFrequency): number =>
+  REPEAT_OPTIONS.find((o) => o.value === f)?.months ?? 0;
 
 /** Which summary tile is driving the project grid. */
 type TileFilter = "all" | "due" | "in_progress";
@@ -75,6 +82,13 @@ export default function WorkspacePage() {
   const [membersOpen, setMembersOpen] = useState(false);
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [tile, setTile] = useState<TileFilter>("all");
+  const [newRepeat, setNewRepeat] = useState<RepeatFrequency>("");
+
+  const nextRunPreview = useMemo(() => {
+    if (!newRepeat || !newStart) return "";
+    return addMonths(newStart, repeatMonths(newRepeat))
+      .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  }, [newRepeat, newStart]);
   // Stable across renders — the dialog reloads whenever its scope identity changes.
   const memberScope = useMemo(() => workspaceMemberScope(ws?.key ?? ""), [ws?.key]);
 
@@ -120,12 +134,20 @@ export default function WorkspacePage() {
     setNewName("");
     setNewStart(localNowInput());
     setNewEnd("");
+    setNewRepeat("");
     setNewOpen(true);
   };
 
   const saveProject = async () => {
     const name = newName.trim();
     if (!name) return;
+    // The schedule is measured from the start date, so a repeat without one has
+    // nothing to count from. Caught here as well as server-side, to say so
+    // before the round trip rather than after it.
+    if (newRepeat && !newStart) {
+      setNewErr("A repeating project needs a start date — the schedule counts from it.");
+      return;
+    }
     setCreating(true);
     setNewErr("");
     try {
@@ -136,6 +158,7 @@ export default function WorkspacePage() {
         ? {
             start_at: new Date(newStart).toISOString(),
             ...(newEnd ? { end_at: new Date(newEnd).toISOString() } : {}),
+            ...(newRepeat ? { repeat_frequency: newRepeat } : {}),
           }
         : undefined;
       const created = await createProject(ws.key, name, extra);
@@ -396,6 +419,14 @@ export default function WorkspacePage() {
                     <Typography sx={{ fontFamily: monoFont, fontSize: 9.5, color: tokens.text3, mt: 0.35 }} noWrap>
                       {p.created_by_name || "—"} · {p.created_at.slice(0, 10)}
                     </Typography>
+                    {p.repeat_frequency && (
+                      <Stack direction="row" alignItems="center" spacing={0.4} sx={{ mt: 0.5 }}>
+                        <AutorenewRoundedIcon sx={{ fontSize: 12, color: acc.ink }} />
+                        <Typography sx={{ fontSize: 10, fontWeight: 600, color: acc.ink }}>
+                          {repeatLabel(p.repeat_frequency)}
+                        </Typography>
+                      </Stack>
+                    )}
                     <Box sx={{ height: 6, borderRadius: 3, bgcolor: tokens.line, overflow: "hidden", mt: 1 }}>
                       <Box sx={{ width: `${pct}%`, height: "100%", bgcolor: acc.base, transition: "width .3s" }} />
                     </Box>
@@ -445,6 +476,24 @@ export default function WorkspacePage() {
             <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>
               Set a date &amp; time. The end is optional — add one to get reminders as it nears, and if it's overdue.
             </Typography>
+
+            <TextField select size="small" label="Repeats" value={newRepeat} fullWidth
+              onChange={(e) => setNewRepeat(e.target.value as RepeatFrequency)}>
+              {REPEAT_OPTIONS.map((o) => (
+                <MenuItem key={o.value || "once"} value={o.value}>{o.label}</MenuItem>
+              ))}
+            </TextField>
+            {newRepeat && (
+              <Box sx={{ px: 1.25, py: 1, borderRadius: "8px", bgcolor: acc.soft }}>
+                <Typography sx={{ fontSize: 11.5, color: acc.ink }}>
+                  {newStart
+                    ? <>When this one is approved, the next <b>{repeatLabel(newRepeat).toLowerCase()}</b> run
+                        starts <b>{nextRunPreview}</b> — same date, {repeatMonths(newRepeat)} month
+                        {repeatMonths(newRepeat) === 1 ? "" : "s"} on.</>
+                    : <>Add a start date — the repeat schedule counts from it.</>}
+                </Typography>
+              </Box>
+            )}
             {newErr && <Typography sx={{ fontSize: 12.5, color: tokens.attn }}>{newErr}</Typography>}
           </Stack>
         </DialogContent>

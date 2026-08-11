@@ -118,12 +118,15 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             "start_at", "end_at", "completed_at", "duration",
             "review_state", "review_reason", "submitted_at", "submitted_by_name",
             "reviewed_at", "reviewed_by_name", "submitted_by_me", "can_approve",
+            "repeat_frequency", "next_occurrence",
         )
         # The workflow stamps move only through the submit / approve / reject
-        # actions — never a plain PATCH.
+        # actions — never a plain PATCH. The chain links are likewise set by
+        # completion, not by editing; only the frequency itself is writable.
         read_only_fields = (
             "created_by", "created_at", "completed_at",
             "review_reason", "submitted_at", "reviewed_at",
+            "next_occurrence",
         )
 
     def get_review_state(self, obj) -> str:
@@ -211,7 +214,27 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
         if provided_name:
             attrs["name"] = name
         self._check_window(attrs)
+        self._check_repeat(attrs)
         return attrs
+
+    def _check_repeat(self, attrs):
+        """A repeating project has to know when it starts.
+
+        The cadence is measured from ``start_at``, so a repeat without one would
+        be a series with nothing to count from, and its successor would anchor
+        to whenever someone happened to approve it. Judged on the merged state,
+        so a PATCH that sends only the frequency is still checked against the
+        start date already stored — and clearing the start of a repeating
+        project is refused from the other direction.
+        """
+        instance = self.instance
+        frequency = attrs["repeat_frequency"] if "repeat_frequency" in attrs else (
+            instance.repeat_frequency if instance else "")
+        start = attrs["start_at"] if "start_at" in attrs else (
+            instance.start_at if instance else None)
+        if frequency and not start:
+            raise serializers.ValidationError(
+                {"start_at": "A repeating project needs a start date — the schedule counts from it."})
 
 
 class RecordAttachmentSerializer(serializers.ModelSerializer):

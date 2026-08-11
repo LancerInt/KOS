@@ -5,6 +5,34 @@ export type DurationStatus = "none" | "active" | "ending_soon" | "due" | "comple
 /** A post-completion workflow flag, separate from the timed duration status. */
 export type ReviewState = "" | "blocked" | "needs_decision";
 
+/** How often a repeating job comes round. "" = a one-off. */
+export type RepeatFrequency = "" | "monthly" | "quarterly" | "yearly";
+
+/** Labels and the month step behind each frequency, for the pickers and for
+ *  previewing when the next turn would start. */
+export const REPEAT_OPTIONS: { value: RepeatFrequency; label: string; months: number }[] = [
+  { value: "", label: "Doesn't repeat", months: 0 },
+  { value: "monthly", label: "Monthly", months: 1 },
+  { value: "quarterly", label: "Quarterly", months: 3 },
+  { value: "yearly", label: "Yearly", months: 12 },
+];
+
+export const repeatLabel = (f: RepeatFrequency): string =>
+  REPEAT_OPTIONS.find((o) => o.value === f)?.label ?? "Doesn't repeat";
+
+/** The same clamping the server does, so the UI can preview the next start
+ *  without a round trip: keep the day where the month has one, else its last. */
+export function addMonths(iso: string, months: number): Date {
+  const d = new Date(iso);
+  const target = new Date(d);
+  target.setDate(1);
+  target.setMonth(d.getMonth() + months);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(d.getDate(), lastDay));
+  target.setHours(d.getHours(), d.getMinutes(), 0, 0);
+  return target;
+}
+
 export interface Duration {
   status: DurationStatus;
   start_at?: string;      // precise start datetime (ISO)
@@ -49,6 +77,11 @@ export interface WorkspaceProject {
   can_approve: boolean;
   reviewed_at: string | null;
   reviewed_by_name: string;
+  /** How often this job comes round. "" = one-off. A repeating project always
+   *  has a start date — the schedule counts from it. */
+  repeat_frequency: RepeatFrequency;
+  /** The project this one started when it was approved, if it has been. */
+  next_occurrence: number | null;
 }
 
 export const listProjects = (workspace: string) =>
@@ -65,12 +98,15 @@ export const getProject = (id: number) =>
 export const createProject = (
   workspace: string,
   name: string,
-  extra?: { start_at?: string; end_at?: string },
+  extra?: { start_at?: string; end_at?: string; repeat_frequency?: RepeatFrequency },
 ) => api.post<WorkspaceProject>("/workspace-projects/", { workspace, name, ...(extra ?? {}) }).then((r) => r.data);
 
 export const updateProject = (
   id: number,
-  patch: { name?: string; start_at?: string | null; end_at?: string | null },
+  patch: {
+    name?: string; start_at?: string | null; end_at?: string | null;
+    repeat_frequency?: RepeatFrequency;
+  },
 ) => api.patch<WorkspaceProject>(`/workspace-projects/${id}/`, patch).then((r) => r.data);
 
 /** Toggle completed state (closes / reopens the duration loop). */

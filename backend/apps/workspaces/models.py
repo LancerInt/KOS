@@ -112,6 +112,33 @@ class WorkspaceProject(models.Model):
     duration_notified_at = models.DateTimeField(null=True, blank=True)
     # Which staged reminders (due-7 / due-1 / due / overdue) have already fired.
     reminders_sent = models.JSONField(default=list, blank=True)
+
+    # --- Recurrence ------------------------------------------------------- #
+    # A repeating job (a quarterly return, an annual renewal) is modelled as a
+    # chain of ordinary projects rather than one project that reopens: each turn
+    # keeps its own records, dates and approval trail, which is the whole point
+    # of filing the same thing again next quarter. The successor is created when
+    # the current one is approved — see ``recurrence.spawn_successor``.
+    REPEAT_NONE = ""
+    REPEAT_MONTHLY = "monthly"
+    REPEAT_QUARTERLY = "quarterly"
+    REPEAT_YEARLY = "yearly"
+    REPEAT_CHOICES = [
+        (REPEAT_NONE, "Does not repeat"),
+        (REPEAT_MONTHLY, "Monthly"),
+        (REPEAT_QUARTERLY, "Quarterly"),
+        (REPEAT_YEARLY, "Yearly"),
+    ]
+    #: How many months each frequency advances the start date.
+    REPEAT_MONTHS = {REPEAT_MONTHLY: 1, REPEAT_QUARTERLY: 3, REPEAT_YEARLY: 12}
+
+    repeat_frequency = models.CharField(
+        max_length=12, choices=REPEAT_CHOICES, default=REPEAT_NONE, blank=True)
+    # The project this one spawned on completion. Doubles as the guard against
+    # spawning twice — approve/reopen/approve must not fork the chain.
+    next_occurrence = models.OneToOneField(
+        "self", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="previous_occurrence")
     # Post-completion workflow flag, orthogonal to the timed duration status: a
     # project can be marked blocked, or escalated for a management decision.
     REVIEW_NONE = ""

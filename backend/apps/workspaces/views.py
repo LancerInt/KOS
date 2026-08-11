@@ -34,6 +34,7 @@ from .access import (
     effective_access, is_supervisor, project_scope_q,
 )
 from .export import build_workbook, project_rows
+from .recurrence import spawn_successor
 from .models import (
     ARCHIVE_TTL_DAYS, Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
     WorkspaceProjectMember, WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection,
@@ -865,12 +866,21 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         who = request.user.get_full_name() or request.user.username
         self._clear_review_requests(project)   # decided → clear every approver's queue
         recipient = project.submitted_by or project.created_by
+
+        # A repeating project hands over to its next turn here — completion is
+        # the only thing that starts one, so this is the only place it can be.
+        successor = spawn_successor(project, actor=request.user)
+
         notify(recipient, event=NotificationEvent.REVIEW_DECISION,
                title=f"Approved: {project.name}",
-               body=f"{who} approved “{project.name}”. It's now complete.",
+               body=(f"{who} approved “{project.name}”. It's now complete."
+                     + (f" The next one starts {successor.start_at:%d %b %Y}." if successor else "")),
                url=self._project_url(project))
         record(action=AuditAction.STATUS_CHANGE, obj=project,
                new_value={**_proj_val(project), "approved": True}, request=request)
+        if successor is not None:
+            record(action=AuditAction.CREATE, obj=successor,
+                   new_value={**_proj_val(successor), "repeated_from": project.id}, request=request)
         return Response(self.get_serializer(project).data)
 
     @action(detail=True, methods=["post"])
