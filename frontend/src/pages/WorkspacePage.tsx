@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   IconButton, Paper, Stack, TextField, Tooltip, Typography,
 } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
@@ -33,6 +33,24 @@ function progressPct(p: WorkspaceProject): number {
   if (d.status === "completed" || d.status === "due") return 100;
   return d.pct ?? 0;
 }
+
+/** Which summary tile is driving the project grid. */
+type TileFilter = "all" | "due" | "in_progress";
+
+/** One definition per slice, so a tile's count and the grid it opens can never
+ *  disagree — both run through this. */
+const matchesTile = (tile: TileFilter) => (p: WorkspaceProject): boolean => {
+  if (tile === "due") return p.duration.status === "due";
+  if (tile === "in_progress") return p.duration.status === "active" || p.duration.status === "ending_soon";
+  return true;
+};
+
+const TILE_HEADING: Record<TileFilter, string> = {
+  all: "Projects", due: "Overdue", in_progress: "In progress",
+};
+const TILE_EMPTY: Record<TileFilter, string> = {
+  all: "here", due: "overdue", in_progress: "in progress",
+};
 const localNowInput = () => {
   const d = new Date(); const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -56,6 +74,7 @@ export default function WorkspacePage() {
   const [buildAiOpen, setBuildAiOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [tile, setTile] = useState<TileFilter>("all");
   // Stable across renders — the dialog reloads whenever its scope identity changes.
   const memberScope = useMemo(() => workspaceMemberScope(ws?.key ?? ""), [ws?.key]);
 
@@ -238,10 +257,13 @@ export default function WorkspacePage() {
     );
   }
 
-  const overdueCount = (projects ?? []).filter((p) => p.duration.status === "due").length;
-  const inProgressCount = (projects ?? []).filter(
-    (p) => p.duration.status === "active" || p.duration.status === "ending_soon").length;
+  const overdueCount = (projects ?? []).filter(matchesTile("due")).length;
+  const inProgressCount = (projects ?? []).filter(matchesTile("in_progress")).length;
   const recordCount = (projects ?? []).reduce((s, p) => s + p.record_count, 0);
+  // The grid shows whichever slice the active tile names. Clicking the live
+  // tile again clears it, so the tiles are a filter you can always get out of.
+  const shown = (projects ?? []).filter(matchesTile(tile));
+  const pickTile = (next: TileFilter) => setTile((cur) => (cur === next ? "all" : next));
 
   return (
     <Box sx={{ px: 3, py: 2.5 }}>
@@ -249,9 +271,15 @@ export default function WorkspacePage() {
 
       {projects && projects.length > 0 && (
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", sm: "repeat(4,1fr)" }, gap: 1.25, mt: 2 }}>
-          <StatTile label="Projects" value={projects.length} accent={acc} />
-          <StatTile label="Overdue" value={overdueCount} accent={acc} attn />
-          <StatTile label="In progress" value={inProgressCount} accent={acc} />
+          <StatTile label="Projects" value={projects.length} accent={acc}
+            active={tile === "all"} onClick={() => setTile("all")} />
+          <StatTile label="Overdue" value={overdueCount} accent={acc} attn
+            active={tile === "due"} onClick={() => pickTile("due")} />
+          <StatTile label="In progress" value={inProgressCount} accent={acc}
+            active={tile === "in_progress"} onClick={() => pickTile("in_progress")} />
+          {/* Records counts a different thing — records, not projects — so it
+              can't name a slice of this grid. Left inert rather than wired to
+              a filter whose result wouldn't match the number on the tile. */}
           <StatTile label="Records" value={recordCount} accent={acc} />
         </Box>
       )}
@@ -259,8 +287,13 @@ export default function WorkspacePage() {
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 2.5, mb: 1.75 }}>
         <Stack direction="row" alignItems="center" spacing={1}>
           <Typography sx={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600 }}>
-            Projects{projects ? ` · ${projects.length}` : ""}
+            {TILE_HEADING[tile]}{projects ? ` · ${shown.length}` : ""}
           </Typography>
+          {tile !== "all" && (
+            <Chip label="Clear" size="small" onDelete={() => setTile("all")} onClick={() => setTile("all")}
+              sx={{ height: 20, fontSize: 10.5, bgcolor: acc.soft, color: acc.ink,
+                "& .MuiChip-deleteIcon": { fontSize: 14, color: acc.ink } }} />
+          )}
           {!canEdit && (
             <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: tokens.text3 }}>
               <VisibilityRoundedIcon sx={{ fontSize: 14 }} />
@@ -298,10 +331,22 @@ export default function WorkspacePage() {
         </Paper>
       )}
 
+      {/* A filter that matches nothing is not the same as an empty workspace,
+          and must not read like one — the way out is the point. */}
+      {projects && projects.length > 0 && shown.length === 0 && (
+        <Paper sx={{ p: 4, textAlign: "center", borderRadius: "10px", borderStyle: "dashed" }}>
+          <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Nothing {TILE_EMPTY[tile]}</Typography>
+          <Typography color="text.secondary" sx={{ fontSize: 14, mb: 2 }}>
+            {ws.label} has {projects.length} project{projects.length === 1 ? "" : "s"}, none in this state.
+          </Typography>
+          <Button variant="outlined" size="small" onClick={() => setTile("all")}>Show all projects</Button>
+        </Paper>
+      )}
+
       {/* Aisle — compact project cards on a shelf rail */}
-      {projects && projects.length > 0 && (
+      {projects && shown.length > 0 && (
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "repeat(3,1fr)", lg: "repeat(4,1fr)" }, gap: 2 }}>
-          {projects.map((p) => {
+          {shown.map((p) => {
             const dot = STATUS_DOT[p.duration.status];
             const pct = progressPct(p);
             const sections = builtinCount + p.section_count;
@@ -415,12 +460,37 @@ export default function WorkspacePage() {
 }
 
 /** A small at-a-glance metric on the workspace landing (projects / overdue / …). */
-function StatTile({ label, value, accent, attn }: {
-  label: string; value: number; accent: { ink: string }; attn?: boolean;
+/** A tile is clickable only when it names a slice of the project grid. Without
+ *  ``onClick`` it stays a plain readout — no pointer, no hover, no focus ring —
+ *  so nothing looks pressable that isn't. */
+function StatTile({ label, value, accent, attn, active, onClick }: {
+  label: string; value: number; accent: { ink: string; base: string; soft: string };
+  attn?: boolean; active?: boolean; onClick?: () => void;
 }) {
   const hot = Boolean(attn) && value > 0;
+  const edge = hot ? tokens.attn : accent.base;
   return (
-    <Paper sx={{ p: 1.5, borderRadius: "10px", border: `1px solid ${tokens.line}`, display: "flex", flexDirection: "column", gap: 0.3 }}>
+    <Paper
+      onClick={onClick}
+      // Role + key handling rather than a real <button>, which would drag in
+      // the UA button reset and fight the Paper surface.
+      {...(onClick ? {
+        role: "button" as const,
+        tabIndex: 0,
+        "aria-pressed": Boolean(active),
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); }
+        },
+      } : {})}
+      sx={{ p: 1.5, borderRadius: "10px", display: "flex", flexDirection: "column", gap: 0.3,
+        border: active ? `1.5px solid ${edge}` : `1px solid ${tokens.line}`,
+        boxShadow: active ? `0 0 0 3px ${edge}22` : "none",
+        ...(onClick && {
+          cursor: "pointer",
+          transition: "border-color .16s, box-shadow .16s, transform .12s",
+          "&:hover": { transform: "translateY(-1px)", boxShadow: `0 8px 22px rgba(20,22,29,.08)${active ? `, 0 0 0 3px ${edge}22` : ""}` },
+          "&:focus-visible": { outline: `2px solid ${edge}`, outlineOffset: 2 },
+        }) }}>
       <Typography sx={{ fontFamily: '"Manrope Variable"', fontSize: 24, fontWeight: 700, lineHeight: 1,
         color: hot ? tokens.attn : value > 0 ? accent.ink : tokens.text3 }}>{value}</Typography>
       <Typography sx={{ fontSize: 11.5, color: tokens.text2 }}>{label}</Typography>
