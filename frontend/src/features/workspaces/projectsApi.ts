@@ -41,6 +41,9 @@ export interface WorkspaceProject {
   review_reason: string;          // why it was sent back
   submitted_at: string | null;
   submitted_by_name: string;
+  /** True when *you* are the one who submitted it — used to enforce no
+   *  self-approval (your client won't offer Approve / Send back). */
+  submitted_by_me: boolean;
   reviewed_at: string | null;
   reviewed_by_name: string;
 }

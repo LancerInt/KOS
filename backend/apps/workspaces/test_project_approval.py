@@ -18,6 +18,11 @@ def approver(db):  # superuser → IT/Management-style approver
 
 
 @pytest.fixture
+def approver2(db):  # a second approver, so someone other than the submitter can sign off
+    return User.objects.create_superuser(username="root2", email="root2@x.io", password="pw")
+
+
+@pytest.fixture
 def owner(db):
     u = User.objects.create_user(username="owner", email="owner@x.io", password="pw")
     WorkspaceMember.objects.create(user=u, workspace=WS, access="edit")
@@ -127,15 +132,31 @@ def test_deleting_a_project_clears_its_approval_requests(owner, approver, projec
     assert not _requests(project).exists()
 
 
-def test_completing_clears_any_pending_review(owner, approver, project):
-    # submit → sent back (blocked) → then completed directly: no stale flag remains,
-    # so the client never offers Resubmit on a done project.
-    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
-    client(approver).post(f"/api/workspace-projects/{project.id}/reject/", {"reason": "x"}, format="json")
-    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")   # back to pending
-    r = client(approver).post(f"/api/workspace-projects/{project.id}/complete/")
-    assert r.status_code == 200, r.data
-    assert r.data["review_state"] == ""            # serialised as no-review once done
+def test_you_cannot_approve_your_own_submission(approver, approver2, project):
+    # An approver may submit (they can edit), but must not sign off their own work.
+    client(approver).post(f"/api/workspace-projects/{project.id}/submit/")
+    r = client(approver).post(f"/api/workspace-projects/{project.id}/approve/")
+    assert r.status_code == 403
     project.refresh_from_db()
-    assert project.review_state == "" and project.completed_at is not None
-    assert not _requests(project).exists()         # completing settled the request
+    assert project.completed_at is None            # still awaiting a *different* approver
+
+
+def test_a_different_approver_can_approve(approver, approver2, project):
+    client(approver).post(f"/api/workspace-projects/{project.id}/submit/")
+    r = client(approver2).post(f"/api/workspace-projects/{project.id}/approve/")
+    assert r.status_code == 200, r.data
+    project.refresh_from_db()
+    assert project.completed_at is not None
+
+
+def test_complete_endpoint_only_reopens(owner, approver, project):
+    # You can't self-complete via /complete/ — that path only reopens a done one.
+    r = client(owner).post(f"/api/workspace-projects/{project.id}/complete/")
+    assert r.status_code == 400
+    # Take it through approval to Completed, then /complete/ reopens it.
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
+    client(approver).post(f"/api/workspace-projects/{project.id}/approve/")
+    r = client(owner).post(f"/api/workspace-projects/{project.id}/complete/")
+    assert r.status_code == 200, r.data
+    project.refresh_from_db()
+    assert project.completed_at is None            # reopened

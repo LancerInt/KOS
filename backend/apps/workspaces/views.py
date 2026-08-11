@@ -776,27 +776,33 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        """Toggle a project's completed state (closes the duration loop)."""
+        """Reopen a completed project. Completing is no longer done here — a
+        project is marked done only when an approver signs off (see ``approve``),
+        so this endpoint just reopens one that was closed."""
         project = self.get_object()
         _require_project_edit(request.user, project)
-        if project.completed_at:
-            project.completed_at = None
-            project.duration_notified_at = None
-            project.reminders_sent = []          # reopened → reminders may fire again
-        else:
-            project.completed_at = timezone.now()
-            project.review_state = WorkspaceProject.REVIEW_NONE   # done → no pending review
-            project.review_reason = ""
-            self._clear_review_requests(project)   # completing settles any pending request
-        project.save(update_fields=["completed_at", "duration_notified_at", "reminders_sent", "review_state", "review_reason"])
+        if not project.completed_at:
+            raise ValidationError(
+                {"detail": "Submit this for approval — a project is completed once an approver signs off."})
+        project.completed_at = None
+        project.duration_notified_at = None
+        project.reminders_sent = []              # reopened → reminders may fire again
+        project.save(update_fields=["completed_at", "duration_notified_at", "reminders_sent"])
         record(action=AuditAction.STATUS_CHANGE, obj=project,
-               new_value={**_proj_val(project), "completed": bool(project.completed_at)}, request=request)
+               new_value={**_proj_val(project), "completed": False}, request=request)
         return Response(self.get_serializer(project).data)
 
     # ---- Approval workflow: submit → approve / send back ------------------- #
     def _require_approver(self, user):
         if not is_supervisor(user):
             raise PermissionDenied("Only IT Team or Management can approve or send back a project.")
+
+    def _require_other_approver(self, user, project):
+        """Sign-off must come from someone other than the submitter — no one
+        approves their own work, even an approver who submitted it."""
+        self._require_approver(user)
+        if project.submitted_by_id and project.submitted_by_id == user.id:
+            raise PermissionDenied("You can't approve your own submission — another approver must sign off.")
 
     def _project_url(self, project) -> str:
         return f"/workspaces/{project.workspace}/projects/{project.id}"
@@ -841,7 +847,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         """Approver signs off → the project is marked completed; owner notified."""
         project = self.get_object()
-        self._require_approver(request.user)
+        self._require_other_approver(request.user, project)
         project.completed_at = timezone.now()
         project.review_state = WorkspaceProject.REVIEW_NONE
         project.review_reason = ""
@@ -864,7 +870,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
     def reject(self, request, pk=None):
         """Approver sends the project back with a reason → owner notified."""
         project = self.get_object()
-        self._require_approver(request.user)
+        self._require_other_approver(request.user, project)
         reason = (request.data.get("reason") or "").strip()
         if not reason:
             raise ValidationError({"reason": "Please describe what needs to change."})

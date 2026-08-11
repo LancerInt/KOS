@@ -86,7 +86,7 @@ function toLocalInput(iso?: string | null): string {
  */
 export function DurationPanel({
   duration, completedAt, canEdit, allowSet, onSet, onToggleComplete,
-  reviewState = "", reviewReason = "", canApprove = false, onSubmit, onApprove, onReject,
+  reviewState = "", reviewReason = "", canApprove = false, submittedByMe = false, onSubmit, onApprove, onReject,
 }: {
   duration: Duration;
   completedAt?: string | null;
@@ -98,6 +98,8 @@ export function DurationPanel({
   reviewState?: "" | "needs_decision" | "blocked";
   reviewReason?: string;
   canApprove?: boolean;
+  /** You submitted this — so you can't be the one who approves it. */
+  submittedByMe?: boolean;
   onSubmit?: () => Promise<unknown> | void;
   onApprove?: () => Promise<unknown> | void;
   onReject?: () => Promise<unknown> | void;
@@ -133,25 +135,23 @@ export function DurationPanel({
     try { await fn(); } finally { setBusy(false); }
   };
   const completed = duration.status === "completed";
-  // The worker (an editor who isn't an approver) submits / resubmits; an
-  // approver (IT/Management) approves or sends back. A completed project has no
-  // pending review, so it only offers Reopen.
-  const worker = canEdit && !canApprove;
+  // Nobody completes their own work: everyone who can edit *submits*, and a
+  // *different* approver (IT/Management) signs off or sends it back. The
+  // submitter — even if they're an approver — just sees "Awaiting approval".
   const review = completed ? "" : reviewState;
 
   const actions = () => {
     if (completed) return canEdit ? <Button size="small" variant="outlined" onClick={toggle} disabled={busy}>Reopen</Button> : null;
     if (review === "needs_decision")
-      return canApprove ? (
+      return canApprove && !submittedByMe ? (
         <Stack direction="row" spacing={1}>
           <Button size="small" variant="contained" onClick={run(onApprove)} disabled={busy}>Approve</Button>
           <Button size="small" variant="outlined" onClick={run(onReject)} disabled={busy}
             sx={{ color: tokens.text2, borderColor: tokens.line }}>Send back</Button>
         </Stack>
       ) : null;
-    if (review === "blocked") return worker ? <Button size="small" variant="contained" onClick={run(onSubmit)} disabled={busy}>Resubmit</Button> : null;
-    if (canApprove) return <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={toggle} disabled={busy}>Mark complete</Button>;
-    return worker ? <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={run(onSubmit)} disabled={busy}>Submit for approval</Button> : null;
+    if (review === "blocked") return canEdit ? <Button size="small" variant="contained" onClick={run(onSubmit)} disabled={busy}>Resubmit</Button> : null;
+    return canEdit ? <Button size="small" variant={duration.status === "due" ? "contained" : "outlined"} onClick={run(onSubmit)} disabled={busy}>Submit for approval</Button> : null;
   };
 
   return (

@@ -331,6 +331,7 @@ export default function WorkspaceProjectPage() {
             reviewState={project.review_state}
             reviewReason={project.review_reason}
             canApprove={!!mine?.is_admin}
+            submittedByMe={project.submitted_by_me}
             onSubmit={() => submitProject(pid).then(setProject)}
             onApprove={() => approveProject(pid).then(setProject)}
             onReject={() => {

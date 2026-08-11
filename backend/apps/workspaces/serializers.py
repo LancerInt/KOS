@@ -105,6 +105,7 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
     submitted_by_name = serializers.SerializerMethodField()
     reviewed_by_name = serializers.SerializerMethodField()
     review_state = serializers.SerializerMethodField()
+    submitted_by_me = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkspaceProject
@@ -114,7 +115,7 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
             "section_count", "record_count", "member_count",
             "start_at", "end_at", "completed_at", "duration",
             "review_state", "review_reason", "submitted_at", "submitted_by_name",
-            "reviewed_at", "reviewed_by_name",
+            "reviewed_at", "reviewed_by_name", "submitted_by_me",
         )
         # The workflow stamps move only through the submit / approve / reject
         # actions — never a plain PATCH.
@@ -132,6 +133,12 @@ class WorkspaceProjectSerializer(serializers.ModelSerializer):
     def get_submitted_by_name(self, obj) -> str:
         u = obj.submitted_by
         return (u.get_full_name() or u.username) if u else ""
+
+    def get_submitted_by_me(self, obj) -> bool:
+        # Drives "no self-approval" in the UI: the person who submitted can't be
+        # the one who approves it, so their client hides Approve / Send back.
+        req = self.context.get("request")
+        return bool(req and obj.submitted_by_id and obj.submitted_by_id == req.user.id)
 
     def get_reviewed_by_name(self, obj) -> str:
         u = obj.reviewed_by

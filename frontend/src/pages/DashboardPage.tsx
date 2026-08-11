@@ -269,7 +269,13 @@ export default function DashboardPage() {
   const dropTo = (p: WorkspaceProject, col: DurationStatus) => {
     if (!canEdit(p)) return;
     const isDone = p.duration.status === "completed";
-    if (col === "completed" ? !isDone : isDone) toggleComplete(p); // drop into Completed → close; out of it → reopen
+    // Completion runs through approval now: dropping onto Completed submits for
+    // sign-off (unless already done or already in review); dragging out reopens.
+    if (col === "completed") {
+      if (!isDone && !p.review_state) submitForApproval(p);
+    } else if (isDone) {
+      toggleComplete(p);
+    }
   };
   const dateStr = new Date().toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).replace(",", " ·");
 
@@ -427,7 +433,7 @@ export default function DashboardPage() {
               ) : (
                 <Stack spacing={dense ? 0.75 : 1.25}>
                   {listShown.map((p) => (
-                    <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} canApprove={canApprove} onOpen={() => openWorkspace(p)} onComplete={() => toggleComplete(p)}
+                    <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} canApprove={canApprove} onOpen={() => openWorkspace(p)}
                       onSubmit={() => submitForApproval(p)} onApprove={() => approve(p)} onReject={() => reject(p)} />
                   ))}
                 </Stack>
@@ -588,18 +594,17 @@ function ReviewBadge({ state, reason }: { state: "blocked" | "needs_decision"; r
   return reason ? <Tooltip title={reason}>{badge}</Tooltip> : badge;
 }
 
-function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onComplete, onSubmit, onApprove, onReject }: {
+function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onSubmit, onApprove, onReject }: {
   p: WorkspaceProject; dense: boolean; canEdit: boolean; canApprove: boolean;
-  onOpen: () => void; onComplete: () => void; onSubmit: () => void; onApprove: () => void; onReject: () => void;
+  onOpen: () => void; onSubmit: () => void; onApprove: () => void; onReject: () => void;
 }) {
   const ws = getWorkspace(p.workspace);
   const s = STATUS_UI[p.duration.status];
   const meta = durMeta(p);
   const isCompleted = p.duration.status === "completed";
-  // A completed project carries no pending review; the worker (an editor who
-  // isn't an approver) is who submits / resubmits — approvers approve.
+  // A completed project carries no pending review. Everyone who can edit submits;
+  // a *different* approver signs off — nobody approves their own submission.
   const review = !isCompleted && (p.review_state === "blocked" || p.review_state === "needs_decision") ? p.review_state : null;
-  const worker = canEdit && !canApprove;
   return (
     <Paper onClick={onOpen}
       sx={{ p: dense ? 1.25 : 1.75, borderRadius: "8px", cursor: "pointer", display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: `${dense ? 2 : 4}px 13px`, overflow: "hidden",
@@ -632,22 +637,18 @@ function ProjectCard({ p, dense, canEdit, canApprove, onOpen, onComplete, onSubm
         </Stack>
         <Stack className="qa" direction="row" spacing={0.5} sx={{ mt: 1 }} alignItems="center">
           <QuickAction icon={<LaunchRoundedIcon sx={{ fontSize: 14 }} />} label="Open" onClick={onOpen} />
-          {/* Awaiting approval → approvers decide */}
-          {review === "needs_decision" && canApprove && <>
+          {/* Awaiting approval → a *different* approver decides (not the submitter) */}
+          {review === "needs_decision" && canApprove && !p.submitted_by_me && <>
             <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Approve" onClick={onApprove} accent />
             <QuickAction icon={<BlockRoundedIcon sx={{ fontSize: 14 }} />} label="Send back" onClick={onReject} danger />
           </>}
-          {/* Sent back → the worker fixes and resubmits (not the approver) */}
-          {review === "blocked" && worker && (
+          {/* Sent back → whoever can edit fixes and resubmits */}
+          {review === "blocked" && canEdit && (
             <QuickAction icon={<SendRoundedIcon sx={{ fontSize: 14 }} />} label="Resubmit" onClick={onSubmit} primary />
           )}
-          {/* Normal → approvers complete directly; the worker submits for sign-off */}
-          {!review && !isCompleted && (
-            canApprove
-              ? (p.duration.status !== "none" &&
-                  <QuickAction icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />} label="Done" onClick={onComplete} accent />)
-              : (worker &&
-                  <QuickAction icon={<SendRoundedIcon sx={{ fontSize: 14 }} />} label="Submit" onClick={onSubmit} primary />)
+          {/* Normal → everyone who can edit submits for sign-off (no self-complete) */}
+          {!review && !isCompleted && canEdit && (
+            <QuickAction icon={<SendRoundedIcon sx={{ fontSize: 14 }} />} label="Submit" onClick={onSubmit} primary />
           )}
         </Stack>
       </Stack>
@@ -677,31 +678,33 @@ function QuickAction({ icon, label, onClick, accent, danger, primary }: {
 
 // The approval lifecycle rail. Duration (overdue / ending soon) still shows in
 // the status pill + time text; this rail tracks the sign-off flow instead.
-const STAGES = ["Started", "In progress", "Submitted", "Approval", "Blocked", "Completed"];
+// The happy path: Started → In progress → Submitted → Approval → Completed.
+// "Blocked" isn't a permanent stage — it only replaces the tail when a project
+// is actually sent back, so a normal project never shows a Blocked step.
+const STAGES_MAIN = ["Started", "In progress", "Submitted", "Approval", "Completed"];
+const STAGES_BLOCKED = ["Started", "In progress", "Submitted", "Approval", "Blocked"];
 
-/** A project's current lifecycle stage (index into STAGES) and its colour. */
-function railStage(p: WorkspaceProject): { cur: number; color: string } {
-  if (p.duration.status === "completed") return { cur: 5, color: "#2FA36B" };
-  if (p.review_state === "blocked") return { cur: 4, color: "#C7891B" };
-  if (p.review_state === "needs_decision") return { cur: 3, color: "#C0417A" };
-  if (p.duration.status === "none") return { cur: 0, color: tokens.kriya };
-  return { cur: 1, color: tokens.kriya };   // active / ending soon / due → In progress
+/** A project's lifecycle stages, its current index and colour. */
+function railStage(p: WorkspaceProject): { stages: string[]; cur: number; color: string } {
+  if (p.duration.status === "completed") return { stages: STAGES_MAIN, cur: 4, color: "#2FA36B" };
+  if (p.review_state === "blocked") return { stages: STAGES_BLOCKED, cur: 4, color: "#C7891B" };
+  if (p.review_state === "needs_decision") return { stages: STAGES_MAIN, cur: 3, color: "#C0417A" };
+  if (p.duration.status === "none") return { stages: STAGES_MAIN, cur: 0, color: tokens.kriya };
+  return { stages: STAGES_MAIN, cur: 1, color: tokens.kriya };   // active / ending soon / due → In progress
 }
 
 function StageRail({ p }: { p: WorkspaceProject }) {
-  const { cur, color } = railStage(p);
-  // The happy path reaches Completed without passing through Blocked, so a
-  // completed project lights every segment except Blocked.
-  const lit = (i: number) => (cur === 5 ? i <= 3 || i === 5 : i <= cur);
+  const { stages, cur, color } = railStage(p);
+  const lit = (i: number) => i <= cur;
   return (
     <Box>
       <Box sx={{ display: "flex", gap: 0.5 }}>
-        {STAGES.map((_, i) => (
+        {stages.map((_, i) => (
           <Box key={i} sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: lit(i) ? color : tokens.line, transition: "background-color .2s" }} />
         ))}
       </Box>
       <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
-        {STAGES.map((label, i) => (
+        {stages.map((label, i) => (
           <Typography key={label} sx={{ flex: 1, textAlign: "center", fontSize: 10, lineHeight: 1.2,
             color: i === cur ? color : tokens.text3, fontWeight: i === cur ? 700 : 400,
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</Typography>
