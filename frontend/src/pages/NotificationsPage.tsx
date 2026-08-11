@@ -8,12 +8,15 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import DoneAllRoundedIcon from "@mui/icons-material/DoneAllRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import RuleRoundedIcon from "@mui/icons-material/RuleRounded";
+import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedInRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 import {
   acknowledge, dismissNotification, getPreferences, listNotifications,
   markAllRead, markRead, updatePreferences, type Notification, type Preferences,
 } from "../features/notifications/notificationsApi";
+import { approveProject, rejectProject } from "../features/workspaces/projectsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { workspaceAccent } from "../features/workspaces/accent";
 import { tokens, monoFont } from "../theme";
@@ -26,6 +29,8 @@ const EVENT_META: Record<string, EventMeta> = {
   due_soon: { Icon: AccessTimeRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Due soon" },
   completed: { Icon: CheckCircleRoundedIcon, fg: "#1E7A50", bg: "#E7F4EC", label: "Completed" },
   ack_received: { Icon: CheckCircleRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Acknowledgement received" },
+  review_requested: { Icon: RuleRoundedIcon, fg: "#9C2E5E", bg: "#FAE7F0", label: "Approval needed" },
+  review_decision: { Icon: AssignmentTurnedInRoundedIcon, fg: "#1E7A50", bg: "#E7F4EC", label: "Approval update" },
 };
 function eventMeta(ev: string): EventMeta {
   return EVENT_META[ev] ?? { Icon: NotificationsActiveRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: (ev || "update").replace(/_/g, " ") };
@@ -87,14 +92,34 @@ export default function NotificationsPage() {
 
   const dismiss = (id: number) => { dismissNotification(id).then(load).catch(() => {}); };
 
+  // An approval request is an action item too — the approver must respond, not
+  // just read it. It carries the project URL, from which we recover the id.
+  const isApproval = (n: Notification) => n.event === "review_requested";
+  const projectIdOf = (n: Notification): number | null => {
+    const m = /\/projects\/(\d+)/.exec(n.url || "");
+    return m ? Number(m[1]) : null;
+  };
+  const doApprove = (n: Notification) => {
+    const id = projectIdOf(n);
+    if (id) approveProject(id).then(load).catch(() => {});
+  };
+  const doReject = (n: Notification) => {
+    const id = projectIdOf(n);
+    if (!id) return;
+    const reason = (window.prompt("What needs to change? This is sent back to the owner.") || "").trim();
+    if (reason) rejectProject(id, reason).then(load).catch(() => {});
+  };
+
   const openTarget = (n: Notification): string | null => {
+    // Approval items open the project itself; others open the workspace.
+    if (isApproval(n)) return n.url && n.url !== "/" ? n.url : null;
     const key = workspaceKeyOf(n);
     if (key) return `/workspaces/${key}`;
     return n.url && n.url !== "/" ? n.url : null;
   };
 
-  const actions = useMemo(() => (items ?? []).filter((n) => n.needs_acknowledgement), [items]);
-  const updates = useMemo(() => (items ?? []).filter((n) => !n.needs_acknowledgement), [items]);
+  const actions = useMemo(() => (items ?? []).filter((n) => n.needs_acknowledgement || isApproval(n)), [items]);
+  const updates = useMemo(() => (items ?? []).filter((n) => !n.needs_acknowledgement && !isApproval(n)), [items]);
   const unread = updates.filter((n) => !n.is_read).length;
 
   return (
@@ -147,40 +172,55 @@ export default function NotificationsPage() {
                 {actions.map((n) => {
                   const m = eventMeta(n.event);
                   const target = openTarget(n);
+                  const approval = isApproval(n);
+                  // Approvals get a calm review accent; the 48h acknowledgement
+                  // stays the urgent red alarm.
+                  const edge = approval ? "#C0417A" : tokens.attn;
+                  const cardBorder = approval ? "#EBC3D6" : "#F2C9BC";
+                  const cardBg = approval ? "linear-gradient(180deg,#FCEFF5,#fff)" : "linear-gradient(180deg,#FDF1EC,#fff)";
                   return (
-                    <Paper key={n.id} sx={{ p: dense ? 1.4 : 2, borderRadius: dense ? "10px" : "13px", border: "1px solid #F2C9BC", borderLeft: `4px solid ${tokens.attn}`,
-                      background: "linear-gradient(180deg,#FDF1EC,#fff)" }}>
+                    <Paper key={n.id} sx={{ p: dense ? 1.4 : 2, borderRadius: dense ? "10px" : "13px", border: `1px solid ${cardBorder}`, borderLeft: `4px solid ${edge}`,
+                      background: cardBg }}>
                       <Stack direction="row" spacing={dense ? 1.1 : 1.5} alignItems="flex-start">
                         <Box sx={{ width: dense ? 28 : 34, height: dense ? 28 : 34, borderRadius: "9px", flexShrink: 0, display: "grid", placeItems: "center", bgcolor: m.bg, color: m.fg }}>
                           <m.Icon sx={{ fontSize: dense ? 16 : 18 }} />
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Typography sx={{ fontSize: dense ? 13.5 : 15, fontWeight: 700, color: tokens.ink, lineHeight: 1.3 }}>{n.title}</Typography>
-                          {!dense && n.body && <Typography sx={{ fontSize: 12.5, color: tokens.text2, mt: 0.5 }}>{n.body}</Typography>}
+                          {(approval || !dense) && n.body && <Typography sx={{ fontSize: 12.5, color: tokens.text2, mt: 0.5 }}>{n.body}</Typography>}
                           <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: dense ? 0.5 : 1, flexWrap: "wrap" }} useFlexGap>
                             <WsChip n={n} />
                             <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3 }}>{timeAgo(n.created_at)}</Typography>
                             {target && (
                               <Button size="small" onClick={() => navigate(target)} startIcon={<LaunchRoundedIcon sx={{ fontSize: 14 }} />} sx={{ minWidth: 0, py: 0, fontSize: 11.5 }}>
-                                Open workspace
+                                {approval ? "Open project" : "Open workspace"}
                               </Button>
                             )}
                           </Stack>
                         </Box>
                       </Stack>
 
-                      <Box sx={{ mt: dense ? 1 : 1.25, bgcolor: "#fff", border: "1px solid #F2C9BC", borderRadius: "9px", p: dense ? 1 : 1.5 }}>
-                        {!dense && (
-                          <Typography sx={{ fontSize: 12, color: "#9A5847", mb: 1 }}>
-                            Expected completion date, reason for delay, help needed.
-                          </Typography>
-                        )}
-                        <TextField fullWidth size="small" multiline minRows={dense ? 1 : 2} placeholder="Your status message…"
-                          value={ackDraft[n.id] ?? ""} onChange={(e) => setAckDraft((d) => ({ ...d, [n.id]: e.target.value }))} />
-                        <Button size="small" variant="contained" color="error" sx={{ mt: 1 }} onClick={() => doAck(n.id)} disabled={!(ackDraft[n.id] || "").trim()}>
-                          Acknowledge
-                        </Button>
-                      </Box>
+                      {approval ? (
+                        <Stack direction="row" spacing={1} sx={{ mt: dense ? 1 : 1.25 }}>
+                          <Button size="small" variant="contained" onClick={() => doApprove(n)}
+                            sx={{ bgcolor: edge, "&:hover": { bgcolor: "#A5356A" } }}>Approve</Button>
+                          <Button size="small" variant="outlined" onClick={() => doReject(n)}
+                            sx={{ color: tokens.text2, borderColor: tokens.line }}>Send back</Button>
+                        </Stack>
+                      ) : (
+                        <Box sx={{ mt: dense ? 1 : 1.25, bgcolor: "#fff", border: "1px solid #F2C9BC", borderRadius: "9px", p: dense ? 1 : 1.5 }}>
+                          {!dense && (
+                            <Typography sx={{ fontSize: 12, color: "#9A5847", mb: 1 }}>
+                              Expected completion date, reason for delay, help needed.
+                            </Typography>
+                          )}
+                          <TextField fullWidth size="small" multiline minRows={dense ? 1 : 2} placeholder="Your status message…"
+                            value={ackDraft[n.id] ?? ""} onChange={(e) => setAckDraft((d) => ({ ...d, [n.id]: e.target.value }))} />
+                          <Button size="small" variant="contained" color="error" sx={{ mt: 1 }} onClick={() => doAck(n.id)} disabled={!(ackDraft[n.id] || "").trim()}>
+                            Acknowledge
+                          </Button>
+                        </Box>
+                      )}
                     </Paper>
                   );
                 })}

@@ -784,6 +784,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
             project.completed_at = timezone.now()
             project.review_state = WorkspaceProject.REVIEW_NONE   # done → no pending review
             project.review_reason = ""
+            self._clear_review_requests(project)   # completing settles any pending request
         project.save(update_fields=["completed_at", "duration_notified_at", "reminders_sent", "review_state", "review_reason"])
         record(action=AuditAction.STATUS_CHANGE, obj=project,
                new_value={**_proj_val(project), "completed": bool(project.completed_at)}, request=request)
@@ -796,6 +797,16 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
 
     def _project_url(self, project) -> str:
         return f"/workspaces/{project.workspace}/projects/{project.id}"
+
+    def _clear_review_requests(self, project):
+        """Drop the outstanding "Approval needed" items for this project from
+        every approver's action queue — once a decision is made (or the project
+        is resubmitted), the old requests are obsolete."""
+        from apps.notifications.models import Notification
+        Notification.objects.filter(
+            event=NotificationEvent.REVIEW_REQUESTED,
+            url=self._project_url(project),
+        ).delete()
 
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
@@ -813,6 +824,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         project.save(update_fields=[
             "review_state", "submitted_at", "submitted_by", "review_reason", "reviewed_at", "reviewed_by"])
         who = request.user.get_full_name() or request.user.username
+        self._clear_review_requests(project)   # a resubmit shouldn't stack requests
         notify_many(approver_users(), exclude=[request.user],
                     event=NotificationEvent.REVIEW_REQUESTED,
                     title=f"Approval needed: {project.name}",
@@ -835,6 +847,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         project.save(update_fields=[
             "completed_at", "review_state", "review_reason", "reviewed_at", "reviewed_by"])
         who = request.user.get_full_name() or request.user.username
+        self._clear_review_requests(project)   # decided → clear every approver's queue
         recipient = project.submitted_by or project.created_by
         notify(recipient, event=NotificationEvent.REVIEW_DECISION,
                title=f"Approved: {project.name}",
@@ -860,6 +873,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         project.save(update_fields=[
             "review_state", "review_reason", "reviewed_at", "reviewed_by", "completed_at"])
         who = request.user.get_full_name() or request.user.username
+        self._clear_review_requests(project)   # decided → clear every approver's queue
         recipient = project.submitted_by or project.created_by
         notify(recipient, event=NotificationEvent.REVIEW_DECISION,
                title=f"Sent back: {project.name}",

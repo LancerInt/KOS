@@ -78,13 +78,40 @@ def test_a_non_approver_cannot_approve(owner, project):
     assert r.status_code == 403
 
 
+def _requests(project):
+    return Notification.objects.filter(
+        event="review_requested", url=f"/workspaces/{project.workspace}/projects/{project.id}")
+
+
+def test_resubmit_does_not_stack_requests(owner, approver, project):
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
+    client(approver).post(f"/api/workspace-projects/{project.id}/reject/", {"reason": "x"}, format="json")
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")   # resubmit
+    assert _requests(project).count() == 1   # the old request was cleared, not stacked
+
+
+def test_approve_clears_the_approval_requests(owner, approver, project):
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
+    assert _requests(project).exists()
+    client(approver).post(f"/api/workspace-projects/{project.id}/approve/")
+    assert not _requests(project).exists()   # decided → gone from every approver's queue
+
+
+def test_reject_clears_the_approval_requests(owner, approver, project):
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
+    client(approver).post(f"/api/workspace-projects/{project.id}/reject/", {"reason": "x"}, format="json")
+    assert not _requests(project).exists()
+
+
 def test_completing_clears_any_pending_review(owner, approver, project):
     # submit → sent back (blocked) → then completed directly: no stale flag remains,
     # so the client never offers Resubmit on a done project.
     client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
     client(approver).post(f"/api/workspace-projects/{project.id}/reject/", {"reason": "x"}, format="json")
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")   # back to pending
     r = client(approver).post(f"/api/workspace-projects/{project.id}/complete/")
     assert r.status_code == 200, r.data
     assert r.data["review_state"] == ""            # serialised as no-review once done
     project.refresh_from_db()
     assert project.review_state == "" and project.completed_at is not None
+    assert not _requests(project).exists()         # completing settled the request
