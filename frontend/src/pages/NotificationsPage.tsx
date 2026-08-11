@@ -68,6 +68,9 @@ export default function NotificationsPage() {
   const [items, setItems] = useState<Notification[] | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [ackDraft, setAckDraft] = useState<Record<number, string>>({});
+  // Per-approval button state so a click reads "Approving…" → "Approved ✓"
+  // (and "Sending…" → "Sent back") before the card clears on reload.
+  const [pending, setPending] = useState<Record<number, "approving" | "approved" | "rejecting" | "sent">>({});
   // Always compact — a long list stays readable without running far down the page.
   const dense = true;
 
@@ -99,15 +102,25 @@ export default function NotificationsPage() {
     const m = /\/projects\/(\d+)/.exec(n.url || "");
     return m ? Number(m[1]) : null;
   };
+  const clearPending = (nid: number) => setPending((p) => { const q = { ...p }; delete q[nid]; return q; });
   const doApprove = (n: Notification) => {
     const id = projectIdOf(n);
-    if (id) approveProject(id).then(load).catch(() => {});
+    if (!id || pending[n.id]) return;
+    setPending((p) => ({ ...p, [n.id]: "approving" }));
+    approveProject(id)
+      // Show "Approved ✓" briefly, then reload — the item is gone server-side.
+      .then(() => { setPending((p) => ({ ...p, [n.id]: "approved" })); setTimeout(load, 850); })
+      .catch(() => clearPending(n.id));
   };
   const doReject = (n: Notification) => {
     const id = projectIdOf(n);
-    if (!id) return;
+    if (!id || pending[n.id]) return;
     const reason = (window.prompt("What needs to change? This is sent back to the owner.") || "").trim();
-    if (reason) rejectProject(id, reason).then(load).catch(() => {});
+    if (!reason) return;
+    setPending((p) => ({ ...p, [n.id]: "rejecting" }));
+    rejectProject(id, reason)
+      .then(() => { setPending((p) => ({ ...p, [n.id]: "sent" })); setTimeout(load, 850); })
+      .catch(() => clearPending(n.id));
   };
 
   const openTarget = (n: Notification): string | null => {
@@ -200,14 +213,24 @@ export default function NotificationsPage() {
                         </Box>
                       </Stack>
 
-                      {approval ? (
+                      {approval ? (() => {
+                        const st = pending[n.id];
+                        const done = st === "approved" || st === "sent";
+                        const approveLabel = st === "approving" ? "Approving…" : st === "approved" ? "Approved ✓" : "Approve";
+                        const rejectLabel = st === "rejecting" ? "Sending…" : st === "sent" ? "Sent back ✓" : "Send back";
+                        return (
                         <Stack direction="row" spacing={1} sx={{ mt: dense ? 1 : 1.25 }}>
-                          <Button size="small" variant="contained" onClick={() => doApprove(n)}
-                            sx={{ bgcolor: edge, "&:hover": { bgcolor: "#A5356A" } }}>Approve</Button>
-                          <Button size="small" variant="outlined" onClick={() => doReject(n)}
-                            sx={{ color: tokens.text2, borderColor: tokens.line }}>Send back</Button>
+                          <Button size="small" variant="contained" onClick={() => doApprove(n)} disabled={!!st}
+                            sx={{ bgcolor: st === "approved" ? "#1E7A50" : edge, "&:hover": { bgcolor: st === "approved" ? "#1E7A50" : "#A5356A" }, "&.Mui-disabled": { color: "#fff", bgcolor: st === "approved" ? "#1E7A50" : done ? tokens.line : undefined } }}>
+                            {approveLabel}
+                          </Button>
+                          <Button size="small" variant="outlined" onClick={() => doReject(n)} disabled={!!st}
+                            sx={{ color: st === "sent" ? "#1E7A50" : tokens.text2, borderColor: st === "sent" ? "#1E7A50" : tokens.line }}>
+                            {rejectLabel}
+                          </Button>
                         </Stack>
-                      ) : (
+                        );
+                      })() : (
                         <Box sx={{ mt: dense ? 1 : 1.25, bgcolor: "#fff", border: "1px solid #F2C9BC", borderRadius: "9px", p: dense ? 1 : 1.5 }}>
                           {!dense && (
                             <Typography sx={{ fontSize: 12, color: "#9A5847", mb: 1 }}>
