@@ -24,7 +24,7 @@ from rest_framework.views import APIView
 from apps.accounts.models import Role
 from apps.accounts.permissions import IsAdministrator
 from apps.accounts.rbac import Capability
-from apps.audit.models import AuditAction
+from apps.audit.models import AuditAction, AuditLog
 from apps.audit.services import record
 from apps.notifications.models import NotificationEvent
 from apps.notifications.services import notify, notify_many
@@ -883,6 +883,44 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
                new_value={**_proj_val(project), "rejected": True, "reason": project.review_reason},
                request=request)
         return Response(self.get_serializer(project).data)
+
+    @action(detail=True, methods=["get"])
+    def history(self, request, pk=None):
+        """The project's lifecycle, drawn from the immutable audit trail: who
+        created / submitted / approved / sent it back / completed it, and when.
+        Read-scoped by ``get_object`` — anyone who can open the project sees it."""
+        project = self.get_object()
+        logs = (
+            AuditLog.objects
+            .filter(object_type="WorkspaceProject", object_id=str(project.id),
+                    action__in=[AuditAction.CREATE, AuditAction.STATUS_CHANGE])
+            .select_related("actor")
+            .order_by("created_at")
+        )
+        events = []
+        for log in logs:
+            nv = log.new_value or {}
+            reason = ""
+            if log.action == AuditAction.CREATE:
+                kind = "created"
+            elif nv.get("submitted"):
+                kind = "submitted"
+            elif nv.get("approved"):
+                kind = "approved"
+            elif nv.get("rejected"):
+                kind, reason = "rejected", (nv.get("reason") or "")
+            elif "completed" in nv:
+                kind = "completed" if nv.get("completed") else "reopened"
+            else:
+                continue   # some other status change we don't surface here
+            actor = log.actor
+            events.append({
+                "kind": kind,
+                "reason": reason,
+                "actor": (actor.get_full_name() or actor.username) if actor else "System",
+                "at": log.created_at.isoformat(),
+            })
+        return Response(events)
 
 
 class WorkspaceRecordViewSet(viewsets.ModelViewSet):

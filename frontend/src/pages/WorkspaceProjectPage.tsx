@@ -20,6 +20,7 @@ import { SectionDrawer } from "../features/workspaces/SectionDrawer";
 import { InlineRename } from "../features/workspaces/InlineRename";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { DurationPanel } from "../features/workspaces/durationDisplay";
+import { ApprovalTimeline } from "../features/workspaces/ApprovalTimeline";
 import { tokens } from "../theme";
 
 // Warm sand section tiles (dark ink text), on the near-white page.
@@ -337,6 +338,11 @@ export default function WorkspaceProjectPage() {
               return r && r.trim() ? rejectProject(pid, r.trim()).then(setProject) : undefined;
             }}
           />
+          <Box sx={{ mt: 1.5 }}>
+            {/* Refreshes whenever the project's lifecycle state moves. */}
+            <ApprovalTimeline projectId={pid}
+              reloadKey={`${project.review_state}|${project.submitted_at}|${project.reviewed_at}|${project.completed_at}`} />
+          </Box>
         </Box>
       )}
 

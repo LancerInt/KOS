@@ -85,6 +85,18 @@ export const rejectProject = (id: number, reason: string) =>
 
 export const deleteProject = (id: number) => api.delete(`/workspace-projects/${id}/`);
 
+/** One entry in a project's approval lifecycle (drawn from the audit trail). */
+export interface HistoryEvent {
+  kind: "created" | "submitted" | "approved" | "rejected" | "completed" | "reopened";
+  reason: string;   // only set for "rejected" (why it was sent back)
+  actor: string;    // who did it ("System" when automated)
+  at: string;       // ISO timestamp
+}
+
+/** The project's submit → send-back → resubmit → approve trail, oldest first. */
+export const projectHistory = (id: number) =>
+  api.get<HistoryEvent[]>(`/workspace-projects/${id}/history/`).then((r) => r.data);
+
 /** Download the dashboard's projects as a formatted Excel workbook
  *  (administrators only, enforced server-side).
  *

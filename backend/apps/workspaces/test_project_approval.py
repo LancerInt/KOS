@@ -83,6 +83,21 @@ def _requests(project):
         event="review_requested", url=f"/workspaces/{project.workspace}/projects/{project.id}")
 
 
+def test_history_traces_the_full_lifecycle(owner, approver, project):
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
+    client(approver).post(f"/api/workspace-projects/{project.id}/reject/", {"reason": "Fix the label"}, format="json")
+    client(owner).post(f"/api/workspace-projects/{project.id}/submit/")   # resubmit
+    client(approver).post(f"/api/workspace-projects/{project.id}/approve/")
+
+    r = client(owner).get(f"/api/workspace-projects/{project.id}/history/")
+    assert r.status_code == 200, r.data
+    kinds = [e["kind"] for e in r.data]
+    assert kinds == ["submitted", "rejected", "submitted", "approved"]   # oldest first
+    sent_back = r.data[1]
+    assert sent_back["reason"] == "Fix the label"
+    assert sent_back["actor"] == approver.get_full_name() or approver.username
+
+
 def test_resubmit_does_not_stack_requests(owner, approver, project):
     client(owner).post(f"/api/workspace-projects/{project.id}/submit/")
     client(approver).post(f"/api/workspace-projects/{project.id}/reject/", {"reason": "x"}, format="json")
