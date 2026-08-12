@@ -82,6 +82,17 @@ def test_overdue_reminder_fires(finance_user, db):
         .filter(title__icontains="Jul 2026").exists()
 
 
+def test_overdue_uses_action_event_and_carries_filing_id(finance_user, db):
+    # The overdue reminder is an action item and links to the specific deadline,
+    # so the notification can offer "Mark filed".
+    ob = ComplianceObligation.objects.get(workspace=WS, name="GSTR-1")
+    dl = ComplianceDeadline.objects.create(obligation=ob, period_label="Jul 2026", due_date=dt.date(2026, 8, 11))
+    compliance.scan_compliance(today=dt.date(2026, 8, 20), workspace=WS)
+    n = Notification.objects.filter(recipient=finance_user, event="compliance_overdue").first()
+    assert n is not None
+    assert f"?filing={dl.id}" in n.url
+
+
 def test_no_reminder_outside_the_window(finance_user, db):
     ob = ComplianceObligation.objects.get(workspace=WS, name="GSTR-1")
     ComplianceDeadline.objects.create(obligation=ob, period_label="Aug 2026", due_date=dt.date(2026, 9, 11))

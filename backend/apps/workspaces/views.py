@@ -902,7 +902,7 @@ class WorkspaceProjectViewSet(viewsets.ModelViewSet):
         who = request.user.get_full_name() or request.user.username
         self._clear_review_requests(project)   # decided → clear every approver's queue
         recipient = project.submitted_by or project.created_by
-        notify(recipient, event=NotificationEvent.REVIEW_DECISION,
+        notify(recipient, event=NotificationEvent.REVIEW_SENT_BACK,
                title=f"Sent back: {project.name}",
                body=f"{who} sent “{project.name}” back: {project.review_reason}",
                url=self._project_url(project))

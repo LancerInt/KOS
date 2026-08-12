@@ -12,13 +12,15 @@ import RuleRoundedIcon from "@mui/icons-material/RuleRounded";
 import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedInRounded";
 import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
 import type { SvgIconComponent } from "@mui/icons-material";
 
 import {
   acknowledge, dismissNotification, getPreferences, listNotifications,
   markAllRead, markRead, updatePreferences, type Notification, type Preferences,
 } from "../features/notifications/notificationsApi";
-import { approveProject, rejectProject } from "../features/workspaces/projectsApi";
+import { approveProject, rejectProject, submitProject } from "../features/workspaces/projectsApi";
+import { fileDeadline } from "../features/workspaces/complianceApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { workspaceAccent } from "../features/workspaces/accent";
 import { tokens, monoFont } from "../theme";
@@ -33,7 +35,9 @@ const EVENT_META: Record<string, EventMeta> = {
   ack_received: { Icon: CheckCircleRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Acknowledgement received" },
   review_requested: { Icon: RuleRoundedIcon, fg: "#9C2E5E", bg: "#FAE7F0", label: "Approval needed" },
   review_decision: { Icon: AssignmentTurnedInRoundedIcon, fg: "#1E7A50", bg: "#E7F4EC", label: "Approval update" },
+  review_sent_back: { Icon: BlockRoundedIcon, fg: "#9A6A16", bg: "#FBF2DF", label: "Sent back" },
   compliance_due: { Icon: GavelRoundedIcon, fg: "#9A6A16", bg: "#FBF2DF", label: "Statutory filing" },
+  compliance_overdue: { Icon: WarningAmberRoundedIcon, fg: tokens.attn, bg: tokens.attnWash, label: "Filing overdue" },
   direct_message: { Icon: ForumRoundedIcon, fg: tokens.kriyaInk, bg: tokens.kriyaWash, label: "Direct message" },
 };
 function eventMeta(ev: string): EventMeta {
@@ -41,9 +45,14 @@ function eventMeta(ev: string): EventMeta {
 }
 
 function workspaceKeyOf(n: Notification): string | null {
-  const m = /^\/workspaces\/([^/]+)/.exec(n.url || "");
+  const m = /^\/workspaces\/([^/?]+)/.exec(n.url || "");
   return m ? m[1] : null;
 }
+
+// The events that are things *you* must act on — they live in "Needs your
+// action", not "Recent updates". (48h acknowledgements also qualify, via the
+// notification's needs_acknowledgement flag.)
+const ACTION_EVENTS = new Set(["review_requested", "overdue", "compliance_overdue", "review_sent_back"]);
 
 function timeAgo(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -74,7 +83,7 @@ export default function NotificationsPage() {
   const [ackDraft, setAckDraft] = useState<Record<number, string>>({});
   // Per-approval button state so a click reads "Approving…" → "Approved ✓"
   // (and "Sending…" → "Sent back") before the card clears on reload.
-  const [pending, setPending] = useState<Record<number, "approving" | "approved" | "rejecting" | "sent">>({});
+  const [pending, setPending] = useState<Record<number, "approving" | "approved" | "rejecting" | "sent" | "filing" | "resubmitting">>({});
   const [toast, setToast] = useState<string | null>(null);
   // Always compact — a long list stays readable without running far down the page.
   const dense = true;
@@ -103,8 +112,13 @@ export default function NotificationsPage() {
   // An approval request is an action item too — the approver must respond, not
   // just read it. It carries the project URL, from which we recover the id.
   const isApproval = (n: Notification) => n.event === "review_requested";
+  const isAction = (n: Notification) => n.needs_acknowledgement || ACTION_EVENTS.has(n.event);
   const projectIdOf = (n: Notification): number | null => {
     const m = /\/projects\/(\d+)/.exec(n.url || "");
+    return m ? Number(m[1]) : null;
+  };
+  const filingIdOf = (n: Notification): number | null => {
+    const m = /[?&]filing=(\d+)/.exec(n.url || "");
     return m ? Number(m[1]) : null;
   };
   const clearPending = (nid: number) => setPending((p) => { const q = { ...p }; delete q[nid]; return q; });
@@ -114,7 +128,7 @@ export default function NotificationsPage() {
   const onActionError = (n: Notification, e: unknown) => {
     const status = (e as { response?: { status?: number } })?.response?.status;
     if (status === 404 || status === 400 || status === 410) {
-      setToast("That project is no longer awaiting approval — removed from your queue.");
+      setToast("That item is no longer pending — cleared from your queue.");
       dismissNotification(n.id).then(load).catch(() => clearPending(n.id));
     } else {
       setToast("Couldn't complete that — please try again.");
@@ -144,17 +158,41 @@ export default function NotificationsPage() {
       .then(() => { setPending((p) => ({ ...p, [n.id]: "sent" })); projectsChanged(); setTimeout(load, 850); })
       .catch((e) => onActionError(n, e));
   };
-
-  const openTarget = (n: Notification): string | null => {
-    // Approval items open the project itself; others open the workspace.
-    if (isApproval(n)) return n.url && n.url !== "/" ? n.url : null;
-    const key = workspaceKeyOf(n);
-    if (key) return `/workspaces/${key}`;
-    return n.url && n.url !== "/" ? n.url : null;
+  // Overdue statutory filing → mark it filed straight from the notification.
+  const doMarkFiled = (n: Notification) => {
+    const id = filingIdOf(n);
+    if (!id || pending[n.id]) return;
+    setPending((p) => ({ ...p, [n.id]: "filing" }));
+    fileDeadline(id)
+      .then(() => { setToast("Marked filed."); dismissNotification(n.id).then(load); })
+      .catch((e) => onActionError(n, e));
+  };
+  // Sent-back project → resubmit for approval (the owner has fixed it).
+  const doResubmit = (n: Notification) => {
+    const id = projectIdOf(n);
+    if (!id || pending[n.id]) return;
+    setPending((p) => ({ ...p, [n.id]: "resubmitting" }));
+    submitProject(id)
+      .then(() => { setToast("Resubmitted for approval."); projectsChanged(); dismissNotification(n.id).then(load); })
+      .catch((e) => onActionError(n, e));
   };
 
-  const actions = useMemo(() => (items ?? []).filter((n) => n.needs_acknowledgement || isApproval(n)), [items]);
-  const updates = useMemo(() => (items ?? []).filter((n) => !n.needs_acknowledgement && !isApproval(n)), [items]);
+  // The clean navigation target (no ?filing= query): the specific project for a
+  // project item, else the workspace.
+  const cleanTarget = (n: Notification): string | null => {
+    const url = (n.url || "").split("?")[0];
+    if (/\/projects\/\d+/.test(url)) return url;
+    const key = workspaceKeyOf(n);
+    return key ? `/workspaces/${key}` : (url && url !== "/" ? url : null);
+  };
+  const openTarget = (n: Notification): string | null => {
+    // Approval items open the project itself; others open the workspace.
+    if (isApproval(n)) return n.url && n.url !== "/" ? n.url.split("?")[0] : null;
+    return cleanTarget(n);
+  };
+
+  const actions = useMemo(() => (items ?? []).filter(isAction), [items]);
+  const updates = useMemo(() => (items ?? []).filter((n) => !isAction(n)), [items]);
   const unread = updates.filter((n) => !n.is_read).length;
 
   return (
@@ -207,12 +245,19 @@ export default function NotificationsPage() {
                 {actions.map((n) => {
                   const m = eventMeta(n.event);
                   const target = openTarget(n);
-                  const approval = isApproval(n);
-                  // Approvals get a calm review accent; the 48h acknowledgement
-                  // stays the urgent red alarm.
-                  const edge = approval ? "#C0417A" : tokens.attn;
-                  const cardBorder = approval ? "#EBC3D6" : "#F2C9BC";
-                  const cardBg = approval ? "linear-gradient(180deg,#FCEFF5,#fff)" : "linear-gradient(180deg,#FDF1EC,#fff)";
+                  const st = pending[n.id];
+                  const kind = isApproval(n) ? "approval"
+                    : n.needs_acknowledgement ? "ack"
+                    : n.event === "compliance_overdue" ? "filing"
+                    : n.event === "review_sent_back" ? "sentback"
+                    : "overdue";   // project overdue
+                  // Approvals get a calm review accent; sent-backs amber; overdue
+                  // / acknowledgement the urgent red alarm.
+                  const edge = kind === "approval" ? "#C0417A" : kind === "sentback" ? "#C7891B" : tokens.attn;
+                  const cardBorder = kind === "approval" ? "#EBC3D6" : kind === "sentback" ? "#EBD9B8" : "#F2C9BC";
+                  const cardBg = kind === "approval" ? "linear-gradient(180deg,#FCEFF5,#fff)"
+                    : kind === "sentback" ? "linear-gradient(180deg,#FBF4E6,#fff)"
+                    : "linear-gradient(180deg,#FDF1EC,#fff)";
                   return (
                     <Paper key={n.id} sx={{ p: dense ? 1.4 : 2, borderRadius: dense ? "10px" : "13px", border: `1px solid ${cardBorder}`, borderLeft: `4px solid ${edge}`,
                       background: cardBg }}>
@@ -222,21 +267,20 @@ export default function NotificationsPage() {
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Typography sx={{ fontSize: dense ? 13.5 : 15, fontWeight: 700, color: tokens.ink, lineHeight: 1.3 }}>{n.title}</Typography>
-                          {(approval || !dense) && n.body && <Typography sx={{ fontSize: 12.5, color: tokens.text2, mt: 0.5 }}>{n.body}</Typography>}
+                          {kind !== "ack" && n.body && <Typography sx={{ fontSize: 12.5, color: tokens.text2, mt: 0.5 }}>{n.body}</Typography>}
                           <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: dense ? 0.5 : 1, flexWrap: "wrap" }} useFlexGap>
                             <WsChip n={n} />
                             <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3 }}>{timeAgo(n.created_at)}</Typography>
-                            {target && (
+                            {target && (kind === "approval" || kind === "ack") && (
                               <Button size="small" onClick={() => navigate(target)} startIcon={<LaunchRoundedIcon sx={{ fontSize: 14 }} />} sx={{ minWidth: 0, py: 0, fontSize: 11.5 }}>
-                                {approval ? "Open project" : "Open workspace"}
+                                {kind === "approval" ? "Open project" : "Open"}
                               </Button>
                             )}
                           </Stack>
                         </Box>
                       </Stack>
 
-                      {approval ? (() => {
-                        const st = pending[n.id];
+                      {kind === "approval" ? (() => {
                         const done = st === "approved" || st === "sent";
                         const approveLabel = st === "approving" ? "Approving…" : st === "approved" ? "Approved ✓" : "Approve";
                         const rejectLabel = st === "rejecting" ? "Blocking…" : st === "sent" ? "Blocked ✓" : "Block";
@@ -252,7 +296,7 @@ export default function NotificationsPage() {
                           </Button>
                         </Stack>
                         );
-                      })() : (
+                      })() : kind === "ack" ? (
                         <Box sx={{ mt: dense ? 1 : 1.25, bgcolor: "#fff", border: "1px solid #F2C9BC", borderRadius: "9px", p: dense ? 1 : 1.5 }}>
                           {!dense && (
                             <Typography sx={{ fontSize: 12, color: "#9A5847", mb: 1 }}>
@@ -265,6 +309,31 @@ export default function NotificationsPage() {
                             Acknowledge
                           </Button>
                         </Box>
+                      ) : (
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: dense ? 1 : 1.25 }}>
+                          {kind === "filing" && (
+                            <Button size="small" variant="contained" disabled={!!st} onClick={() => doMarkFiled(n)}
+                              sx={{ bgcolor: edge, "&:hover": { bgcolor: "#B23A1F" } }}>
+                              {st === "filing" ? "Filing…" : "Mark filed"}
+                            </Button>
+                          )}
+                          {kind === "sentback" && (
+                            <Button size="small" variant="contained" disabled={!!st} onClick={() => doResubmit(n)}
+                              sx={{ bgcolor: edge, "&:hover": { bgcolor: "#A5720F" } }}>
+                              {st === "resubmitting" ? "Resubmitting…" : "Resubmit"}
+                            </Button>
+                          )}
+                          {target && (
+                            <Button size="small" variant={kind === "overdue" ? "contained" : "outlined"}
+                              onClick={() => navigate(target)}
+                              sx={kind === "overdue"
+                                ? { bgcolor: edge, "&:hover": { bgcolor: "#B23A1F" } }
+                                : { color: tokens.text2, borderColor: tokens.line }}>
+                              {kind === "sentback" ? "Open project" : "Open"}
+                            </Button>
+                          )}
+                          <Button size="small" onClick={() => dismiss(n.id)} sx={{ color: tokens.text3, minWidth: 0 }}>Dismiss</Button>
+                        </Stack>
                       )}
                     </Paper>
                   );

@@ -133,12 +133,16 @@ def _maybe_notify(dl: ComplianceDeadline, today: date) -> int:
     sent = set(dl.reminders_sent or [])
     if stage in sent:
         return 0
-    url = f"/workspaces/{ob.workspace}"
+    # Overdue is an action item (surfaces in "Needs your action"); the earlier
+    # heads-ups are just FYI. The deadline id rides in the URL so the client can
+    # offer "Mark filed" straight from the notification.
+    event = NotificationEvent.COMPLIANCE_OVERDUE if stage == "overdue" else NotificationEvent.COMPLIANCE_DUE
+    url = f"/workspaces/{ob.workspace}?filing={dl.id}"
     fired = 0
     for user in _recipients(ob.workspace):
         if Notification.objects.filter(recipient=user, url=url, title=title).exists():
             continue
-        notify(user, event=NotificationEvent.COMPLIANCE_DUE, title=title, body=body, url=url)
+        notify(user, event=event, title=title, body=body, url=url)
         fired += 1
     dl.reminders_sent = sorted(sent | {stage})
     dl.save(update_fields=["reminders_sent"])
