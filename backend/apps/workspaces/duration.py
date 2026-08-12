@@ -61,25 +61,29 @@ def _stage_message(project, key):
 
 
 def _project_recipients(project):
-    """Everyone the overdue reminder should reach: the whole team with access to
-    the workspace (so the assigned executives who see it overdue on their
-    dashboard also get the bell), plus the creator even if their explicit access
-    later changed. Supervisors still see everything in the UI without a per-
-    project ping.
+    """Everyone the overdue reminder should reach: the people who **currently**
+    have access to the project's workspace (its assigned team), narrowed to the
+    project's own roster when it has one.
 
-    A project with its own roster is narrower than its workspace, so the
-    reminder narrows with it — only the people actually on the project (plus the
-    creator) are chased about it."""
-    from .access import workspace_members
+    The creator is included too — but only while they still have access to that
+    workspace. Someone who has since been moved off it is no longer chased about
+    it: a Researcher who once created a project in another team's workspace
+    shouldn't keep getting Amazon/CRM/etc. overdue pings they can't even open.
+    Supervisors (IT / Management) see everything in the UI without a per-project
+    ping, and reach these via their workspace access like anyone else."""
+    from .access import effective_access, workspace_members
 
-    roster = list(project.members.select_related("user").all())
-    # Branch on whether a roster *exists*, not on who in it is still active: a
-    # project closed to one since-deactivated person is still closed, and the
-    # reminder must not fall back to chasing the whole workspace about it.
-    people = ({m.user_id: m.user for m in roster if m.user.is_active} if roster
-              else {u.id: u for u in workspace_members(project.workspace)})
-    if project.created_by_id and project.created_by_id not in people:
-        people[project.created_by_id] = project.created_by
+    members = {u.id: u for u in workspace_members(project.workspace)}
+    roster_ids = {m.user_id for m in project.members.all()}
+    # A roster narrows the workspace team to the assigned few (who still have
+    # access); no roster means the whole team.
+    people = ({uid: u for uid, u in members.items() if uid in roster_ids}
+              if roster_ids else dict(members))
+    creator = project.created_by
+    if creator and creator.is_active and creator.id not in people:
+        acc = effective_access(creator)
+        if acc is None or project.workspace in acc:   # supervisor, or still a member
+            people[creator.id] = creator
     return list(people.values())
 
 

@@ -234,6 +234,20 @@ def test_overdue_reminders_follow_the_roster(project, alice, bob, executive_role
 
 
 @pytest.mark.django_db
+def test_overdue_reminder_skips_a_creator_who_lost_workspace_access(project, alice):
+    """A Researcher who created a project in another team's workspace and no
+    longer has access to it must not keep getting its overdue pings."""
+    from apps.workspaces.duration import _project_recipients
+
+    assert alice in _project_recipients(project)        # while she still has access
+    # Move alice off amazon-usa entirely (membership + the role's grant).
+    WorkspaceMember.objects.filter(user=alice, workspace=WORKSPACE).delete()
+    alice.roles.clear()
+    assert alice not in _project_recipients(project)
+    assert _project_recipients(project) == []           # nobody left with access
+
+
+@pytest.mark.django_db
 def test_addable_offers_the_team_minus_those_already_on_it(project, alice, bob, executive_role):
     carol = _exec("carol", executive_role)
     _client(alice).post(MEMBERS, {"project": project.id, "user": carol.id}, format="json")
