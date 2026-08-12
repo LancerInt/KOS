@@ -26,7 +26,7 @@ function initials(name: string) {
  * remove teammates; supervisors (IT/Management/admin) see everything and are
  * never listed. */
 export default function MembersDialog({
-  open, onClose, scope, note, emptyNote, removeTooltip = "Remove", canManage, onChanged,
+  open, onClose, scope, note, emptyNote, removeTooltip = "Remove", canManage, canRemove, onChanged,
 }: {
   open: boolean;
   onClose: () => void;
@@ -37,6 +37,10 @@ export default function MembersDialog({
   emptyNote?: ReactNode;
   removeTooltip?: string;
   canManage: boolean;
+  /** Per-row gate for the remove (✕) button. Omit to allow removing anyone the
+   *  manager can see (the project-roster default); pass it to narrow removal,
+   *  e.g. workspace members only removable by their adder or IT/Management. */
+  canRemove?: (m: MemberRow) => boolean;
   onChanged?: () => void;
 }) {
   const [members, setMembers] = useState<MemberRow[] | null>(null);
@@ -156,7 +160,7 @@ export default function MembersDialog({
                   <Typography sx={{ fontSize: 13.5, fontWeight: 500 }} noWrap>{m.user_name}</Typography>
                   <Typography sx={{ fontSize: 11, color: tokens.text3 }} noWrap>{m.user_email}</Typography>
                 </Box>
-                {canManage && (
+                {canManage && (!canRemove || canRemove(m)) && (
                   <Tooltip title={removeTooltip}>
                     <IconButton size="small" disabled={busy} onClick={() => doRemove(m)}
                       sx={{ color: tokens.text3, "&:hover": { color: tokens.attn, bgcolor: tokens.attnWash } }}>

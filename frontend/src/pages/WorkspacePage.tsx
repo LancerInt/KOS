@@ -28,6 +28,7 @@ import type { DurationStatus } from "../features/workspaces/projectsApi";
 import { archiveWorkspace, updateWorkspace } from "../features/workspaces/workspacesApi";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { workspaceAccent, accentFromHex } from "../features/workspaces/accent";
+import { useAppSelector } from "../hooks";
 import { tokens, monoFont } from "../theme";
 
 const STATUS_DOT: Record<DurationStatus, string> = {
@@ -70,6 +71,7 @@ export default function WorkspacePage() {
   useWorkspaces();                                    // load + subscribe so dynamic workspaces resolve
   const ws = getWorkspace(key);
   const { mine, loading: accessLoading } = useMyAccess();
+  const myId = useAppSelector((s) => s.auth.user?.id) ?? null;
   const acc = ws?.dynamic && ws.accent ? accentFromHex(ws.accent) : workspaceAccent(ws?.key);
 
   const [projects, setProjects] = useState<WorkspaceProject[] | null>(null);
@@ -461,6 +463,9 @@ export default function WorkspacePage() {
       <MembersDialog open={membersOpen} onClose={() => setMembersOpen(false)}
         scope={memberScope} canManage={canEdit} onChanged={refreshMemberCount}
         removeTooltip="Remove from workspace"
+        // Anyone may add, but only a member's adder — or IT/Management — may
+        // remove them, so the ✕ only shows where it would actually work.
+        canRemove={(m) => !!mine?.is_admin || m.added_by === myId}
         note={<>
           Who can open <b>{ws.label}</b>. IT&nbsp;Team, Management and admins see every
           workspace and aren't listed here.

@@ -537,9 +537,11 @@ class WorkspaceMemberViewSet(viewsets.ModelViewSet):
 
     A Researcher/Executive sees a workspace only if they hold a row here. Any
     member of a workspace — as well as supervisors (IT/Management/admin) — may
-    list, add and remove members. Added members must belong to the workspace's
-    domain team and receive full edit. Keyed by the ``workspace`` string so it
-    works for both built-in and user-added workspaces."""
+    list and **add** members. **Removing** is narrower: only a supervisor or the
+    person who added that member may take them out again, so one member can't
+    quietly drop another they didn't add. Added members must belong to the
+    workspace's domain team and receive full edit. Keyed by the ``workspace``
+    string so it works for both built-in and user-added workspaces."""
 
     serializer_class = WorkspaceMemberSerializer
     permission_classes = [IsAuthenticated]
@@ -573,7 +575,15 @@ class WorkspaceMemberViewSet(viewsets.ModelViewSet):
                request=self.request)
 
     def perform_destroy(self, instance):
+        # Adding is open to any member, but removing is not: only a supervisor
+        # (IT / Management / admin) or the person who actually added this member
+        # may take them out again. That stops one member quietly dropping another
+        # they didn't add, while keeping IT/Management able to remove anyone.
+        user = self.request.user
         self._require_manage(instance.workspace)
+        if not (is_supervisor(user) or instance.added_by_id == user.id):
+            raise PermissionDenied(
+                "Only the person who added this member — or IT Team / Management — can remove them.")
         name = instance.user.get_full_name() or instance.user.username
         ws, oid = instance.workspace, str(instance.pk)
         instance.delete()
