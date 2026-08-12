@@ -10,6 +10,7 @@ import {
 } from "../features/workspaces/workspacesApi";
 import { loadDynamicWorkspaces, ICON_REGISTRY, getWorkspaceRaw, useWorkspaces, isBuiltinWorkspace } from "../features/workspaces/workspaces";
 import { accentFromHex, workspaceAccent } from "../features/workspaces/accent";
+import Pager, { usePaged } from "../components/Pager";
 import { tokens } from "../theme";
 
 const KIND_LABEL: Record<string, string> = { project: "Project", section: "Section", record: "Record", field: "Field" };
@@ -45,6 +46,7 @@ export default function ArchivePage() {
   };
 
   const wsLabel = (key: string) => getWorkspaceRaw(key)?.label ?? key;
+  const itemsPaged = usePaged(items ?? [], 15);
 
   return (
     <Box sx={{ px: 3, py: 2.5 }}>
@@ -71,8 +73,8 @@ export default function ArchivePage() {
           </Typography>
         </Paper>
       ) : (
-        <Paper sx={{ borderRadius: "10px", overflow: "hidden", mb: 4 }}>
-          {items.map((it, i) => {
+        <Paper sx={{ borderRadius: "10px", overflow: "hidden", mb: itemsPaged.pageCount > 1 ? 1 : 4 }}>
+          {itemsPaged.pageItems.map((it, i) => {
             const soon = it.days_left <= 7;
             const key = `${it.kind}:${it.id}`;
             return (
@@ -98,6 +100,10 @@ export default function ArchivePage() {
             );
           })}
         </Paper>
+      )}
+      {items && items.length > 0 && (
+        <Pager page={itemsPaged.page} pageCount={itemsPaged.pageCount} total={itemsPaged.total}
+          onPrev={itemsPaged.prev} onNext={itemsPaged.next} unit="deleted items" sx={{ mb: 4 }} />
       )}
 
       {/* ---------- Archived workspaces (admins only) ---------- */}

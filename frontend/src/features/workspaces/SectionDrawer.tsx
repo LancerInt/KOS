@@ -19,6 +19,7 @@ import {
   type FieldDef, type FieldType,
 } from "./fields";
 import { DurationChip, durationText } from "./durationDisplay";
+import Pager, { usePaged } from "../../components/Pager";
 import { tokens, monoFont } from "../../theme";
 
 type Tab = "fields" | "records" | "children";
@@ -602,6 +603,7 @@ function RecordsTab({ node, project, records, fields, canEdit, showDuration, onC
 }) {
   // Duration steps replace their "Duration" field with real start/end inputs.
   const formFields = useMemo(() => fields.filter((f) => !(showDuration && isDurationField(f))), [fields, showDuration]);
+  const recordsPaged = usePaged(records, 20);
   const hasFileField = node.allowFiles || fields.some((f) => f.type === "file");
   const primary = primaryField(formFields);
   const headField = primary?.label ?? "";
@@ -732,7 +734,7 @@ function RecordsTab({ node, project, records, fields, canEdit, showDuration, onC
         <Typography sx={{ fontSize: 13, color: tokens.text3 }}>Nothing here yet. Add the first one.</Typography>
       ) : (
         <Stack spacing={1}>
-          {records.map((r) => {
+          {recordsPaged.pageItems.map((r) => {
             const headline = (headField && r.data[headField]) || "Untitled";
             const rest = formFields.filter((f) => f.label !== headField && f.type !== "file")
               .map((f) => r.data[f.label]).filter(Boolean).slice(0, 3).join(" · ");
@@ -787,6 +789,8 @@ function RecordsTab({ node, project, records, fields, canEdit, showDuration, onC
               </Paper>
             );
           })}
+          <Pager page={recordsPaged.page} pageCount={recordsPaged.pageCount} total={recordsPaged.total}
+            onPrev={recordsPaged.prev} onNext={recordsPaged.next} unit="records" />
         </Stack>
       )}
     </Box>

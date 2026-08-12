@@ -78,7 +78,7 @@ export default function MessagePersonDialog({ open, onClose, person = null, onSe
         <Stack spacing={2}>
           {!canStart && (
             <Alert severity="info" sx={{ fontSize: 13 }}>
-              Only Management and IT Team can start a new conversation. You can still
+              Your account can't start a new conversation right now. You can still
               reply to anyone who has written to you.
             </Alert>
           )}

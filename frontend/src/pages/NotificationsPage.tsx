@@ -23,6 +23,7 @@ import { approveProject, rejectProject, submitProject } from "../features/worksp
 import { fileDeadline } from "../features/workspaces/complianceApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { workspaceAccent } from "../features/workspaces/accent";
+import Pager, { usePaged } from "../components/Pager";
 import { tokens, monoFont } from "../theme";
 
 interface EventMeta { Icon: SvgIconComponent; fg: string; bg: string; label: string; }
@@ -194,6 +195,9 @@ export default function NotificationsPage() {
   const actions = useMemo(() => (items ?? []).filter(isAction), [items]);
   const updates = useMemo(() => (items ?? []).filter((n) => !isAction(n)), [items]);
   const unread = updates.filter((n) => !n.is_read).length;
+  // Page each list a bit at a time so a long backlog stays scannable.
+  const actionsPaged = usePaged(actions, 15);
+  const updatesPaged = usePaged(updates, 15);
 
   return (
     <Box sx={{ px: 3, py: 2.5 }}>
@@ -241,8 +245,9 @@ export default function NotificationsPage() {
                 <Typography sx={{ fontSize: 13, color: tokens.text3 }}>Nothing needs a response right now.</Typography>
               </Paper>
             ) : (
-              <Stack spacing={dense ? 0.75 : 1.25} sx={{ mb: dense ? 2.5 : 3.5 }}>
-                {actions.map((n) => {
+              <>
+              <Stack spacing={dense ? 0.75 : 1.25} sx={{ mb: dense ? 1 : 1.5 }}>
+                {actionsPaged.pageItems.map((n) => {
                   const m = eventMeta(n.event);
                   const target = openTarget(n);
                   const st = pending[n.id];
@@ -339,6 +344,9 @@ export default function NotificationsPage() {
                   );
                 })}
               </Stack>
+              <Pager page={actionsPaged.page} pageCount={actionsPaged.pageCount} total={actionsPaged.total}
+                onPrev={actionsPaged.prev} onNext={actionsPaged.next} unit="to act on" sx={{ mb: dense ? 2.5 : 3.5 }} />
+              </>
             )}
 
             {/* ---------- RECENT UPDATES ---------- */}
@@ -350,8 +358,9 @@ export default function NotificationsPage() {
             {updates.length === 0 ? (
               <Typography sx={{ fontSize: 13, color: tokens.text3, py: 1.5 }}>No other updates.</Typography>
             ) : (
+              <>
               <Paper sx={{ borderRadius: "11px", overflow: "hidden" }}>
-                {updates.map((n, i) => {
+                {updatesPaged.pageItems.map((n, i) => {
                   const m = eventMeta(n.event);
                   const target = openTarget(n);
                   return (
@@ -395,6 +404,9 @@ export default function NotificationsPage() {
                   );
                 })}
               </Paper>
+              <Pager page={updatesPaged.page} pageCount={updatesPaged.pageCount} total={updatesPaged.total}
+                onPrev={updatesPaged.prev} onNext={updatesPaged.next} unit="updates" />
+              </>
             )}
           </>
         )}

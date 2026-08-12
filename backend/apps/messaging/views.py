@@ -126,7 +126,7 @@ class ConversationViewSet(
         what the quick-send dialog does.
         """
         if not can_start_conversation(request.user):
-            raise PermissionDenied("Only Management or IT Team can start a direct message.")
+            raise PermissionDenied("Your account can't start a direct message.")
 
         raw = request.data.get("recipient")
         try:

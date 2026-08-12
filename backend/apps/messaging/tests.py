@@ -1,8 +1,9 @@
 """Direct messages: who may open a thread, and how a thread behaves once open.
 
-The policy under test is asymmetric — Management/IT start conversations, both
-sides write in them — so most of these cases are about a staff member being
-able to do everything *except* start.
+Messaging is open — anyone active may start a conversation with anyone — so the
+"who may start" cases assert that a plain staff member can start one too. The
+bulk of the file is about how a thread behaves once it exists (reading, unread
+counts, editing, retracting, one-sided clearing).
 """
 from __future__ import annotations
 
@@ -51,16 +52,19 @@ def test_management_can_start_a_thread(management, staff):
     assert r.data["other"]["id"] == staff.id
 
 
-def test_staff_cannot_start_a_thread(staff, other_staff):
+def test_staff_can_start_a_thread(staff, other_staff):
+    # Messaging is open now — a plain staff member can start a thread with anyone.
     r = client(staff).post("/api/conversations/", {"recipient": other_staff.id}, format="json")
-    assert r.status_code == 403
-    assert not Conversation.objects.exists()
+    assert r.status_code == 201, r.data
+    assert r.data["other"]["id"] == other_staff.id
+    assert Conversation.objects.count() == 1
 
 
-def test_directory_tells_staff_they_cannot_start(staff, management):
+def test_directory_lists_colleagues_for_staff(staff, management):
     r = client(staff).get("/api/message-directory/")
     assert r.status_code == 200
-    assert r.data == {"can_start": False, "people": []}
+    assert r.data["can_start"] is True
+    assert [p["id"] for p in r.data["people"]] == [management.id]  # everyone but self
 
 
 def test_directory_lists_colleagues_for_management(management, staff):
@@ -279,7 +283,7 @@ def test_deleting_a_conversation_clears_only_your_own_copy(management, staff, th
 
 
 def test_a_cleared_thread_is_still_writable_by_the_person_who_cleared_it(staff, thread):
-    """Staff can't start a conversation, so clearing one must not strand them."""
+    """Clearing a thread hides it from your list; it must not lock you out of it."""
     cid, _ = thread
     client(staff).delete(f"/api/conversations/{cid}/")
 

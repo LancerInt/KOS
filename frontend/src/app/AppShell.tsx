@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Avatar, Box, Drawer, Stack, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
-import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import GridViewRoundedIcon from "@mui/icons-material/GridViewRounded";
+import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
@@ -146,13 +147,16 @@ export default function AppShell() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [navOpen, setNavOpen] = useState(false);
+  // The bottom-nav "Spaces" sheet (mobile only). Its own state so it can open
+  // independently of the full "More" menu.
+  const [spacesOpen, setSpacesOpen] = useState(false);
   // Never collapsed inside the drawer: it is already a temporary surface, and
   // icon-only rows there would be a second thing to decipher.
   const railCollapsed = isMobile ? false : collapsed;
 
-  // Navigating closes it. Without this the menu stays open over the very page
-  // the user just asked for.
-  useEffect(() => { setNavOpen(false); }, [location.pathname]);
+  // Navigating closes any open mobile surface. Without this a menu stays open
+  // over the very page the user just asked for.
+  useEffect(() => { setNavOpen(false); setSpacesOpen(false); }, [location.pathname]);
 
   const initials =
     (user?.first_name?.[0] ?? user?.username?.[0] ?? "?").toUpperCase() +
@@ -326,6 +330,128 @@ export default function AppShell() {
     </Box>
   );
 
+  // ---- Mobile chrome (below md): a bottom tab bar replaces the hamburger
+  // drawer as the primary navigation (Home · Spaces · Alerts · Chat · More).
+  // Desktop is untouched — none of this renders there.
+  const mobileTopBar = (
+    <Stack direction="row" alignItems="center" justifyContent="space-between"
+      sx={{ flexShrink: 0, px: 2, py: 1, background: RAIL.gradient, color: RAIL.text }}>
+      <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+        {brandMark}
+        <Typography sx={{ color: RAIL.brand, fontFamily: '"Manrope Variable"', fontWeight: 600, fontSize: 17, letterSpacing: "0.03em" }}>
+          KOS
+        </Typography>
+      </Stack>
+      <Avatar sx={{ width: 30, height: 30, bgcolor: tokens.kriyaInk, fontSize: 12, fontFamily: '"Manrope Variable"' }}>
+        {initials}
+      </Avatar>
+    </Stack>
+  );
+
+  const bottomTabs = [
+    { key: "home", label: "Home", icon: <HomeRoundedIcon />, active: location.pathname === "/", onClick: () => navigate("/") },
+    { key: "spaces", label: "Spaces", icon: <GridViewRoundedIcon />, active: location.pathname.startsWith("/workspaces"), onClick: () => setSpacesOpen(true) },
+    { key: "alerts", label: "Alerts", icon: <NotificationsRoundedIcon />, active: location.pathname.startsWith("/notifications"), badge: unread, onClick: () => navigate("/notifications") },
+    { key: "chat", label: "Chat", icon: <ForumRoundedIcon />, active: location.pathname.startsWith("/messages"), badge: msgUnread, onClick: () => navigate("/messages") },
+    { key: "more", label: "More", icon: <MoreHorizRoundedIcon />, active: false, onClick: () => setNavOpen(true) },
+  ];
+
+  const bottomNav = (
+    <Box component="nav" sx={{ flexShrink: 0, display: "flex", bgcolor: tokens.surface,
+      borderTop: `1px solid ${tokens.line}`, pb: "env(safe-area-inset-bottom)", zIndex: 3 }}>
+      {bottomTabs.map((t) => (
+        <Box key={t.key} component="button" onClick={t.onClick} aria-label={t.label}
+          aria-current={t.active ? "page" : undefined}
+          sx={{ flex: 1, border: "none", bgcolor: "transparent", cursor: "pointer",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 0.3, py: 0.9,
+            color: t.active ? tokens.kriyaInk : tokens.text3,
+            "&:hover": { color: t.active ? tokens.kriyaInk : tokens.text2 } }}>
+          <Box sx={{ position: "relative", display: "flex", color: t.active ? tokens.kriya : "inherit",
+            "& svg": { fontSize: 23 } }}>
+            {t.icon}
+            {t.badge ? (
+              <Box sx={{ position: "absolute", top: -5, right: -9, minWidth: 16, height: 16, px: 0.4,
+                borderRadius: 8, bgcolor: tokens.attn, color: "#fff", fontSize: 10, fontWeight: 700,
+                display: "grid", placeItems: "center", border: `1.5px solid ${tokens.surface}` }}>
+                {t.badge > 99 ? "99+" : t.badge}
+              </Box>
+            ) : null}
+          </Box>
+          <Typography sx={{ fontSize: 10.5, fontWeight: t.active ? 700 : 600, lineHeight: 1 }}>
+            {t.label}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+
+  // "Spaces" opens the workspace list as a bottom sheet — the one list that
+  // grows, kept out of the fixed 5-tab bar. Access-filtered like the rail.
+  const spacesList = workspaces.filter((w) => accessLoading || accessLevel(mine, w.key) !== "none");
+  const spacesDrawer = (
+    <Drawer anchor="bottom" open={spacesOpen} onClose={() => setSpacesOpen(false)}
+      PaperProps={{ sx: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: "72vh",
+        pb: "env(safe-area-inset-bottom)" } }}>
+      <Box sx={{ px: 2, pt: 1.5, pb: 2 }}>
+        <Box sx={{ width: 38, height: 4, borderRadius: 3, bgcolor: tokens.line, mx: "auto", mb: 1.5 }} />
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+          <Typography sx={{ fontFamily: '"Manrope Variable"', fontWeight: 700, fontSize: 16 }}>Workspaces</Typography>
+          <Box component="button" onClick={() => { setSpacesOpen(false); setNewWsOpen(true); }}
+            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, border: `1px solid ${tokens.line}`,
+              bgcolor: tokens.surface, cursor: "pointer", borderRadius: 2, px: 1, py: 0.5,
+              color: tokens.kriyaInk, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit" }}>
+            <AddRoundedIcon sx={{ fontSize: 16 }} /> New
+          </Box>
+        </Stack>
+        <Stack spacing={0.5}>
+          {spacesList.map((w) => {
+            const active = location.pathname.startsWith(`/workspaces/${w.key}`);
+            return (
+              <Box key={w.key} component="button"
+                onClick={() => { setSpacesOpen(false); navigate(`/workspaces/${w.key}`); }}
+                sx={{ display: "flex", alignItems: "center", gap: 1.25, width: "100%", textAlign: "left",
+                  border: "none", cursor: "pointer", borderRadius: 2, px: 1.25, py: 1.25,
+                  bgcolor: active ? tokens.kriyaWash : "transparent",
+                  color: active ? tokens.kriyaInk : tokens.text, "&:hover": { bgcolor: tokens.paper } }}>
+                <Box sx={{ display: "flex", color: active ? tokens.kriya : tokens.text2, "& svg": { fontSize: 20 } }}>
+                  <w.Icon fontSize="small" />
+                </Box>
+                <Typography sx={{ fontSize: 14, fontWeight: active ? 700 : 500 }}>{w.label}</Typography>
+              </Box>
+            );
+          })}
+          {spacesList.length === 0 && (
+            <Typography sx={{ fontSize: 13, color: tokens.text3, py: 2, textAlign: "center" }}>
+              No workspaces yet.
+            </Typography>
+          )}
+        </Stack>
+      </Box>
+    </Drawer>
+  );
+
+  // The two shapes of the main pane. Desktop is the original single scroll area;
+  // mobile is a three-row column (top bar · scrolling page · bottom tab bar) so
+  // the tab bar occupies real space rather than floating over the content.
+  const desktopMain = (
+    <Box sx={{ bgcolor: "background.default", height: "100%", minHeight: 0, minWidth: 0,
+      overflowY: "auto", overflowX: "auto", overscrollBehavior: "contain" }}>
+      <OfflineBanner />
+      <Outlet />
+    </Box>
+  );
+  const mobileMain = (
+    <Box sx={{ height: "100%", minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column",
+      bgcolor: "background.default" }}>
+      {mobileTopBar}
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "auto", overscrollBehavior: "contain" }}>
+        <OfflineBanner />
+        <Outlet />
+      </Box>
+      {bottomNav}
+    </Box>
+  );
+
   return (
     <AiProvider>
     {/* The shell is a fixed-height frame, not a page that grows: the rail and
@@ -338,8 +464,8 @@ export default function AppShell() {
       "@supports (height: 100dvh)": { height: "100dvh" },
       gridTemplateColumns: isMobile ? "1fr" : railCollapsed ? "64px 1fr" : "232px 1fr",
       transition: "grid-template-columns .18s ease" }}>
-      {/* The rail: a column of the grid on desktop, a temporary drawer below md.
-          Anchored right so it opens under the thumb that reached the button. */}
+      {/* The full-nav rail: a column of the grid on desktop, a temporary drawer
+          below md (opened from the bottom bar's "More"). Anchored right. */}
       {isMobile ? (
         <Drawer anchor="right" open={navOpen} onClose={() => setNavOpen(false)}
           PaperProps={{ sx: { width: 264, maxWidth: "86vw", border: "none", bgcolor: "transparent" } }}>
@@ -347,42 +473,12 @@ export default function AppShell() {
         </Drawer>
       ) : rail}
 
-      {/* main — the other scroll area. `minHeight: 0` is what actually lets it
-          scroll: a grid item defaults to min-height:auto and would otherwise
-          stretch to its content and push the frame open again. `contain` stops
-          a flick past the end of this pane from scrolling anything behind it. */}
-      <Box sx={{ bgcolor: "background.default", height: "100%", minHeight: 0, minWidth: 0,
-        overflowY: "auto", overflowX: "auto", overscrollBehavior: "contain" }}>
-        {isMobile && (
-          <Stack direction="row" alignItems="center" justifyContent="space-between"
-            sx={{ position: "sticky", top: 0, zIndex: 5, px: 2, py: 1,
-              background: RAIL.gradient, color: RAIL.text }}>
-            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-              {brandMark}
-              <Typography sx={{ color: RAIL.brand, fontFamily: '"Manrope Variable"', fontWeight: 600, fontSize: 17, letterSpacing: "0.03em" }}>
-                KOS
-              </Typography>
-            </Stack>
-            <Box component="button" onClick={() => setNavOpen(true)} aria-label="Open menu"
-              sx={{ position: "relative", border: "none", bgcolor: "transparent", color: RAIL.text,
-                cursor: "pointer", display: "flex", p: 0.75, borderRadius: 1, flexShrink: 0,
-                "&:hover": { color: RAIL.textHover, bgcolor: RAIL.hoverBg } }}>
-              <MenuRoundedIcon />
-              {/* The unread badges live on nav rows that are now hidden, so
-                  they have to surface on the thing that opens the nav. */}
-              {unread + msgUnread > 0 && (
-                <Box sx={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%",
-                  bgcolor: tokens.attn, border: `1.5px solid ${RAIL.bg}` }} />
-              )}
-            </Box>
-          </Stack>
-        )}
-        <OfflineBanner />
-        <Outlet />
-      </Box>
+      {isMobile ? mobileMain : desktopMain}
 
       {/* Floating assistant — available from every page (AI spec §Frontend). */}
       <AiAssistantDrawer />
+
+      {isMobile && spacesDrawer}
 
       <NewWorkspaceDialog open={newWsOpen} onClose={() => setNewWsOpen(false)}
         onCreated={(key) => { setNewWsOpen(false); navigate(`/workspaces/${key}`); }} />

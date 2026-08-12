@@ -71,6 +71,29 @@ api.interceptors.response.use(
   },
 );
 
+/**
+ * Pull every row from a DRF-paginated list endpoint, following `next` by page
+ * number until it runs out. Also handles endpoints that return a bare array
+ * (no pagination). Bounded so a runaway can't loop forever.
+ *
+ * Used where the UI needs the whole set to bucket/filter it (e.g. Notifications
+ * split into "Needs action" vs "Recent updates") and then pages it client-side.
+ */
+export async function fetchAll<T>(
+  path: string,
+  params: Record<string, unknown> = {},
+  maxPages = 40,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const { data } = await api.get(path, { params: { ...params, page } });
+    if (Array.isArray(data)) return data as T[]; // endpoint isn't paginated
+    out.push(...((data.results ?? []) as T[]));
+    if (!data.next) break;
+  }
+  return out;
+}
+
 export interface HealthResponse {
   service: string;
   status: string;

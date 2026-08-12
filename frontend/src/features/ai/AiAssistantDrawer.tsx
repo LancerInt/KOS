@@ -194,8 +194,10 @@ export default function AiAssistantDrawer() {
           aria-label="Open the AI assistant"
           sx={{
             position: "fixed",
-            right: 24,
-            bottom: 24,
+            right: { xs: 16, sm: 24 },
+            // Below md a bottom tab bar owns the bottom edge, so lift the button
+            // clear of it (plus the phone's safe-area inset); desktop unchanged.
+            bottom: { xs: "calc(72px + env(safe-area-inset-bottom))", sm: 24 },
             zIndex: (t) => t.zIndex.drawer - 1,
             bgcolor: tokens.kriya,
             "&:hover": { bgcolor: tokens.kriyaInk },

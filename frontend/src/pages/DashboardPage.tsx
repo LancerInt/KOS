@@ -34,6 +34,7 @@ import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 
 import { listAllProjects, completeProject, submitProject, approveProject, rejectProject, downloadProjectsXlsx, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
+import Pager, { usePaged } from "../components/Pager";
 import { listSavedViews, createSavedView, deleteSavedView, type SavedView } from "../features/views/savedViewsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
@@ -266,6 +267,7 @@ export default function DashboardPage() {
   }, [searched, filter, sort]);
 
   const rollup = useMemo(() => [...(projects ?? [])].sort(urgency), [projects]);
+  const listPaged = usePaged(listShown, 20);
 
   useAiPageContext(
     useMemo(
@@ -458,12 +460,16 @@ export default function DashboardPage() {
                   </Typography>
                 </Paper>
               ) : (
+                <>
                 <Stack spacing={dense ? 0.75 : 1.25}>
-                  {listShown.map((p) => (
+                  {listPaged.pageItems.map((p) => (
                     <ProjectCard key={p.id} p={p} dense={dense} canEdit={canEdit(p)} onOpen={() => openWorkspace(p)}
                       onSubmit={() => submitForApproval(p)} onApprove={() => approve(p)} onReject={() => reject(p)} />
                   ))}
                 </Stack>
+                <Pager page={listPaged.page} pageCount={listPaged.pageCount} total={listPaged.total}
+                  onPrev={listPaged.prev} onNext={listPaged.next} unit="projects" />
+                </>
               )}
             </Box>
           ) : (

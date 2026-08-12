@@ -1,6 +1,4 @@
-import { api } from "../../api/client";
-
-interface Paginated<T> { results: T[]; }
+import { api, fetchAll } from "../../api/client";
 
 export interface Notification {
   id: number;
@@ -24,9 +22,12 @@ export interface Preferences {
   daily_digest: boolean;
 }
 
+// Pull the whole set (following pagination) so the page can bucket it into
+// "Needs your action" vs "Recent updates" and page each tab client-side. The
+// list endpoint paginates at 25; reading only the first page silently hid the
+// rest, which this also fixes.
 export async function listNotifications(): Promise<Notification[]> {
-  const { data } = await api.get<Paginated<Notification>>("/notifications/");
-  return data.results ?? (data as unknown as Notification[]);
+  return fetchAll<Notification>("/notifications/");
 }
 
 export async function unreadCount(): Promise<{ unread: number; needs_ack: number }> {

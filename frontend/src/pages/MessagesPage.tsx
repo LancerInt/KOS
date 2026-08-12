@@ -24,6 +24,7 @@ import {
   type Conversation, type DirectMessage,
 } from "../features/messages/messagesApi";
 import MessagePersonDialog, { initialsOf } from "../features/messages/MessagePersonDialog";
+import Pager, { usePaged } from "../components/Pager";
 import { tokens, monoFont } from "../theme";
 
 const LIST_POLL_MS = 15000;
@@ -212,6 +213,7 @@ export default function MessagesPage() {
       (c) => c.other.name.toLowerCase().includes(q) || (c.last_message?.body ?? "").toLowerCase().includes(q),
     );
   }, [conversations, filter]);
+  const shownPaged = usePaged(shown, 20);
 
   // Below md there is only room for one pane, so the thread replaces the list.
   const showList = !isNarrow || activeId === null;
@@ -259,7 +261,7 @@ export default function MessagesPage() {
             )}
           </Box>
         )}
-        {shown.map((c) => {
+        {shownPaged.pageItems.map((c) => {
           const on = c.id === activeId;
           return (
             <Stack key={c.id} direction="row" spacing={1.25} alignItems="center"
@@ -303,6 +305,8 @@ export default function MessagesPage() {
             </Stack>
           );
         })}
+        <Pager page={shownPaged.page} pageCount={shownPaged.pageCount} total={shownPaged.total}
+          onPrev={shownPaged.prev} onNext={shownPaged.next} unit="conversations" />
       </Box>
     </Box>
   );
