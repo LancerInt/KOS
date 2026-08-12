@@ -31,3 +31,35 @@ export const unfileDeadline = (id: number) =>
 /** Shift a due date — used when the government extends a filing. */
 export const updateDeadlineDueDate = (id: number, due_date: string) =>
   api.patch<ComplianceDeadline>(`/compliance-deadlines/${id}/`, { due_date }).then((r) => r.data);
+
+/** A recurring filing definition a workspace tracks (seeded or user-added). */
+export interface ComplianceObligation {
+  id: number;
+  workspace: string;
+  name: string;
+  description: string;
+  cadence: Cadence;
+  due_day: number;         // day of the month it's due
+  month_offset: number;    // months after the period end (monthly/quarterly)
+  due_month: number | null;// annual: the month it's due (1–12)
+  lead_days: number;
+  active: boolean;
+  order: number;
+}
+
+export interface NewObligation {
+  workspace: string;
+  name: string;
+  cadence: Cadence;
+  due_day: number;
+  due_month?: number | null;
+  month_offset?: number;
+  lead_days?: number;
+  description?: string;
+}
+
+export const createObligation = (payload: NewObligation) =>
+  api.post<ComplianceObligation>("/compliance-obligations/", payload).then((r) => r.data);
+
+export const deleteObligation = (id: number) =>
+  api.delete(`/compliance-obligations/${id}/`);

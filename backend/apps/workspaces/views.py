@@ -42,9 +42,9 @@ from .models import (
     WorkspaceRecordAttachment, WorkspaceSection, WorkspaceUserAccess,
 )
 from .serializers import (
-    ComplianceDeadlineSerializer, WorkspaceMemberSerializer, WorkspacePermissionSerializer,
-    WorkspaceProjectMemberSerializer, WorkspaceProjectSerializer, WorkspaceRecordSerializer,
-    WorkspaceSectionSerializer, WorkspaceSerializer,
+    ComplianceDeadlineSerializer, ComplianceObligationSerializer, WorkspaceMemberSerializer,
+    WorkspacePermissionSerializer, WorkspaceProjectMemberSerializer, WorkspaceProjectSerializer,
+    WorkspaceRecordSerializer, WorkspaceSectionSerializer, WorkspaceSerializer,
 )
 
 User = get_user_model()
@@ -1261,3 +1261,46 @@ class ComplianceDeadlineViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, 
         record(action=AuditAction.STATUS_CHANGE, object_type="ComplianceDeadline", object_id=str(dl.pk),
                new_value={"filed": False, "name": dl.obligation.name, "period": dl.period_label}, request=request)
         return Response(self.get_serializer(dl).data)
+
+
+class ComplianceObligationViewSet(viewsets.ModelViewSet):
+    """The recurring filings a workspace tracks. Users can add their own
+    (a new statutory return, a local levy) alongside the seeded GST/TDS ones,
+    edit them, or remove one — editors of the workspace only. Creating or editing
+    one immediately generates its upcoming deadlines."""
+
+    serializer_class = ComplianceObligationSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+    http_method_names = ["get", "post", "patch", "delete"]
+
+    def get_queryset(self):
+        base = ComplianceObligation.objects.all()
+        ws = self.request.query_params.get("workspace")
+        if ws:
+            if not can_view(self.request.user, ws):
+                return base.none()
+            return base.filter(workspace=ws)
+        acc = effective_access(self.request.user)
+        return base if acc is None else base.filter(workspace__in=set(acc.keys()))
+
+    def perform_create(self, serializer):
+        ws = serializer.validated_data.get("workspace")
+        _require_edit(self.request.user, ws)
+        ob = serializer.save()
+        ensure_upcoming_deadlines(ob)
+        record(action=AuditAction.CREATE, object_type="ComplianceObligation", object_id=str(ob.pk),
+               new_value={"workspace": ws, "name": ob.name, "cadence": ob.cadence}, request=self.request)
+
+    def perform_update(self, serializer):
+        _require_edit(self.request.user, serializer.instance.workspace)
+        ob = serializer.save()
+        ensure_upcoming_deadlines(ob)   # pick up any new dates the change implies
+        record(action=AuditAction.UPDATE, object_type="ComplianceObligation", object_id=str(ob.pk),
+               new_value={"name": ob.name, "cadence": ob.cadence, "due_day": ob.due_day}, request=self.request)
+
+    def perform_destroy(self, instance):
+        _require_edit(self.request.user, instance.workspace)
+        record(action=AuditAction.DELETE, object_type="ComplianceObligation", object_id=str(instance.pk),
+               old_value={"workspace": instance.workspace, "name": instance.name}, request=self.request)
+        instance.delete()

@@ -1,18 +1,29 @@
 import { useEffect, useState } from "react";
 import {
   Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
-  Paper, Stack, TextField, Tooltip, Typography,
+  MenuItem, Paper, Stack, TextField, Tooltip, Typography,
 } from "@mui/material";
 import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import EditCalendarRoundedIcon from "@mui/icons-material/EditCalendarRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
 
 import {
-  listComplianceDeadlines, fileDeadline, unfileDeadline, updateDeadlineDueDate,
-  type ComplianceDeadline,
+  listComplianceDeadlines, fileDeadline, unfileDeadline, updateDeadlineDueDate, createObligation,
+  type Cadence, type ComplianceDeadline,
 } from "./complianceApi";
 import { tokens, monoFont } from "../../theme";
+
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+
+const firstError = (e: unknown): string => {
+  const data = (e as { response?: { data?: Record<string, unknown> } })?.response?.data;
+  if (!data) return "";
+  const first = Object.values(data)[0];
+  return Array.isArray(first) ? String(first[0]) : String(first ?? "");
+};
 
 const fmtDate = (s: string | null) =>
   s ? new Date(s).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "";
@@ -45,11 +56,32 @@ export function ComplianceCalendar({ workspace, canEdit }: { workspace: string; 
   const [editing, setEditing] = useState<ComplianceDeadline | null>(null);
   const [editDate, setEditDate] = useState("");
 
+  const blankForm = { name: "", cadence: "monthly" as Cadence, due_day: 20, due_month: 12, lead_days: 5, description: "" };
+  const [addOpen, setAddOpen] = useState(false);
+  const [form, setForm] = useState(blankForm);
+  const [saving, setSaving] = useState(false);
+  const [addErr, setAddErr] = useState("");
+
   const load = () => listComplianceDeadlines(workspace).then(setItems).catch(() => setItems([]));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [workspace]);
 
   if (!items || items.length === 0) return null;
+
+  const openAdd = () => { setForm(blankForm); setAddErr(""); setAddOpen(true); };
+  const saveAdd = () => {
+    const name = form.name.trim();
+    if (!name) { setAddErr("Give the filing a name."); return; }
+    setSaving(true); setAddErr("");
+    createObligation({
+      workspace, name, cadence: form.cadence, due_day: form.due_day,
+      due_month: form.cadence === "annual" ? form.due_month : null,
+      lead_days: form.lead_days, description: form.description.trim(),
+    })
+      .then(() => { setAddOpen(false); load(); })
+      .catch((e) => setAddErr(firstError(e) || "Couldn't add it — check the fields."))
+      .finally(() => setSaving(false));
+  };
 
   const pending = items.filter((d) => d.status === "pending").sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
   const filed = items.filter((d) => d.status === "filed").sort((a, b) => (a.due_date > b.due_date ? -1 : 1)).slice(0, 6);
@@ -76,6 +108,10 @@ export function ComplianceCalendar({ workspace, canEdit }: { workspace: string; 
         </Box>
         {dueSoon > 0 && (
           <Chip size="small" label={`${dueSoon} due soon`} sx={{ height: 22, fontSize: 11, fontWeight: 700, bgcolor: "#FBF2DF", color: "#9A6A16" }} />
+        )}
+        {canEdit && (
+          <Button size="small" variant="outlined" startIcon={<AddRoundedIcon sx={{ fontSize: 16 }} />} onClick={openAdd}
+            sx={{ flexShrink: 0, color: tokens.text2, borderColor: tokens.line }}>Add filing</Button>
         )}
       </Stack>
 
@@ -164,6 +200,50 @@ export function ComplianceCalendar({ workspace, canEdit }: { workspace: string; 
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setEditing(null)}>Cancel</Button>
           <Button variant="contained" onClick={saveEdit} disabled={!editDate}>Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add-a-filing dialog */}
+      <Dialog open={addOpen} onClose={() => setAddOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontFamily: '"Manrope Variable"', fontSize: 18 }}>Add a filing</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            <TextField size="small" label="Name" placeholder="e.g. PF Return, Professional Tax" autoFocus fullWidth
+              value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <TextField size="small" select label="How often" fullWidth
+              value={form.cadence} onChange={(e) => setForm({ ...form, cadence: e.target.value as Cadence })}>
+              <MenuItem value="monthly">Monthly</MenuItem>
+              <MenuItem value="quarterly">Quarterly</MenuItem>
+              <MenuItem value="annual">Annual</MenuItem>
+            </TextField>
+            <Stack direction="row" spacing={1.5}>
+              <TextField size="small" type="number" label="Due day" fullWidth
+                inputProps={{ min: 1, max: 31 }}
+                value={form.due_day} onChange={(e) => setForm({ ...form, due_day: Number(e.target.value) })}
+                helperText={form.cadence === "annual" ? "Day of the month" : "Day of the month after the period"} />
+              {form.cadence === "annual" && (
+                <TextField size="small" select label="Due month" fullWidth
+                  value={form.due_month} onChange={(e) => setForm({ ...form, due_month: Number(e.target.value) })}>
+                  {MONTHS.map((m, i) => <MenuItem key={m} value={i + 1}>{m}</MenuItem>)}
+                </TextField>
+              )}
+            </Stack>
+            <TextField size="small" type="number" label="Remind days before" fullWidth
+              inputProps={{ min: 0, max: 60 }}
+              value={form.lead_days} onChange={(e) => setForm({ ...form, lead_days: Number(e.target.value) })} />
+            <TextField size="small" label="Note (optional)" fullWidth multiline minRows={2}
+              value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>
+              Monthly/quarterly filings are taken as due the month after the period. Dates are editable later.
+            </Typography>
+            {addErr && <Typography sx={{ fontSize: 12.5, color: tokens.attn }}>{addErr}</Typography>}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setAddOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={saveAdd} disabled={saving || !form.name.trim()}>
+            {saving ? "Adding…" : "Add filing"}
+          </Button>
         </DialogActions>
       </Dialog>
     </Paper>

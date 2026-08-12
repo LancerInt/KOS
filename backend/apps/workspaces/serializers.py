@@ -431,7 +431,24 @@ class ComplianceObligationSerializer(serializers.ModelSerializer):
             "id", "workspace", "name", "description", "cadence",
             "due_day", "month_offset", "due_month", "lead_days", "active", "order",
         )
-        read_only_fields = ("workspace", "name", "cadence")
+        read_only_fields = ("id",)
+        extra_kwargs = {"month_offset": {"required": False}, "description": {"required": False}}
+
+    def validate(self, attrs):
+        def val(field, default=None):
+            return attrs.get(field, getattr(self.instance, field, default))
+
+        cadence = val("cadence", ComplianceObligation.MONTHLY)
+        due_day = val("due_day", 1)
+        if not (1 <= due_day <= 31):
+            raise serializers.ValidationError({"due_day": "Enter a day between 1 and 31."})
+        if val("lead_days", 5) < 0:
+            raise serializers.ValidationError({"lead_days": "Reminder lead time can't be negative."})
+        if cadence == ComplianceObligation.ANNUAL:
+            dm = val("due_month")
+            if not dm or not (1 <= dm <= 12):
+                raise serializers.ValidationError({"due_month": "Pick the month it's due (1–12)."})
+        return attrs
 
 
 class ComplianceDeadlineSerializer(serializers.ModelSerializer):

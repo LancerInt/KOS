@@ -113,3 +113,35 @@ def test_a_non_member_sees_nothing(db):
     r = client(outsider).get(f"/api/compliance-deadlines/?workspace={WS}")
     assert r.status_code == 200
     assert r.data == []
+
+
+def test_user_can_add_an_obligation(finance_user, db):
+    r = client(finance_user).post("/api/compliance-obligations/", {
+        "workspace": WS, "name": "Professional Tax", "cadence": "monthly", "due_day": 20, "lead_days": 5,
+    }, format="json")
+    assert r.status_code == 201, r.data
+    ob = ComplianceObligation.objects.get(workspace=WS, name="Professional Tax")
+    assert ob.month_offset == 1              # sensible default when omitted
+    assert ob.deadlines.exists()             # deadlines generated on create
+
+
+def test_annual_obligation_needs_a_due_month(finance_user, db):
+    r = client(finance_user).post("/api/compliance-obligations/", {
+        "workspace": WS, "name": "Some Annual", "cadence": "annual", "due_day": 31,
+    }, format="json")
+    assert r.status_code == 400
+
+
+def test_a_non_editor_cannot_add(db):
+    outsider = User.objects.create_user(username="out2", email="out2@x.io", password="pw")
+    r = client(outsider).post("/api/compliance-obligations/", {
+        "workspace": WS, "name": "Nope", "cadence": "monthly", "due_day": 5,
+    }, format="json")
+    assert r.status_code == 403
+
+
+def test_can_delete_an_obligation(finance_user, db):
+    ob = ComplianceObligation.objects.create(workspace=WS, name="Temp", cadence="monthly", due_day=10)
+    r = client(finance_user).delete(f"/api/compliance-obligations/{ob.id}/")
+    assert r.status_code == 204
+    assert not ComplianceObligation.objects.filter(id=ob.id).exists()

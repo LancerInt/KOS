@@ -2,10 +2,10 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    ComplianceDeadlineViewSet, WorkspaceDeletedItemsView, WorkspaceMemberViewSet,
-    WorkspacePermissionViewSet, WorkspaceProjectExportView, WorkspaceProjectMemberViewSet,
-    WorkspaceProjectViewSet, WorkspaceRecordViewSet, WorkspaceSectionViewSet,
-    WorkspaceUserAccessView, WorkspaceViewSet,
+    ComplianceDeadlineViewSet, ComplianceObligationViewSet, WorkspaceDeletedItemsView,
+    WorkspaceMemberViewSet, WorkspacePermissionViewSet, WorkspaceProjectExportView,
+    WorkspaceProjectMemberViewSet, WorkspaceProjectViewSet, WorkspaceRecordViewSet,
+    WorkspaceSectionViewSet, WorkspaceUserAccessView, WorkspaceViewSet,
 )
 
 router = DefaultRouter()
@@ -18,6 +18,7 @@ router.register(
 router.register("workspace-records", WorkspaceRecordViewSet, basename="workspace-record")
 router.register("workspace-sections", WorkspaceSectionViewSet, basename="workspace-section")
 router.register("compliance-deadlines", ComplianceDeadlineViewSet, basename="compliance-deadline")
+router.register("compliance-obligations", ComplianceObligationViewSet, basename="compliance-obligation")
 
 urlpatterns = [
     # Before the router so it isn't captured by the workspaces/<key>/ detail route.
