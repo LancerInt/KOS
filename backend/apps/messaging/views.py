@@ -25,7 +25,10 @@ from rest_framework.views import APIView
 from apps.audit.models import AuditAction
 from apps.audit.services import record
 
-from .models import Conversation, DirectMessage, GroupMembership, GroupMessage, GroupThread
+from .models import (
+    Conversation, DirectMessage, GroupMembership, GroupMessage, GroupThread,
+    MessageAttachment, attachment_kind,
+)
 from .permissions import can_start_conversation
 from .serializers import (
     ConversationSerializer, DirectMessageSerializer, GroupMessageSerializer,
@@ -53,6 +56,66 @@ def clean_body(raw) -> str:
     if len(body) > MAX_BODY_CHARS:
         raise ValidationError({"body": f"Keep a message under {MAX_BODY_CHARS} characters."})
     return body
+
+
+# Uploads: bounded so a single message can't fill the disk. Storage is the local
+# filesystem (same as record attachments), so files don't survive a backend
+# redeploy until a persistent/cloud store is configured.
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+MAX_ATTACHMENTS = 10
+
+
+def _incoming_files(request):
+    files = request.FILES.getlist("files")
+    if len(files) > MAX_ATTACHMENTS:
+        raise ValidationError({"files": f"Attach at most {MAX_ATTACHMENTS} files at once."})
+    for f in files:
+        if (getattr(f, "size", 0) or 0) > MAX_ATTACHMENT_BYTES:
+            raise ValidationError({"files": f"“{getattr(f, 'name', 'file')}” is too large (max 25 MB)."})
+    return files
+
+
+def _body_and_preview(request, files):
+    """A message needs text or a file. When it's file-only, build the little
+    "📷 Photo" / "🎤 Voice message" label the notification and thread list show."""
+    body = (request.data.get("body") or "").strip()
+    if not body and not files:
+        raise ValidationError({"body": "Write something or attach a file."})
+    if len(body) > MAX_BODY_CHARS:
+        raise ValidationError({"body": f"Keep a message under {MAX_BODY_CHARS} characters."})
+    if body:
+        return body, None
+    kinds = [attachment_kind(getattr(f, "content_type", "") or "") for f in files]
+    if all(k == "audio" for k in kinds):
+        preview = "🎤 Voice message"
+    elif all(k == "image" for k in kinds):
+        preview = "📷 Photo" if len(files) == 1 else f"📷 {len(files)} photos"
+    else:
+        preview = "📎 Attachment" if len(files) == 1 else f"📎 {len(files)} files"
+    return body, preview
+
+
+def _save_attachments(message, request, files, *, is_group):
+    raw = request.data.get("duration_ms")
+    duration_ms = None
+    if raw not in (None, ""):
+        try:
+            duration_ms = max(0, int(raw))
+        except (TypeError, ValueError):
+            duration_ms = None
+    for f in files:
+        ct = getattr(f, "content_type", "") or ""
+        kind = attachment_kind(ct)
+        MessageAttachment.objects.create(
+            direct_message=None if is_group else message,
+            group_message=message if is_group else None,
+            file=f,
+            original_name=(getattr(f, "name", "") or "")[:255],
+            content_type=ct[:120],
+            size=getattr(f, "size", 0) or 0,
+            kind=kind,
+            duration_ms=duration_ms if kind == MessageAttachment.AUDIO else None,
+        )
 
 
 class ConversationViewSet(
@@ -168,7 +231,10 @@ class ConversationViewSet(
         conversation = self.get_object()
 
         if request.method == "POST":
-            message = send_message(conversation, request.user, clean_body(request.data.get("body")))
+            files = _incoming_files(request)
+            body, preview = _body_and_preview(request, files)
+            message = send_message(conversation, request.user, body, preview=preview)
+            _save_attachments(message, request, files, is_group=False)
             return Response(
                 DirectMessageSerializer(message, context={"request": request}).data, status=201
             )
@@ -176,6 +242,7 @@ class ConversationViewSet(
         rows = list(
             conversation.visible_messages(request.user)
             .select_related("sender")
+            .prefetch_related("attachments")
             .order_by("-created_at")[:THREAD_LIMIT]
         )
         rows.reverse()  # oldest → newest, the order a thread reads in
@@ -325,10 +392,14 @@ class GroupThreadViewSet(
     def messages(self, request: Request, pk=None) -> Response:
         thread = self.get_object()
         if request.method == "POST":
-            message = send_group_message(thread, request.user, clean_body(request.data.get("body")))
+            files = _incoming_files(request)
+            body, preview = _body_and_preview(request, files)
+            message = send_group_message(thread, request.user, body, preview=preview)
+            _save_attachments(message, request, files, is_group=True)
             return Response(GroupMessageSerializer(message, context={"request": request}).data, status=201)
         rows = list(
-            thread.visible_messages(request.user).select_related("sender").order_by("-created_at")[:THREAD_LIMIT]
+            thread.visible_messages(request.user).select_related("sender")
+            .prefetch_related("attachments").order_by("-created_at")[:THREAD_LIMIT]
         )
         rows.reverse()
         return Response(GroupMessageSerializer(rows, many=True, context={"request": request}).data)

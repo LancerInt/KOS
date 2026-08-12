@@ -1,8 +1,8 @@
 """Root URL configuration for KOS."""
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as media_serve
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 api_patterns = [
@@ -56,6 +56,11 @@ urlpatterns = [
     path("api/", include(api_patterns)),
 ]
 
-# Serve uploaded media in development (document files, avatars).
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Serve uploaded media (message/record attachments, document files, avatars) in
+# every environment. Django's static() helper only wires this up under DEBUG, so
+# on Render (DEBUG off) uploads wouldn't load at all; serve them explicitly.
+# NOTE: these URLs are public-by-link (no per-file auth) and, on the free tier's
+# ephemeral disk, don't survive a redeploy — the same as existing attachments.
+urlpatterns += [
+    re_path(r"^media/(?P<path>.*)$", media_serve, {"document_root": settings.MEDIA_ROOT}),
+]

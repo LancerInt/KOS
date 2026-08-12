@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Alert, Avatar, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
@@ -22,14 +22,19 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
+import MicRoundedIcon from "@mui/icons-material/MicRounded";
+import DeleteRoundedIcon from "@mui/icons-material/DeleteRounded";
+import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
 
 import {
   announceMessagesChanged, deleteConversation, deleteGroupMessage, deleteMessage, directory,
   editGroupMessage, editMessage, leaveGroup, listConversations, listGroupMessages,
   listGroupThreads, listMessages, markGroupRead, markThreadRead, renameGroup, sendGroupMessage,
-  sendMessage, type Conversation, type GroupThread,
+  sendMessage, type Conversation, type GroupThread, type MessageAttachment,
 } from "../features/messages/messagesApi";
 import MessagePersonDialog, { initialsOf } from "../features/messages/MessagePersonDialog";
+import MessageAttachments from "../features/messages/MessageAttachments";
 import GroupDialog from "../features/messages/GroupDialog";
 import Pager, { usePaged } from "../components/Pager";
 import { tokens, monoFont } from "../theme";
@@ -44,7 +49,13 @@ type ChatMessage = {
   id: number; sender: number; sender_name: string; mine: boolean; body: string;
   created_at: string; edited_at: string | null; deleted: boolean; can_edit: boolean;
   read_at?: string | null;
+  attachments?: MessageAttachment[];
 };
+
+function recClock(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 type ThreadItem = {
   kind: "dm" | "group";
@@ -111,8 +122,18 @@ export default function MessagesPage() {
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [error, setError] = useState("");
 
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [recMs, setRecMs] = useState(0);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastSeenId = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const recTimerRef = useRef<number | null>(null);
+  const recStartRef = useRef(0);
+  const recCancelRef = useRef(false);
 
   const loadThreads = useCallback(
     () => Promise.all([
@@ -172,6 +193,9 @@ export default function MessagesPage() {
     setDraft("");
     setEditing(null);
     setError("");
+    setPendingFiles([]);
+    // Abandon a recording in progress rather than send it to the thread you left.
+    if (recRef.current && recRef.current.state !== "inactive") { recCancelRef.current = true; recRef.current.stop(); }
     loadThread(activeKind, activeId, true);
   }, [activeId, activeKind, loadThread]);
 
@@ -191,13 +215,29 @@ export default function MessagesPage() {
     }
   }, [messages]);
 
-  const send = () => {
-    const body = draft.trim();
-    if (!body || activeId === null || sending) return;
+  // Send a new line: text and/or files (a voice note passes its length as ms).
+  const deliver = (body: string, files: File[], durationMs?: number) => {
+    if (activeId === null || sending) return;
+    if (!body.trim() && files.length === 0) return;
     setSending(true);
+    const extras = files.length ? { files, durationMs } : undefined;
+    const p: Promise<ChatMessage> = isGroup
+      ? sendGroupMessage(activeId, body.trim(), extras)
+      : sendMessage(activeId, body.trim(), extras);
+    p.then((m) => {
+      setDraft(""); setPendingFiles([]);
+      setMessages((rows) => [...(rows ?? []), m]);
+      loadThreads();
+    }).catch(() => setError("Could not send that message.")).finally(() => setSending(false));
+  };
 
+  const send = () => {
+    if (activeId === null || sending) return;
     if (editing) {
+      const body = draft.trim();
+      if (!body) return;
       const mid = editing.id;
+      setSending(true);
       const p: Promise<ChatMessage> = isGroup ? editGroupMessage(mid, body) : editMessage(mid, body);
       p.then((m) => {
         setDraft(""); setEditing(null);
@@ -208,16 +248,49 @@ export default function MessagesPage() {
         .finally(() => setSending(false));
       return;
     }
-
-    const p: Promise<ChatMessage> = isGroup ? sendGroupMessage(activeId, body) : sendMessage(activeId, body);
-    p.then((m) => {
-      setDraft("");
-      setMessages((rows) => [...(rows ?? []), m]);
-      loadThreads();
-    })
-      .catch(() => setError("Could not send that message."))
-      .finally(() => setSending(false));
+    deliver(draft, pendingFiles);
   };
+
+  const onPickFiles = (e: ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    if (picked.length) setPendingFiles((prev) => [...prev, ...picked].slice(0, 10));
+    e.target.value = "";  // let the same file be picked again after removal
+  };
+  const removePending = (i: number) => setPendingFiles((prev) => prev.filter((_, j) => j !== i));
+
+  // Voice notes: record with MediaRecorder, send the clip on stop (with its length).
+  const startRecording = async () => {
+    if (recording || activeId === null) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recCancelRef.current = false;
+      mr.ondataavailable = (ev) => { if (ev.data.size) chunksRef.current.push(ev.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (recTimerRef.current) window.clearInterval(recTimerRef.current);
+        const ms = Date.now() - recStartRef.current;
+        setRecording(false); setRecMs(0);
+        if (recCancelRef.current || chunksRef.current.length === 0) return;
+        const type = chunksRef.current[0].type || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type });
+        const ext = type.includes("ogg") ? "ogg" : "webm";
+        deliver("", [new File([blob], `voice-note.${ext}`, { type })], ms);
+      };
+      recRef.current = mr;
+      recStartRef.current = Date.now();
+      mr.start();
+      setRecording(true);
+      recTimerRef.current = window.setInterval(() => setRecMs(Date.now() - recStartRef.current), 200);
+    } catch {
+      setError("Couldn't access the microphone.");
+    }
+  };
+  const stopRecording = () => recRef.current?.stop();
+  const cancelRecording = () => { recCancelRef.current = true; recRef.current?.stop(); };
+  // Tidy up a recording in progress if the user navigates away.
+  useEffect(() => () => { if (recRef.current && recRef.current.state !== "inactive") { recCancelRef.current = true; recRef.current.stop(); } }, []);
 
   const startEditing = (m: ChatMessage) => { setMenu(null); setEditing(m); setDraft(m.body); };
   const cancelEditing = () => { setEditing(null); setDraft(""); };
@@ -270,14 +343,14 @@ export default function MessagesPage() {
       subtitleDeleted: !!c.last_message?.deleted,
       subtitle: !c.last_message ? "No messages yet"
         : c.last_message.deleted ? "This message was deleted"
-        : `${c.last_message.mine ? "You: " : ""}${c.last_message.body}`,
+        : `${c.last_message.mine ? "You: " : ""}${c.last_message.body || "📎 Attachment"}`,
     }));
     const grp: ThreadItem[] = (groups ?? []).map((g) => ({
       kind: "group", id: g.id, title: g.name, unread: g.unread, lastAt: g.last_message_at,
       memberCount: g.member_count, subtitleDeleted: !!g.last_message?.deleted,
       subtitle: !g.last_message ? "No messages yet"
         : g.last_message.deleted ? "A message was deleted"
-        : `${g.last_message.mine ? "You: " : g.last_message.sender_name ? `${firstName(g.last_message.sender_name)}: ` : ""}${g.last_message.body}`,
+        : `${g.last_message.mine ? "You: " : g.last_message.sender_name ? `${firstName(g.last_message.sender_name)}: ` : ""}${g.last_message.body || "📎 Attachment"}`,
     }));
     return [...dm, ...grp].sort((a, b) => (b.lastAt ?? "").localeCompare(a.lastAt ?? ""));
   }, [conversations, groups]);
@@ -493,9 +566,16 @@ export default function MessagesPage() {
                             </Typography>
                           </Stack>
                         ) : (
-                          <Typography sx={{ fontSize: 13.5, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                            {m.body}
-                          </Typography>
+                          <>
+                            {m.attachments && m.attachments.length > 0 && (
+                              <MessageAttachments attachments={m.attachments} mine={m.mine} />
+                            )}
+                            {m.body && (
+                              <Typography sx={{ fontSize: 13.5, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                {m.body}
+                              </Typography>
+                            )}
+                          </>
                         )}
                         <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={0.4} sx={{ mt: 0.35 }}>
                           {m.edited_at && !m.deleted && (
@@ -534,24 +614,82 @@ export default function MessagesPage() {
                 </Tooltip>
               </Stack>
             )}
-            <Stack direction="row" alignItems="flex-end" spacing={1} sx={{ p: 1.5, pt: editing ? 1 : 1.5 }}>
-              <Box sx={{ flex: 1, px: 1.5, py: 1, borderRadius: "12px", bgcolor: tokens.paper,
-                border: `1px solid ${editing ? tokens.kriyaGlow : tokens.line}`, maxHeight: 160, overflowY: "auto" }}>
-                <InputBase multiline maxRows={6} fullWidth value={draft}
-                  placeholder={editing ? "Edit your message…" : "Type a message…"}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-                    if (e.key === "Escape" && editing) { e.preventDefault(); cancelEditing(); }
-                  }}
-                  sx={{ fontSize: 13.5 }} />
-              </Box>
-              <Button variant="contained" onClick={send} disabled={!draft.trim() || sending}
-                sx={{ minWidth: 0, width: 42, height: 42, borderRadius: "50%", p: 0, flexShrink: 0 }}>
-                {sending ? <CircularProgress size={16} color="inherit" />
+            {/* files chosen but not yet sent */}
+            {pendingFiles.length > 0 && !recording && (
+              <Stack direction="row" spacing={1} useFlexGap sx={{ px: 1.75, pt: 1.25, flexWrap: "wrap" }}>
+                {pendingFiles.map((f, i) => (
+                  <Stack key={i} direction="row" alignItems="center" spacing={0.75}
+                    sx={{ px: 1, py: 0.5, borderRadius: "8px", bgcolor: tokens.paper, border: `1px solid ${tokens.line}`, maxWidth: 200 }}>
+                    {f.type.startsWith("image/")
+                      ? <Box component="img" src={URL.createObjectURL(f)} alt="" sx={{ width: 28, height: 28, borderRadius: "6px", objectFit: "cover" }} />
+                      : <InsertDriveFileRoundedIcon sx={{ fontSize: 20, color: tokens.kriyaInk }} />}
+                    <Typography noWrap sx={{ fontSize: 11.5, flex: 1, minWidth: 0 }}>{f.name}</Typography>
+                    <IconButton size="small" onClick={() => removePending(i)} sx={{ p: 0.25 }}>
+                      <CloseRoundedIcon sx={{ fontSize: 14, color: tokens.text3 }} />
+                    </IconButton>
+                  </Stack>
+                ))}
+              </Stack>
+            )}
+
+            <input ref={fileInputRef} type="file" multiple hidden onChange={onPickFiles} />
+
+            <Stack direction="row" alignItems="flex-end" spacing={1} sx={{ p: 1.5, pt: (editing || pendingFiles.length) ? 1 : 1.5 }}>
+              {recording ? (
+                <Stack direction="row" alignItems="center" spacing={1.25}
+                  sx={{ flex: 1, px: 1.5, height: 42, borderRadius: "12px", bgcolor: tokens.attnWash, border: `1px solid ${tokens.attn}` }}>
+                  <Tooltip title="Discard">
+                    <IconButton size="small" onClick={cancelRecording} aria-label="Discard recording">
+                      <DeleteRoundedIcon sx={{ fontSize: 19, color: tokens.attn }} />
+                    </IconButton>
+                  </Tooltip>
+                  <Box sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: tokens.attn,
+                    animation: "kospulse 1s infinite", "@keyframes kospulse": { "0%,100%": { opacity: 1 }, "50%": { opacity: 0.25 } } }} />
+                  <Typography sx={{ fontFamily: monoFont, fontSize: 13, color: tokens.attn, fontWeight: 600 }}>{recClock(recMs)}</Typography>
+                  <Typography sx={{ fontSize: 12, color: tokens.text3 }}>Recording — tap ✓ to send</Typography>
+                </Stack>
+              ) : (
+                <>
+                  {!editing && (
+                    <Tooltip title="Attach photo or file">
+                      <IconButton onClick={() => fileInputRef.current?.click()} aria-label="Attach a file"
+                        sx={{ color: tokens.text3, flexShrink: 0 }}>
+                        <AttachFileRoundedIcon sx={{ fontSize: 20 }} />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                  <Box sx={{ flex: 1, px: 1.5, py: 1, borderRadius: "12px", bgcolor: tokens.paper,
+                    border: `1px solid ${editing ? tokens.kriyaGlow : tokens.line}`, maxHeight: 160, overflowY: "auto" }}>
+                    <InputBase multiline maxRows={6} fullWidth value={draft}
+                      placeholder={editing ? "Edit your message…" : "Type a message…"}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+                        if (e.key === "Escape" && editing) { e.preventDefault(); cancelEditing(); }
+                      }}
+                      sx={{ fontSize: 13.5 }} />
+                  </Box>
+                </>
+              )}
+
+              {(() => {
+                const hasContent = !!draft.trim() || pendingFiles.length > 0;
+                const onClick = editing ? send : recording ? stopRecording : hasContent ? send : startRecording;
+                const disabled = sending || (!!editing && !draft.trim());
+                const icon = sending ? <CircularProgress size={16} color="inherit" />
                   : editing ? <CheckRoundedIcon sx={{ fontSize: 20 }} />
-                  : <SendRoundedIcon sx={{ fontSize: 19 }} />}
-              </Button>
+                  : recording ? <CheckRoundedIcon sx={{ fontSize: 20 }} />
+                  : hasContent ? <SendRoundedIcon sx={{ fontSize: 19 }} />
+                  : <MicRoundedIcon sx={{ fontSize: 20 }} />;
+                return (
+                  <Button variant="contained" onClick={onClick} disabled={disabled}
+                    aria-label={recording ? "Send voice note" : hasContent || editing ? "Send" : "Record voice note"}
+                    sx={{ minWidth: 0, width: 42, height: 42, borderRadius: "50%", p: 0, flexShrink: 0,
+                      bgcolor: recording ? tokens.attn : undefined, "&:hover": recording ? { bgcolor: "#B23A1F" } : undefined }}>
+                    {icon}
+                  </Button>
+                );
+              })()}
             </Stack>
           </Box>
         </>

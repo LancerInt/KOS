@@ -22,6 +22,32 @@ export interface LastMessage {
   deleted: boolean;
 }
 
+export interface MessageAttachment {
+  id: number;
+  url: string;
+  name: string;
+  kind: "image" | "file" | "audio";
+  content_type: string;
+  size: number;
+  duration_ms: number | null;
+}
+
+export interface SendExtras {
+  files?: File[];
+  /** Voice-note length in ms, attached to an audio upload. */
+  durationMs?: number;
+}
+
+/** Build the request body: multipart when there are files, else plain JSON. */
+function messagePayload(body: string, extras?: SendExtras): FormData | { body: string } {
+  if (!extras?.files?.length) return { body };
+  const fd = new FormData();
+  if (body) fd.append("body", body);
+  extras.files.forEach((f) => fd.append("files", f));
+  if (extras.durationMs != null) fd.append("duration_ms", String(Math.round(extras.durationMs)));
+  return fd;
+}
+
 export interface Conversation {
   id: number;
   other: Person;
@@ -46,6 +72,7 @@ export interface DirectMessage {
   deleted: boolean;
   /** Whether *you* may still edit it (own message, inside the time window). */
   can_edit: boolean;
+  attachments: MessageAttachment[];
 }
 
 export async function listConversations(): Promise<Conversation[]> {
@@ -57,8 +84,9 @@ export async function listMessages(conversationId: number): Promise<DirectMessag
   return data;
 }
 
-export async function sendMessage(conversationId: number, body: string): Promise<DirectMessage> {
-  const { data } = await api.post<DirectMessage>(`/conversations/${conversationId}/messages/`, { body });
+export async function sendMessage(conversationId: number, body: string, extras?: SendExtras): Promise<DirectMessage> {
+  const { data } = await api.post<DirectMessage>(
+    `/conversations/${conversationId}/messages/`, messagePayload(body, extras));
   return data;
 }
 
@@ -143,6 +171,7 @@ export interface GroupMessage {
   edited_at: string | null;
   deleted: boolean;
   can_edit: boolean;
+  attachments: MessageAttachment[];
 }
 
 export async function listGroupThreads(): Promise<GroupThread[]> {
@@ -159,8 +188,9 @@ export async function listGroupMessages(id: number): Promise<GroupMessage[]> {
   return data;
 }
 
-export async function sendGroupMessage(id: number, body: string): Promise<GroupMessage> {
-  const { data } = await api.post<GroupMessage>(`/group-threads/${id}/messages/`, { body });
+export async function sendGroupMessage(id: number, body: string, extras?: SendExtras): Promise<GroupMessage> {
+  const { data } = await api.post<GroupMessage>(
+    `/group-threads/${id}/messages/`, messagePayload(body, extras));
   return data;
 }
 

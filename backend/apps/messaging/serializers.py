@@ -8,8 +8,28 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Conversation, DirectMessage, GroupMessage, GroupThread
+from .models import Conversation, DirectMessage, GroupMessage, GroupThread, MessageAttachment
 from .services import can_edit, group_unread_for
+
+
+class MessageAttachmentSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(read_only=True)
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MessageAttachment
+        fields = ("id", "url", "name", "kind", "content_type", "size", "duration_ms")
+
+    def get_url(self, obj) -> str:
+        if not obj.file:
+            return ""
+        url = obj.file.url
+        # MEDIA_URL has no leading slash; force one so the absolute URL points at
+        # the backend host, not wherever the API call happened to be made from.
+        if "://" not in url and not url.startswith("/"):
+            url = "/" + url
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
 
 
 class PersonSerializer(serializers.Serializer):
@@ -36,12 +56,13 @@ class DirectMessageSerializer(serializers.ModelSerializer):
     mine = serializers.SerializerMethodField()
     deleted = serializers.BooleanField(source="is_deleted", read_only=True)
     can_edit = serializers.SerializerMethodField()
+    attachments = MessageAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = DirectMessage
         fields = (
             "id", "conversation", "sender", "sender_name", "mine", "body",
-            "created_at", "read_at", "edited_at", "deleted", "can_edit",
+            "created_at", "read_at", "edited_at", "deleted", "can_edit", "attachments",
         )
         read_only_fields = ("conversation", "sender", "created_at", "read_at", "edited_at")
 
@@ -105,12 +126,13 @@ class GroupMessageSerializer(serializers.ModelSerializer):
     mine = serializers.SerializerMethodField()
     deleted = serializers.BooleanField(source="is_deleted", read_only=True)
     can_edit = serializers.SerializerMethodField()
+    attachments = MessageAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = GroupMessage
         fields = (
             "id", "thread", "sender", "sender_name", "mine", "body",
-            "created_at", "edited_at", "deleted", "can_edit",
+            "created_at", "edited_at", "deleted", "can_edit", "attachments",
         )
         read_only_fields = ("thread", "sender", "created_at", "edited_at")
 

@@ -136,6 +136,8 @@ class DirectMessage(models.Model):
         self.deleted_at = timezone.now()
         self.body = ""
         self.save(update_fields=["deleted_at", "body"])
+        # A retracted message keeps a tombstone but not its media.
+        self.attachments.all().delete()
 
 
 # --------------------------------------------------------------------------- #
@@ -238,3 +240,60 @@ class GroupMessage(models.Model):
         self.deleted_at = timezone.now()
         self.body = ""
         self.save(update_fields=["deleted_at", "body"])
+        # A retracted message keeps a tombstone but not its media.
+        self.attachments.all().delete()
+
+
+class MessageAttachment(models.Model):
+    """A file carried by a message — a photo, a document, or a voice note.
+
+    One row belongs to exactly one message, either a DM or a group message
+    (enforced by a check constraint). ``kind`` is derived from the upload's
+    content type so the client can render an image inline, a file as a download
+    chip, or an audio clip as a player.
+    """
+
+    IMAGE, FILE, AUDIO = "image", "file", "audio"
+    KIND_CHOICES = [(IMAGE, "Image"), (FILE, "File"), (AUDIO, "Voice / audio")]
+
+    direct_message = models.ForeignKey(
+        DirectMessage, null=True, blank=True, on_delete=models.CASCADE, related_name="attachments"
+    )
+    group_message = models.ForeignKey(
+        GroupMessage, null=True, blank=True, on_delete=models.CASCADE, related_name="attachments"
+    )
+    file = models.FileField(upload_to="messages/")
+    original_name = models.CharField(max_length=255, blank=True)
+    content_type = models.CharField(max_length=120, blank=True)
+    size = models.PositiveIntegerField(default=0)
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default=FILE)
+    # For voice notes: clip length in milliseconds, so the player can show it.
+    duration_ms = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("id",)
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(direct_message__isnull=False) & Q(group_message__isnull=True))
+                | (Q(direct_message__isnull=True) & Q(group_message__isnull=False)),
+                name="attachment_exactly_one_parent",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def name(self) -> str:
+        return self.original_name or (self.file.name.rsplit("/", 1)[-1] if self.file else "")
+
+
+def attachment_kind(content_type: str) -> str:
+    """Map an upload's content type to how the client should render it."""
+    ct = (content_type or "").lower()
+    if ct.startswith("image/"):
+        return MessageAttachment.IMAGE
+    if ct.startswith("audio/"):
+        return MessageAttachment.AUDIO
+    return MessageAttachment.FILE

@@ -55,7 +55,7 @@ def thread_url(conversation: Conversation) -> str:
     return f"/messages/{conversation.pk}"
 
 
-def send_message(conversation: Conversation, sender, body: str) -> DirectMessage:
+def send_message(conversation: Conversation, sender, body: str, preview: str | None = None) -> DirectMessage:
     """Append ``body`` to ``conversation`` and ping the other party.
 
     The recipient is notified only when this is the *first* thing they haven't
@@ -83,12 +83,12 @@ def send_message(conversation: Conversation, sender, body: str) -> DirectMessage
         waiting = waiting.filter(created_at__gt=cleared)
     if not waiting.exists():
         sender_name = sender.get_full_name() or sender.username
-        preview = body if len(body) <= PREVIEW_CHARS else body[:PREVIEW_CHARS].rstrip() + "…"
+        text = preview or (body if len(body) <= PREVIEW_CHARS else body[:PREVIEW_CHARS].rstrip() + "…")
         notify(
             recipient,
             NotificationEvent.DIRECT_MESSAGE,
             f"Message from {sender_name}",
-            body=preview,
+            body=text,
             url=thread_url(conversation),
         )
     return message
@@ -173,7 +173,7 @@ def total_group_unread(user) -> dict:
     return {"unread": unread, "threads": threads}
 
 
-def send_group_message(thread, sender, body: str) -> GroupMessage:
+def send_group_message(thread, sender, body: str, preview: str | None = None) -> GroupMessage:
     """Append ``body`` to a group and ping the other members.
 
     Each member gets at most one standing "there's a message here" ping until
@@ -186,7 +186,7 @@ def send_group_message(thread, sender, body: str) -> GroupMessage:
 
     url = group_thread_url(thread)
     sender_name = sender.get_full_name() or sender.username
-    preview = body if len(body) <= PREVIEW_CHARS else body[:PREVIEW_CHARS].rstrip() + "…"
+    preview = preview or (body if len(body) <= PREVIEW_CHARS else body[:PREVIEW_CHARS].rstrip() + "…")
     for m in thread.memberships.exclude(user_id=sender.id).select_related("user"):
         # Someone who has cleared past this message shouldn't be pulled back by it.
         if m.cleared_at and m.cleared_at >= message.created_at:
