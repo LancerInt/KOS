@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAutoRefresh } from "../useAutoRefresh";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import { Avatar, Box, Button, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
@@ -24,6 +25,7 @@ export default function LastLoginsPage() {
       .then(setRows)
       .catch((e) => { if (e?.response?.status === 403) setForbidden(true); else setRows([]); });
   }, []);
+  useAutoRefresh(() => { listLastLogins().then(setRows).catch(() => {}); });
 
   return (
     <Box sx={{ px: 3, py: 2.5 }}>

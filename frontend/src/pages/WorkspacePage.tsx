@@ -29,6 +29,7 @@ import { archiveWorkspace, updateWorkspace } from "../features/workspaces/worksp
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
 import { workspaceAccent, accentFromHex } from "../features/workspaces/accent";
 import { useAppSelector } from "../hooks";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { tokens, monoFont } from "../theme";
 
 const STATUS_DOT: Record<DurationStatus, string> = {
@@ -107,6 +108,7 @@ export default function WorkspacePage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [key]);
+  useAutoRefresh(load);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (ws && !accessLoading) refreshMemberCount(); }, [key, accessLoading]);
 

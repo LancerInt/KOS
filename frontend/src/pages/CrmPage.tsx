@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAutoRefresh } from "../useAutoRefresh";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import {
   Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
@@ -43,6 +44,7 @@ export default function CrmPage() {
     listOpportunities().then(setOpps).catch(() => setOpps([]));
   };
   useEffect(load, []);
+  useAutoRefresh(load);
 
   const weightedTotal = useMemo(
     () => opps.filter((o) => o.is_open).reduce((s, o) => s + o.weighted_amount, 0),

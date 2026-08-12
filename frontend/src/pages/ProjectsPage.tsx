@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAutoRefresh } from "../useAutoRefresh";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import { Box, Button, Chip, CircularProgress, Paper, Stack, Typography } from "@mui/material";
 
@@ -23,6 +24,7 @@ export default function ProjectsPage() {
   };
 
   useEffect(load, []);
+  useAutoRefresh(load);
 
   return (
     <Box sx={{ px: 3, py: 2.5 }}>

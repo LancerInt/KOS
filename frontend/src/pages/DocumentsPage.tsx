@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAutoRefresh } from "../useAutoRefresh";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
@@ -62,6 +63,7 @@ export default function DocumentsPage() {
     if (id) listDocuments(id).then(setDocs).catch(() => setDocs([]));
   };
   useEffect(load, [id]);
+  useAutoRefresh(load);
 
   return (
     <Box sx={{ px: 3, py: 2.5 }}>

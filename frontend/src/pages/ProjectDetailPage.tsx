@@ -19,6 +19,7 @@ import AiActionButton, { AiActionBar } from "../features/ai/AiActionButton";
 import { useAiPageContext } from "../features/ai/AiContext";
 import { project as projectAi } from "../features/ai/aiApi";
 import { useAppSelector } from "../hooks";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { tokens, monoFont } from "../theme";
 
 export default function ProjectDetailPage() {
@@ -42,6 +43,7 @@ export default function ProjectDetailPage() {
   const loadSprints = () => {
     if (id) listSprints(id).then(setSprints).catch(() => setSprints([]));
   };
+  useAutoRefresh(() => { loadTasks(); loadSprints(); });
   const enableSprints = async () => {
     if (!id) return;
     await updateProject(id, { sprint_enabled: true });

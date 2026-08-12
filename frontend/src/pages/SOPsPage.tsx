@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useAutoRefresh } from "../useAutoRefresh";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import {
@@ -44,6 +45,7 @@ export default function SOPsPage() {
 
   const loadList = () => listSOPs().then(setSops).catch(() => setSops([]));
   useEffect(() => { loadList(); }, []);
+  useAutoRefresh(loadList);
   useEffect(() => {
     if (selectedId) getSOP(selectedId).then(setSelected).catch(() => setSelected(null));
     else setSelected(null);

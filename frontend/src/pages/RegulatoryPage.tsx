@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAutoRefresh } from "../useAutoRefresh";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import {
@@ -34,6 +35,7 @@ export default function RegulatoryPage() {
 
   const load = () => { listRegistrations().then(setRegs).catch(() => setRegs([])); };
   useEffect(() => { load(); }, []);
+  useAutoRefresh(load);
 
   return (
     <Box sx={{ px: 3, py: 2.5 }}>

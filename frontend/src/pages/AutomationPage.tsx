@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAutoRefresh } from "../useAutoRefresh";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
@@ -49,6 +50,7 @@ export default function AutomationPage() {
     if (id) listLogs(id).then(setLogs).catch(() => setLogs([]));
   };
   useEffect(() => { getVocabulary().then(setVocab); load(); /* eslint-disable-next-line */ }, [id]);
+  useAutoRefresh(load);
 
   const toggle = (r: AutomationRule) => updateRule(r.id, { is_active: !r.is_active }).then(load);
   const remove = (r: AutomationRule) => { if (window.confirm(`Delete "${r.name}"?`)) deleteRule(r.id).then(load); };

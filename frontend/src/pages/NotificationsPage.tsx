@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { Box, Button, Chip, CircularProgress, IconButton, Paper, Snackbar, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
@@ -99,6 +100,7 @@ export default function NotificationsPage() {
       })
       .catch(() => setItems([]));
   useEffect(() => { load(); getPreferences().then(setPrefs).catch(() => {}); }, []);
+  useAutoRefresh(load);
 
   const savePref = (patch: Partial<Preferences>) => { updatePreferences(patch).then(setPrefs).catch(() => {}); };
 

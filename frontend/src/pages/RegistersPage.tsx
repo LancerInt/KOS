@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAutoRefresh } from "../useAutoRefresh";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import { Box, Button, Chip, MenuItem, Paper, Select, Stack, TextField, Typography } from "@mui/material";
 
@@ -40,6 +41,7 @@ export default function RegistersPage() {
     listDecisions(id).then(setDecisions);
   };
   useEffect(load, [id]);
+  useAutoRefresh(load);
 
   const projectId = Number(id);
 

@@ -35,6 +35,7 @@ import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import { listAllProjects, completeProject, submitProject, approveProject, rejectProject, downloadProjectsXlsx, type WorkspaceProject } from "../features/workspaces/projectsApi";
 import type { DurationStatus } from "../features/workspaces/projectsApi";
 import Pager, { usePaged } from "../components/Pager";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { listSavedViews, createSavedView, deleteSavedView, type SavedView } from "../features/views/savedViewsApi";
 import { getWorkspace } from "../features/workspaces/workspaces";
 import { useMyAccess, accessLevel } from "../features/workspaces/access";
@@ -192,6 +193,7 @@ export default function DashboardPage() {
   const reload = () => listAllProjects().then(setProjects).catch(() => setProjects([]));
   const loadViews = () => listSavedViews(VIEW_SURFACE).then(setSavedViews).catch(() => setSavedViews([]));
   useEffect(() => { reload(); loadViews(); }, []);
+  useAutoRefresh(reload);
 
   // Reflect approvals/blocks made elsewhere (e.g. the Notifications action tab)
   // without waiting for a remount.

@@ -11,6 +11,7 @@ import {
 import { loadDynamicWorkspaces, ICON_REGISTRY, getWorkspaceRaw, useWorkspaces, isBuiltinWorkspace } from "../features/workspaces/workspaces";
 import { accentFromHex, workspaceAccent } from "../features/workspaces/accent";
 import Pager, { usePaged } from "../components/Pager";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { tokens } from "../theme";
 
 const KIND_LABEL: Record<string, string> = { project: "Project", section: "Section", record: "Record", field: "Field" };
@@ -32,6 +33,7 @@ export default function ArchivePage() {
   const loadArchived = () =>
     listArchivedWorkspaces().then(setArchived).catch(() => setArchived([]));
   useEffect(() => { loadDeleted(); loadArchived(); }, []);
+  useAutoRefresh(() => { loadDeleted(); loadArchived(); });
 
   const restore = async (w: DynamicWorkspace) => {
     setBusy(w.key);

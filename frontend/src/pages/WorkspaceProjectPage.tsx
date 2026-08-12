@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, Paper, Snackbar, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
@@ -59,6 +60,7 @@ export default function WorkspaceProjectPage() {
     listRecords(pid).then(setRecords).catch(() => setRecords([]));
   };
   const refreshSections = () => listSections(pid).then(setRows);
+  useAutoRefresh(() => { load(); refreshSections().catch(() => {}); });
   const refreshMemberCount = () => {
     if (!pid) return;
     listProjectMembers(pid).then((m) => setMemberCount(m.length)).catch(() => {});
