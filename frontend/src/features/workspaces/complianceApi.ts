@@ -63,3 +63,18 @@ export const createObligation = (payload: NewObligation) =>
 
 export const deleteObligation = (id: number) =>
   api.delete(`/compliance-obligations/${id}/`);
+
+/** Download the filed register as a CSV (the proof of what was filed, when).
+ *  Fetched with the bearer token, then saved — a plain link would 401. */
+export async function exportFiledCsv(workspace: string): Promise<void> {
+  const { data, headers } = await api.get<Blob>("/compliance-deadlines/export/", {
+    params: { workspace }, responseType: "blob",
+  });
+  const match = /filename="([^"]+)"/.exec(String(headers["content-disposition"] ?? ""));
+  const url = URL.createObjectURL(data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = match?.[1] ?? `${workspace}-compliance-filed.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}

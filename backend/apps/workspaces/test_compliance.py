@@ -145,3 +145,21 @@ def test_can_delete_an_obligation(finance_user, db):
     r = client(finance_user).delete(f"/api/compliance-obligations/{ob.id}/")
     assert r.status_code == 204
     assert not ComplianceObligation.objects.filter(id=ob.id).exists()
+
+
+def test_export_filed_as_csv(finance_user, db):
+    ob = ComplianceObligation.objects.get(workspace=WS, name="GSTR-1")
+    dl = ComplianceDeadline.objects.create(obligation=ob, period_label="Aug 2026", due_date=dt.date(2026, 9, 11))
+    client(finance_user).post(f"/api/compliance-deadlines/{dl.id}/file/")
+    r = client(finance_user).get(f"/api/compliance-deadlines/export/?workspace={WS}")
+    assert r.status_code == 200
+    assert r["Content-Type"].startswith("text/csv")
+    body = r.content.decode()
+    assert "Filing,Period,Cadence,Due date,Filed on,Filed by" in body
+    assert "GSTR-1" in body and "Aug 2026" in body
+
+
+def test_export_needs_access(db):
+    outsider = User.objects.create_user(username="out3", email="out3@x.io", password="pw")
+    r = client(outsider).get(f"/api/compliance-deadlines/export/?workspace={WS}")
+    assert r.status_code == 403

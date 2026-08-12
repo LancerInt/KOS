@@ -8,10 +8,11 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import EditCalendarRoundedIcon from "@mui/icons-material/EditCalendarRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 
 import {
   listComplianceDeadlines, fileDeadline, unfileDeadline, updateDeadlineDueDate, createObligation,
-  type Cadence, type ComplianceDeadline,
+  exportFiledCsv, type Cadence, type ComplianceDeadline,
 } from "./complianceApi";
 import { tokens, monoFont } from "../../theme";
 
@@ -160,9 +161,14 @@ export function ComplianceCalendar({ workspace, canEdit }: { workspace: string; 
       {/* Recently filed — muted footer */}
       {filed.length > 0 && (
         <Box sx={{ px: 2, py: 1.25, borderTop: `1px solid ${tokens.line}`, bgcolor: "#FBFCFB" }}>
-          <Typography sx={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600, mb: 0.75 }}>
-            Recently filed
-          </Typography>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.75 }}>
+            <Typography sx={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: tokens.text3, fontWeight: 600 }}>
+              Recently filed
+            </Typography>
+            <Button size="small" startIcon={<DownloadRoundedIcon sx={{ fontSize: 15 }} />}
+              onClick={() => exportFiledCsv(workspace)}
+              sx={{ minWidth: 0, py: 0, fontSize: 11.5, color: tokens.text2 }}>Export CSV</Button>
+          </Stack>
           <Stack spacing={0.5}>
             {filed.map((d) => (
               <Stack key={d.id} direction="row" alignItems="center" spacing={1}>

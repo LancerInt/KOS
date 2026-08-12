@@ -1262,6 +1262,32 @@ class ComplianceDeadlineViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, 
                new_value={"filed": False, "name": dl.obligation.name, "period": dl.period_label}, request=request)
         return Response(self.get_serializer(dl).data)
 
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request):
+        """The filed register as CSV — the proof of what was filed and when."""
+        import csv
+
+        ws = request.query_params.get("workspace")
+        if not ws or not can_view(request.user, ws):
+            raise PermissionDenied("You don't have access to this workspace.")
+        rows = (
+            ComplianceDeadline.objects.select_related("obligation", "filed_by")
+            .filter(obligation__workspace=ws, status=ComplianceDeadline.FILED)
+            .order_by("due_date")
+        )
+        resp = HttpResponse(content_type="text/csv")
+        resp["Content-Disposition"] = f'attachment; filename="{ws}-compliance-filed.csv"'
+        writer = csv.writer(resp)
+        writer.writerow(["Filing", "Period", "Cadence", "Due date", "Filed on", "Filed by"])
+        for d in rows:
+            writer.writerow([
+                d.obligation.name, d.period_label, d.obligation.get_cadence_display(),
+                d.due_date.isoformat(),
+                timezone.localtime(d.filed_at).strftime("%Y-%m-%d %H:%M") if d.filed_at else "",
+                (d.filed_by.get_full_name() or d.filed_by.username) if d.filed_by else "",
+            ])
+        return resp
+
 
 class ComplianceObligationViewSet(viewsets.ModelViewSet):
     """The recurring filings a workspace tracks. Users can add their own
