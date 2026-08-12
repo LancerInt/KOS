@@ -40,10 +40,16 @@ class NotificationViewSet(
 
     def get_queryset(self):
         # Lazily raise "duration complete" notifications for the viewer's own
-        # Entomology projects, so they surface without a running scheduler.
+        # Entomology projects, and statutory-filing reminders, so they surface
+        # without a running scheduler.
         try:
             from apps.workspaces.duration import sync_due_durations
             sync_due_durations(self.request.user)
+        except Exception:
+            pass
+        try:
+            from apps.workspaces.compliance import scan_compliance
+            scan_compliance()
         except Exception:
             pass
         return Notification.objects.filter(recipient=self.request.user)

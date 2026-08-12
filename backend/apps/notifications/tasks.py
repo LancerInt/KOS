@@ -73,6 +73,7 @@ def run_all_scans() -> dict:
     from apps.documents.tasks import scan_document_expiry, scan_sop_reviews
     from apps.integrations.engine import retry_due
     from apps.regulatory.tasks import scan_registration_renewals
+    from apps.workspaces.compliance import scan_compliance
     from apps.workspaces.duration import sync_all_due_durations
 
     return {
@@ -84,4 +85,5 @@ def run_all_scans() -> dict:
         "webhook_retries": retry_due(),
         "registration_renewals": scan_registration_renewals(),
         "workspace_durations": sync_all_due_durations(),
+        "statutory_compliance": scan_compliance(),
     }

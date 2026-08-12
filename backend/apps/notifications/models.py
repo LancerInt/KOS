@@ -33,6 +33,7 @@ class NotificationEvent(models.TextChoices):
     DOC_EXPIRING = "doc_expiring", "Document expiring"
     SOP_REVIEW_DUE = "sop_review_due", "SOP review due"
     REGISTRATION_DUE = "registration_due", "Registration renewal due"
+    COMPLIANCE_DUE = "compliance_due", "Statutory filing due"
     DURATION_COMPLETE = "duration_complete", "Workspace project duration complete"
     ACK_RECEIVED = "ack_received", "Acknowledgement received"
     AUTOMATION = "automation", "Automation"

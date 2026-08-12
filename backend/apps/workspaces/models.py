@@ -596,3 +596,60 @@ class Workspace(models.Model):
         WorkspacePermission.objects.filter(workspace=self.key).delete()
         WorkspaceMember.objects.filter(workspace=self.key).delete()
         WorkspaceUserAccess.objects.filter(workspace=self.key).delete()
+
+
+class ComplianceObligation(models.Model):
+    """A recurring statutory filing for a workspace (e.g. GSTR-1 monthly). The
+    definition — cadence and how its due date is computed — from which dated
+    ``ComplianceDeadline`` instances are generated. Seeded for Finance &
+    Statutory; editable so an admin can adjust dates when the govt shifts them."""
+
+    MONTHLY, QUARTERLY, ANNUAL = "monthly", "quarterly", "annual"
+    CADENCES = [(MONTHLY, "Monthly"), (QUARTERLY, "Quarterly"), (ANNUAL, "Annual")]
+
+    workspace = models.CharField(max_length=64, db_index=True)
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=300, blank=True)
+    cadence = models.CharField(max_length=12, choices=CADENCES, default=MONTHLY)
+    # The return is due on ``due_day`` of the month ``month_offset`` months after
+    # each period ends. For ANNUAL, the date is absolute: ``due_month``/``due_day``.
+    due_day = models.PositiveSmallIntegerField(default=1)
+    month_offset = models.PositiveSmallIntegerField(default=1)
+    due_month = models.PositiveSmallIntegerField(null=True, blank=True)
+    lead_days = models.PositiveSmallIntegerField(default=5)   # remind this many days ahead
+    active = models.BooleanField(default=True)
+    order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("order", "name")
+        unique_together = ("workspace", "name")
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.get_cadence_display()})"
+
+
+class ComplianceDeadline(models.Model):
+    """One dated instance of an obligation — a specific period's filing that gets
+    reminded ahead of time and marked filed."""
+
+    PENDING, FILED = "pending", "filed"
+    STATUSES = [(PENDING, "Pending"), (FILED, "Filed")]
+
+    obligation = models.ForeignKey(
+        ComplianceObligation, on_delete=models.CASCADE, related_name="deadlines")
+    period_label = models.CharField(max_length=40)   # the tax period, e.g. "Aug 2026"
+    due_date = models.DateField(db_index=True)
+    status = models.CharField(max_length=10, choices=STATUSES, default=PENDING)
+    filed_at = models.DateTimeField(null=True, blank=True)
+    filed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    reminders_sent = models.JSONField(default=list, blank=True)   # stage keys already fired
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("due_date",)
+        unique_together = ("obligation", "due_date")
+
+    def __str__(self) -> str:
+        return f"{self.obligation.name} — {self.period_label} (due {self.due_date})"

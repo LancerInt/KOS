@@ -9,9 +9,9 @@ from rest_framework import serializers
 
 from .access import approver_ids, is_supervisor
 from .models import (
-    MAX_SECTION_DEPTH, Workspace, WorkspaceMember, WorkspacePermission,
-    WorkspaceProject, WorkspaceProjectMember, WorkspaceRecord, WorkspaceRecordAttachment,
-    WorkspaceSection,
+    MAX_SECTION_DEPTH, ComplianceDeadline, ComplianceObligation, Workspace, WorkspaceMember,
+    WorkspacePermission, WorkspaceProject, WorkspaceProjectMember, WorkspaceRecord,
+    WorkspaceRecordAttachment, WorkspaceSection,
 )
 
 
@@ -422,3 +422,43 @@ class WorkspaceSectionSerializer(serializers.ModelSerializer):
         if provided_name:
             attrs["name"] = name
         return attrs
+
+
+class ComplianceObligationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ComplianceObligation
+        fields = (
+            "id", "workspace", "name", "description", "cadence",
+            "due_day", "month_offset", "due_month", "lead_days", "active", "order",
+        )
+        read_only_fields = ("workspace", "name", "cadence")
+
+
+class ComplianceDeadlineSerializer(serializers.ModelSerializer):
+    obligation_name = serializers.CharField(source="obligation.name", read_only=True)
+    workspace = serializers.CharField(source="obligation.workspace", read_only=True)
+    cadence = serializers.CharField(source="obligation.cadence", read_only=True)
+    lead_days = serializers.IntegerField(source="obligation.lead_days", read_only=True)
+    filed_by_name = serializers.SerializerMethodField()
+    days_left = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ComplianceDeadline
+        fields = (
+            "id", "obligation", "obligation_name", "workspace", "cadence",
+            "period_label", "due_date", "status", "filed_at", "filed_by_name",
+            "lead_days", "days_left",
+        )
+        # Only the due date is user-editable here (an extension); status moves
+        # through the file / unfile actions.
+        read_only_fields = (
+            "obligation", "period_label", "status", "filed_at",
+        )
+
+    def get_filed_by_name(self, obj) -> str:
+        u = obj.filed_by
+        return (u.get_full_name() or u.username) if u else ""
+
+    def get_days_left(self, obj) -> int:
+        from django.utils import timezone
+        return (obj.due_date - timezone.localdate()).days

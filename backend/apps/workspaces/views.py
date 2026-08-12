@@ -14,7 +14,7 @@ from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.text import slugify
-from rest_framework import viewsets
+from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -33,17 +33,18 @@ from .access import (
     SUPERVISOR_ROLE_NAMES, approver_ids, base_access, can_edit, can_open_project, can_view,
     effective_access, is_supervisor, project_scope_q,
 )
+from .compliance import ensure_upcoming_deadlines, scan_compliance
 from .export import build_workbook, project_rows
 from .recurrence import spawn_successor
 from .models import (
-    ARCHIVE_TTL_DAYS, Workspace, WorkspaceMember, WorkspacePermission, WorkspaceProject,
-    WorkspaceProjectMember, WorkspaceRecord, WorkspaceRecordAttachment, WorkspaceSection,
-    WorkspaceUserAccess,
+    ARCHIVE_TTL_DAYS, ComplianceDeadline, ComplianceObligation, Workspace, WorkspaceMember,
+    WorkspacePermission, WorkspaceProject, WorkspaceProjectMember, WorkspaceRecord,
+    WorkspaceRecordAttachment, WorkspaceSection, WorkspaceUserAccess,
 )
 from .serializers import (
-    WorkspaceMemberSerializer, WorkspacePermissionSerializer, WorkspaceProjectMemberSerializer,
-    WorkspaceProjectSerializer, WorkspaceRecordSerializer, WorkspaceSectionSerializer,
-    WorkspaceSerializer,
+    ComplianceDeadlineSerializer, WorkspaceMemberSerializer, WorkspacePermissionSerializer,
+    WorkspaceProjectMemberSerializer, WorkspaceProjectSerializer, WorkspaceRecordSerializer,
+    WorkspaceSectionSerializer, WorkspaceSerializer,
 )
 
 User = get_user_model()
@@ -1194,3 +1195,69 @@ class WorkspaceDeletedItemsView(APIView):
                new_value={"workspace": row.workspace, "name": getattr(row, "name", ""),
                           "kind": request.data.get("kind"), "restored": True}, request=request)
         return Response({"restored": True, "kind": request.data.get("kind"), "id": row.id})
+
+
+class ComplianceDeadlineViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    """Statutory filing deadlines for a workspace (Finance & Statutory). List
+    them (?workspace=), mark one filed / unfiled, or shift a due date when the
+    government extends it. Opening the list also tops up upcoming deadlines and
+    sends any due reminders — the lazy scan path."""
+
+    serializer_class = ComplianceDeadlineSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        base = ComplianceDeadline.objects.select_related("obligation")
+        ws = self.request.query_params.get("workspace")
+        if ws:
+            if not can_view(self.request.user, ws):
+                return base.none()
+            try:
+                scan_compliance(workspace=ws)     # top up + remind on open
+            except Exception:
+                pass
+            return base.filter(obligation__workspace=ws)
+        # No filter (detail actions, or a rare unscoped list): the workspaces the
+        # user may view.
+        acc = effective_access(self.request.user)
+        if acc is None:
+            return base
+        return base.filter(obligation__workspace__in=set(acc.keys()))
+
+    def _require_ws_edit(self, dl):
+        _require_edit(self.request.user, dl.obligation.workspace)
+
+    def perform_update(self, serializer):
+        # Only the due date is writable (an extension) — editors of the workspace.
+        self._require_ws_edit(serializer.instance)
+        old = serializer.instance.due_date
+        dl = serializer.save()
+        record(action=AuditAction.DEADLINE_CHANGE, object_type="ComplianceDeadline",
+               object_id=str(dl.pk), old_value={"due_date": str(old)},
+               new_value={"due_date": str(dl.due_date), "name": dl.obligation.name}, request=self.request)
+
+    @action(detail=True, methods=["post"])
+    def file(self, request, pk=None):
+        dl = self.get_object()
+        self._require_ws_edit(dl)
+        dl.status = ComplianceDeadline.FILED
+        dl.filed_at = timezone.now()
+        dl.filed_by = request.user
+        dl.save(update_fields=["status", "filed_at", "filed_by"])
+        ensure_upcoming_deadlines(dl.obligation)   # filing one rolls the calendar forward
+        record(action=AuditAction.STATUS_CHANGE, object_type="ComplianceDeadline", object_id=str(dl.pk),
+               new_value={"filed": True, "name": dl.obligation.name, "period": dl.period_label}, request=request)
+        return Response(self.get_serializer(dl).data)
+
+    @action(detail=True, methods=["post"])
+    def unfile(self, request, pk=None):
+        dl = self.get_object()
+        self._require_ws_edit(dl)
+        dl.status = ComplianceDeadline.PENDING
+        dl.filed_at = None
+        dl.filed_by = None
+        dl.save(update_fields=["status", "filed_at", "filed_by"])
+        record(action=AuditAction.STATUS_CHANGE, object_type="ComplianceDeadline", object_id=str(dl.pk),
+               new_value={"filed": False, "name": dl.obligation.name, "period": dl.period_label}, request=request)
+        return Response(self.get_serializer(dl).data)

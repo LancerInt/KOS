@@ -16,6 +16,7 @@ import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 
 import { getWorkspace, useWorkspaces, loadDynamicWorkspaces, dynamicWorkspacesReady, iconNameOf, isBuiltinWorkspace } from "../features/workspaces/workspaces";
 import { InlineRename } from "../features/workspaces/InlineRename";
+import { ComplianceCalendar } from "../features/workspaces/ComplianceCalendar";
 import BuildWithAiDialog from "../features/ai/BuildWithAiDialog";
 import MembersDialog from "../features/workspaces/MembersDialog";
 import { listMembers, workspaceMemberScope } from "../features/workspaces/workspaceMembersApi";
@@ -306,6 +307,10 @@ export default function WorkspacePage() {
           <StatTile label="Records" value={recordCount} accent={acc} />
         </Box>
       )}
+
+      {/* Statutory compliance calendar — self-hides unless this workspace has
+          recurring filings seeded (Finance & Statutory). */}
+      <ComplianceCalendar workspace={ws.key} canEdit={canEdit} />
 
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 2.5, mb: 1.75 }}>
         <Stack direction="row" alignItems="center" spacing={1}>
