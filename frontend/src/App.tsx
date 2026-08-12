@@ -73,6 +73,7 @@ export default function App() {
             <Route path="/regulatory" element={<RegulatoryPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/messages" element={<MessagesPage />} />
+            <Route path="/messages/g/:gid" element={<MessagesPage />} />
             <Route path="/messages/:id" element={<MessagesPage />} />
             <Route path="/email" element={<EmailPage />} />
             <Route path="/admin/roles" element={<RolesPage />} />

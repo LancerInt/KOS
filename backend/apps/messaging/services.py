@@ -7,10 +7,10 @@ from django.db.models import Case, DateTimeField, F, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from apps.notifications.models import NotificationEvent
+from apps.notifications.models import Notification, NotificationEvent
 from apps.notifications.services import notify
 
-from .models import Conversation, DirectMessage
+from .models import Conversation, DirectMessage, GroupMessage
 
 # How much of the message rides along in the bell / email preview.
 PREVIEW_CHARS = 240
@@ -119,3 +119,82 @@ def unread_for(user):
         .annotate(_cleared=cleared_expression(user, prefix="conversation__"))
         .filter(created_at__gt=F("_cleared"))
     )
+
+
+# --------------------------------------------------------------------------- #
+# Group chats
+# --------------------------------------------------------------------------- #
+
+
+def group_thread_url(thread) -> str:
+    return f"/messages/g/{thread.pk}"
+
+
+def _group_unread_queryset(thread, membership):
+    """Incoming, still-unread messages for one member of ``thread``."""
+    rows = thread.messages.filter(deleted_at__isnull=True).exclude(sender_id=membership.user_id)
+    # The later of "last opened" and "cleared" is the floor below which nothing
+    # counts as new.
+    floor = membership.last_read_at
+    if membership.cleared_at and (floor is None or membership.cleared_at > floor):
+        floor = membership.cleared_at
+    if floor is not None:
+        rows = rows.filter(created_at__gt=floor)
+    return rows
+
+
+def group_unread_for(thread, user) -> int:
+    m = thread.membership_for(user)
+    return _group_unread_queryset(thread, m).count() if m else 0
+
+
+def mark_group_read(thread, user) -> int:
+    """Stamp the member's read-point to now. Returns how many were outstanding."""
+    m = thread.membership_for(user)
+    if not m:
+        return 0
+    outstanding = _group_unread_queryset(thread, m).count()
+    m.last_read_at = timezone.now()
+    m.save(update_fields=["last_read_at"])
+    return outstanding
+
+
+def total_group_unread(user) -> dict:
+    """Aggregate unread across every group the user is in — for the badge."""
+    from .models import GroupMembership
+
+    unread = 0
+    threads = 0
+    for m in GroupMembership.objects.filter(user=user).select_related("thread"):
+        n = _group_unread_queryset(m.thread, m).count()
+        if n:
+            unread += n
+            threads += 1
+    return {"unread": unread, "threads": threads}
+
+
+def send_group_message(thread, sender, body: str) -> GroupMessage:
+    """Append ``body`` to a group and ping the other members.
+
+    Each member gets at most one standing "there's a message here" ping until
+    they open the thread — the same courtesy as a DM, so a busy group doesn't
+    fire a bell per line.
+    """
+    message = GroupMessage.objects.create(thread=thread, sender=sender, body=body)
+    thread.last_message_at = message.created_at
+    thread.save(update_fields=["last_message_at"])
+
+    url = group_thread_url(thread)
+    sender_name = sender.get_full_name() or sender.username
+    preview = body if len(body) <= PREVIEW_CHARS else body[:PREVIEW_CHARS].rstrip() + "…"
+    for m in thread.memberships.exclude(user_id=sender.id).select_related("user"):
+        # Someone who has cleared past this message shouldn't be pulled back by it.
+        if m.cleared_at and m.cleared_at >= message.created_at:
+            continue
+        if Notification.objects.filter(recipient=m.user, url=url, is_read=False).exists():
+            continue
+        notify(
+            m.user, NotificationEvent.DIRECT_MESSAGE,
+            f"{sender_name} in {thread.name}", body=preview, url=url,
+        )
+    return message

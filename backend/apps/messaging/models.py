@@ -136,3 +136,105 @@ class DirectMessage(models.Model):
         self.deleted_at = timezone.now()
         self.body = ""
         self.save(update_fields=["deleted_at", "body"])
+
+
+# --------------------------------------------------------------------------- #
+# Group chats
+#
+# A named thread with any number of members. Unlike a DM (a canonical pair),
+# membership is explicit rows, so people can be added and can leave. Anyone can
+# create a group and add anyone; the creator is its admin (rename / remove /
+# delete). Each member carries their own read-point and clear-point, mirroring
+# the one-sided semantics of a DM.
+# --------------------------------------------------------------------------- #
+
+
+class GroupThread(models.Model):
+    name = models.CharField(max_length=120)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Stamped on creation and on each message so an empty group still sorts.
+    last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        ordering = ("-last_message_at", "-created_at")
+
+    def __str__(self) -> str:
+        return f"Group {self.name!r} ({self.pk})"
+
+    @classmethod
+    def visible_to(cls, user):
+        """Groups ``user`` is a member of."""
+        return cls.objects.filter(memberships__user=user)
+
+    def membership_for(self, user):
+        return self.memberships.filter(user=user).first()
+
+    def is_member(self, user) -> bool:
+        return bool(user) and self.memberships.filter(user_id=user.id).exists()
+
+    def is_admin(self, user) -> bool:
+        m = self.membership_for(user)
+        return bool(m and m.is_admin)
+
+    def member_users(self):
+        return [m.user for m in self.memberships.select_related("user")]
+
+    def visible_messages(self, user):
+        """Messages ``user`` can still see — everything after their clear-point."""
+        m = self.membership_for(user)
+        rows = self.messages.all()
+        if m and m.cleared_at is not None:
+            rows = rows.filter(created_at__gt=m.cleared_at)
+        return rows
+
+
+class GroupMembership(models.Model):
+    thread = models.ForeignKey(GroupThread, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="group_memberships"
+    )
+    is_admin = models.BooleanField(default=False)
+    joined_at = models.DateTimeField(auto_now_add=True)
+    # Everything up to this moment is hidden from this member (used when they
+    # clear the thread or leave). Null = never cleared.
+    cleared_at = models.DateTimeField(null=True, blank=True)
+    # When this member last opened the thread; drives their unread count.
+    last_read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["thread", "user"], name="uniq_group_member"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} in group {self.thread_id}"
+
+
+class GroupMessage(models.Model):
+    thread = models.ForeignKey(GroupThread, on_delete=models.CASCADE, related_name="messages")
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_group_messages"
+    )
+    body = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    edited_at = models.DateTimeField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("created_at",)
+        indexes = [models.Index(fields=["thread", "created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.sender_id}: {self.body[:40] if not self.deleted_at else '(deleted)'}"
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    def soft_delete(self) -> None:
+        self.deleted_at = timezone.now()
+        self.body = ""
+        self.save(update_fields=["deleted_at", "body"])

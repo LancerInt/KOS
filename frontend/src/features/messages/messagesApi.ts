@@ -1,14 +1,11 @@
-import { api } from "../../api/client";
+import { api, fetchAll } from "../../api/client";
 
 /**
- * Direct messages — a private one-to-one thread between two people.
+ * Messages — private one-to-one threads (DMs) and named group chats.
  *
- * Management/IT open a thread with someone; from then on both sides can write
- * in it. `directory()` reports whether the current user may start one, so the
- * UI can explain itself instead of offering a button that always fails.
+ * Anyone active can start a DM with anyone or create a group and add anyone.
+ * `directory()` returns the people you can write to.
  */
-
-interface Paginated<T> { results: T[]; }
 
 export interface Person {
   id: number;
@@ -52,8 +49,7 @@ export interface DirectMessage {
 }
 
 export async function listConversations(): Promise<Conversation[]> {
-  const { data } = await api.get<Paginated<Conversation>>("/conversations/");
-  return data.results ?? (data as unknown as Conversation[]);
+  return fetchAll<Conversation>("/conversations/");
 }
 
 export async function listMessages(conversationId: number): Promise<DirectMessage[]> {
@@ -97,9 +93,15 @@ export async function markThreadRead(conversationId: number): Promise<{ marked: 
   return data;
 }
 
+// The sidebar badge counts DMs *and* groups together — one "you have unread
+// messages" number across the whole Messages area.
 export async function messagesUnreadCount(): Promise<{ unread: number; threads: number }> {
-  const { data } = await api.get("/conversations/unread_count/");
-  return data;
+  const zero = { unread: 0, threads: 0 };
+  const [dm, grp] = await Promise.all([
+    api.get("/conversations/unread_count/").then((r) => r.data).catch(() => zero),
+    api.get("/group-threads/unread_count/").then((r) => r.data).catch(() => zero),
+  ]);
+  return { unread: (dm.unread || 0) + (grp.unread || 0), threads: (dm.threads || 0) + (grp.threads || 0) };
 }
 
 export async function directory(): Promise<{ can_start: boolean; people: Person[] }> {
@@ -110,4 +112,83 @@ export async function directory(): Promise<{ can_start: boolean; people: Person[
 /** Nudge the sidebar badge to re-read; sending/reading doesn't change route. */
 export function announceMessagesChanged() {
   window.dispatchEvent(new Event("kos:messages-changed"));
+}
+
+// --------------------------------------------------------------------------- //
+// Group chats
+// --------------------------------------------------------------------------- //
+
+export interface GroupThread {
+  id: number;
+  name: string;
+  kind: "group";
+  members: Person[];
+  member_count: number;
+  is_admin: boolean;
+  unread: number;
+  last_message: (LastMessage & { sender_name?: string }) | null;
+  last_message_at: string | null;
+  created_at: string;
+  created_by: number | null;
+}
+
+export interface GroupMessage {
+  id: number;
+  thread: number;
+  sender: number;
+  sender_name: string;
+  mine: boolean;
+  body: string;
+  created_at: string;
+  edited_at: string | null;
+  deleted: boolean;
+  can_edit: boolean;
+}
+
+export async function listGroupThreads(): Promise<GroupThread[]> {
+  return fetchAll<GroupThread>("/group-threads/");
+}
+
+export async function createGroup(name: string, members: number[], body?: string): Promise<GroupThread> {
+  const { data } = await api.post<GroupThread>("/group-threads/", { name, members, body });
+  return data;
+}
+
+export async function listGroupMessages(id: number): Promise<GroupMessage[]> {
+  const { data } = await api.get<GroupMessage[]>(`/group-threads/${id}/messages/`);
+  return data;
+}
+
+export async function sendGroupMessage(id: number, body: string): Promise<GroupMessage> {
+  const { data } = await api.post<GroupMessage>(`/group-threads/${id}/messages/`, { body });
+  return data;
+}
+
+export async function markGroupRead(id: number): Promise<{ marked: number }> {
+  const { data } = await api.post(`/group-threads/${id}/read/`);
+  return data;
+}
+
+export async function addGroupMembers(id: number, members: number[]): Promise<GroupThread> {
+  const { data } = await api.post<GroupThread>(`/group-threads/${id}/members/`, { members });
+  return data;
+}
+
+export async function leaveGroup(id: number): Promise<void> {
+  await api.post(`/group-threads/${id}/leave/`);
+}
+
+export async function renameGroup(id: number, name: string): Promise<GroupThread> {
+  const { data } = await api.patch<GroupThread>(`/group-threads/${id}/`, { name });
+  return data;
+}
+
+export async function editGroupMessage(messageId: number, body: string): Promise<GroupMessage> {
+  const { data } = await api.patch<GroupMessage>(`/group-messages/${messageId}/`, { body });
+  return data;
+}
+
+export async function deleteGroupMessage(messageId: number): Promise<GroupMessage> {
+  const { data } = await api.delete<GroupMessage>(`/group-messages/${messageId}/`);
+  return data;
 }

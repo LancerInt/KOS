@@ -25,11 +25,15 @@ from rest_framework.views import APIView
 from apps.audit.models import AuditAction
 from apps.audit.services import record
 
-from .models import Conversation, DirectMessage
+from .models import Conversation, DirectMessage, GroupMembership, GroupMessage, GroupThread
 from .permissions import can_start_conversation
-from .serializers import ConversationSerializer, DirectMessageSerializer, PersonSerializer
+from .serializers import (
+    ConversationSerializer, DirectMessageSerializer, GroupMessageSerializer,
+    GroupThreadSerializer, PersonSerializer,
+)
 from .services import (
-    NEVER_CLEARED, can_edit, cleared_expression, mark_thread_read, send_message, unread_for,
+    NEVER_CLEARED, can_edit, cleared_expression, mark_group_read, mark_thread_read,
+    send_group_message, send_message, total_group_unread, unread_for,
 )
 
 User = get_user_model()
@@ -253,6 +257,170 @@ class DirectMessageViewSet(viewsets.GenericViewSet):
         if message.deleted_at is None:
             message.soft_delete()
         return Response(DirectMessageSerializer(message, context={"request": request}).data)
+
+
+class GroupThreadViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Group chats — named threads with any number of members.
+
+    Anyone active can create one and add anyone; the creator is its admin
+    (rename). Any member can add more people or leave.
+    """
+
+    serializer_class = GroupThreadSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            GroupThread.visible_to(self.request.user)
+            .prefetch_related("memberships__user__roles")
+            .distinct()
+        )
+
+    def get_object(self):
+        return get_object_or_404(self.get_queryset(), pk=self.kwargs["pk"])
+
+    def _resolve_members(self, ids):
+        clean = []
+        for raw in ids or []:
+            try:
+                clean.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        return list(User.objects.filter(pk__in=clean, is_active=True))
+
+    def _serialize(self, pk: int) -> dict:
+        obj = self.get_queryset().get(pk=pk)
+        return GroupThreadSerializer(obj, context={"request": self.request}).data
+
+    def create(self, request: Request) -> Response:
+        if not can_start_conversation(request.user):
+            raise PermissionDenied("Your account can't create a group.")
+        name = (request.data.get("name") or "").strip()
+        if not name:
+            raise ValidationError({"name": "Give the group a name."})
+        if len(name) > 120:
+            raise ValidationError({"name": "Keep the group name under 120 characters."})
+        members = [u for u in self._resolve_members(request.data.get("members")) if u.id != request.user.id]
+        if not members:
+            raise ValidationError({"members": "Add at least one other person."})
+
+        thread = GroupThread.objects.create(name=name, created_by=request.user, last_message_at=timezone.now())
+        GroupMembership.objects.create(thread=thread, user=request.user, is_admin=True)
+        for u in members:
+            GroupMembership.objects.get_or_create(thread=thread, user=u)
+        record(
+            action=AuditAction.CREATE, obj=thread,
+            new_value={"name": name, "members": [u.get_full_name() or u.username for u in members]},
+            request=request,
+        )
+        if (request.data.get("body") or "").strip():
+            send_group_message(thread, request.user, clean_body(request.data.get("body")))
+        return Response(self._serialize(thread.pk), status=201)
+
+    @action(detail=True, methods=["get", "post"])
+    def messages(self, request: Request, pk=None) -> Response:
+        thread = self.get_object()
+        if request.method == "POST":
+            message = send_group_message(thread, request.user, clean_body(request.data.get("body")))
+            return Response(GroupMessageSerializer(message, context={"request": request}).data, status=201)
+        rows = list(
+            thread.visible_messages(request.user).select_related("sender").order_by("-created_at")[:THREAD_LIMIT]
+        )
+        rows.reverse()
+        return Response(GroupMessageSerializer(rows, many=True, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def read(self, request: Request, pk=None) -> Response:
+        thread = self.get_object()
+        return Response({"marked": mark_group_read(thread, request.user)})
+
+    @action(detail=True, methods=["post"])
+    def members(self, request: Request, pk=None) -> Response:
+        """Add people to the group. Any member may add (open policy)."""
+        thread = self.get_object()
+        added = []
+        for u in self._resolve_members(request.data.get("members")):
+            _, created = GroupMembership.objects.get_or_create(thread=thread, user=u)
+            if created:
+                added.append(u)
+        if added:
+            record(
+                action=AuditAction.UPDATE, obj=thread,
+                new_value={"added": [u.get_full_name() or u.username for u in added]}, request=request,
+            )
+        return Response(self._serialize(thread.pk))
+
+    @action(detail=True, methods=["post"])
+    def leave(self, request: Request, pk=None) -> Response:
+        """Leave the group. If the last member leaves, the group is removed; if an
+        admin leaves, the earliest remaining member becomes admin so it's never
+        left without one."""
+        thread = self.get_object()
+        m = thread.membership_for(request.user)
+        if m:
+            was_admin = m.is_admin
+            m.delete()
+            remaining = thread.memberships.order_by("joined_at")
+            if not remaining.exists():
+                thread.delete()
+            elif was_admin and not remaining.filter(is_admin=True).exists():
+                first = remaining.first()
+                first.is_admin = True
+                first.save(update_fields=["is_admin"])
+        return Response(status=204)
+
+    def partial_update(self, request: Request, pk=None) -> Response:
+        """Rename the group — admin only."""
+        thread = self.get_object()
+        if not thread.is_admin(request.user):
+            raise PermissionDenied("Only the group's admin can rename it.")
+        name = (request.data.get("name") or "").strip()
+        if not name:
+            raise ValidationError({"name": "Give the group a name."})
+        thread.name = name[:120]
+        thread.save(update_fields=["name"])
+        return Response(self._serialize(thread.pk))
+
+    @action(detail=False, methods=["get"])
+    def unread_count(self, request: Request) -> Response:
+        return Response(total_group_unread(request.user))
+
+
+class GroupMessageViewSet(viewsets.GenericViewSet):
+    """Correcting and retracting individual group messages — your own only."""
+
+    serializer_class = GroupMessageSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return GroupMessage.objects.filter(
+            thread__in=GroupThread.visible_to(self.request.user)
+        ).select_related("sender", "thread")
+
+    def partial_update(self, request: Request, pk=None) -> Response:
+        message = self.get_object()
+        if message.sender_id != request.user.id:
+            raise PermissionDenied("You can only edit your own messages.")
+        if message.deleted_at is not None:
+            raise ValidationError("That message was deleted.")
+        if not can_edit(message, request.user):
+            raise ValidationError("This message is too old to edit. Send a follow-up instead.")
+        message.body = clean_body(request.data.get("body"))
+        message.edited_at = timezone.now()
+        message.save(update_fields=["body", "edited_at"])
+        return Response(GroupMessageSerializer(message, context={"request": request}).data)
+
+    def destroy(self, request: Request, pk=None) -> Response:
+        message = self.get_object()
+        if message.sender_id != request.user.id:
+            raise PermissionDenied("You can only delete your own messages.")
+        if message.deleted_at is None:
+            message.soft_delete()
+        return Response(GroupMessageSerializer(message, context={"request": request}).data)
 
 
 class MessageDirectoryView(APIView):
