@@ -104,6 +104,9 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=30, blank=True)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
+    # Last authenticated API request, stamped (throttled) by PresenceJWTAuthentication.
+    # Drives the online / last-seen dots in Messages.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
 
     department = models.ForeignKey(
         Department,

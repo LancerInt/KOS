@@ -30,8 +30,8 @@ import AddReactionOutlinedIcon from "@mui/icons-material/AddReactionOutlined";
 
 import {
   announceMessagesChanged, deleteConversation, deleteGroupMessage, deleteMessage, directory,
-  editGroupMessage, editMessage, leaveGroup, listConversations, listGroupMessages,
-  listGroupThreads, listMessages, markGroupRead, markThreadRead, reactToDirectMessage,
+  editGroupMessage, editMessage, getTyping, leaveGroup, listConversations, listGroupMessages,
+  listGroupThreads, listMessages, markGroupRead, markThreadRead, pingTyping, reactToDirectMessage,
   reactToGroupMessage, renameGroup, sendGroupMessage, sendMessage,
   type Conversation, type GroupThread, type MessageAttachment, type MessageReaction,
 } from "../features/messages/messagesApi";
@@ -43,7 +43,10 @@ import { tokens, monoFont } from "../theme";
 
 const LIST_POLL_MS = 15000;
 const THREAD_POLL_MS = 8000;
+const TYPING_POLL_MS = 3000;
+const TYPING_PING_MS = 2500;   // don't post a "typing" ping more often than this
 const GROUP_COLOR = "#6C4FD8";
+const ONLINE_GREEN = "#2FA36B";
 
 // The common shape both a DM line and a group line render as. `read_at` is a DM
 // nicety (delivery/read ticks); groups don't carry it, so it's optional.
@@ -71,6 +74,7 @@ type ThreadItem = {
   lastAt: string | null;
   subtitleDeleted: boolean;
   memberCount?: number;
+  online?: boolean;
 };
 
 function clockTime(iso: string): string {
@@ -96,6 +100,16 @@ function listStamp(iso: string | null): string {
 }
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
+
+function seenLabel(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const m = Math.floor(s / 60);
+  if (m < 1) return "last seen just now";
+  if (m < 60) return `last seen ${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `last seen ${h}h ago`;
+  return `last seen ${dayLabel(iso).toLowerCase()}`;
+}
 
 export default function MessagesPage() {
   const navigate = useNavigate();
@@ -131,6 +145,8 @@ export default function MessagesPage() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [recording, setRecording] = useState(false);
   const [recMs, setRecMs] = useState(0);
+  const [typingNames, setTypingNames] = useState<string[]>([]);
+  const lastTypingPing = useRef(0);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastSeenId = useRef<number | null>(null);
@@ -210,6 +226,30 @@ export default function MessagesPage() {
     const t = window.setInterval(() => loadThread(activeKind, activeId, true), THREAD_POLL_MS);
     return () => window.clearInterval(t);
   }, [activeId, activeKind, loadThread]);
+
+  // Typing indicator: poll who's (freshly) typing while a thread is open.
+  useEffect(() => {
+    setTypingNames([]);
+    if (activeId === null || activeKind === null) return;
+    let alive = true;
+    const poll = () => getTyping(activeKind, activeId)
+      .then((r) => { if (alive) setTypingNames(r.typing.map((t) => t.name)); })
+      .catch(() => {});
+    poll();
+    const t = window.setInterval(poll, TYPING_POLL_MS);
+    return () => { alive = false; window.clearInterval(t); };
+  }, [activeId, activeKind]);
+
+  // Announce that *you* are typing, throttled, as the draft changes.
+  const onDraftChange = (value: string) => {
+    setDraft(value);
+    if (editing || activeId === null || activeKind === null || !value.trim()) return;
+    const now = Date.now();
+    if (now - lastTypingPing.current > TYPING_PING_MS) {
+      lastTypingPing.current = now;
+      pingTyping(activeKind, activeId).catch(() => {});
+    }
+  };
 
   // Jump to the newest line whenever one arrives — but not on every poll.
   useEffect(() => {
@@ -353,7 +393,7 @@ export default function MessagesPage() {
   const threads: ThreadItem[] = useMemo(() => {
     const dm: ThreadItem[] = (conversations ?? []).map((c) => ({
       kind: "dm", id: c.id, title: c.other.name, unread: c.unread, lastAt: c.last_message_at,
-      subtitleDeleted: !!c.last_message?.deleted,
+      subtitleDeleted: !!c.last_message?.deleted, online: !!c.other.online,
       subtitle: !c.last_message ? "No messages yet"
         : c.last_message.deleted ? "This message was deleted"
         : `${c.last_message.mine ? "You: " : ""}${c.last_message.body || "📎 Attachment"}`,
@@ -382,10 +422,21 @@ export default function MessagesPage() {
   const showList = !isNarrow || activeId === null;
   const showThread = !isNarrow || activeId !== null;
 
+  const typingText = typingNames.length
+    ? (isGroup
+        ? `${firstName(typingNames[0])} is typing…${typingNames.length > 1 ? ` +${typingNames.length - 1}` : ""}`
+        : "typing…")
+    : "";
   const headerTitle = isGroup ? activeGroup?.name ?? "Group" : activeDm?.other.name ?? "";
-  const headerSub = isGroup
+  const dmOnline = !isGroup && !!activeDm?.other.online;
+  const headerSub = typingText || (isGroup
     ? `${activeGroup?.member_count ?? 0} members`
-    : activeDm?.other.role || activeDm?.other.email || "";
+    : activeDm
+      ? (activeDm.other.online ? "online"
+        : activeDm.other.last_seen ? seenLabel(activeDm.other.last_seen)
+        : (activeDm.other.role || activeDm.other.email || ""))
+      : "");
+  const headerSubColor = typingText ? tokens.kriyaInk : dmOnline ? ONLINE_GREEN : tokens.text3;
 
   const listPane = (
     <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%",
@@ -448,10 +499,16 @@ export default function MessagesPage() {
                 bgcolor: on ? tokens.kriyaWash : "transparent",
                 borderLeft: `3px solid ${on ? tokens.kriya : "transparent"}`,
                 "&:hover": { bgcolor: on ? tokens.kriyaWash : tokens.paper } }}>
-              <Avatar sx={{ width: 38, height: 38, flexShrink: 0, fontSize: 14,
-                bgcolor: t.kind === "group" ? GROUP_COLOR : on ? tokens.kriya : tokens.kriyaInk }}>
-                {t.kind === "group" ? <GroupRoundedIcon sx={{ fontSize: 20 }} /> : initialsOf(t.title)}
-              </Avatar>
+              <Box sx={{ position: "relative", flexShrink: 0 }}>
+                <Avatar sx={{ width: 38, height: 38, fontSize: 14,
+                  bgcolor: t.kind === "group" ? GROUP_COLOR : on ? tokens.kriya : tokens.kriyaInk }}>
+                  {t.kind === "group" ? <GroupRoundedIcon sx={{ fontSize: 20 }} /> : initialsOf(t.title)}
+                </Avatar>
+                {t.online && (
+                  <Box sx={{ position: "absolute", bottom: 1, right: 1, width: 10, height: 10, borderRadius: "50%",
+                    bgcolor: ONLINE_GREEN, border: `2px solid ${tokens.surface}` }} />
+                )}
+              </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Stack direction="row" alignItems="baseline" spacing={1}>
                   <Typography noWrap sx={{ flex: 1, fontSize: 13.5, fontWeight: t.unread ? 700 : 600, color: tokens.text }}>
@@ -510,12 +567,20 @@ export default function MessagesPage() {
                 <ArrowBackRoundedIcon sx={{ fontSize: 19 }} />
               </IconButton>
             )}
-            <Avatar sx={{ width: 34, height: 34, fontSize: 13, bgcolor: isGroup ? GROUP_COLOR : tokens.kriyaInk }}>
-              {isGroup ? <GroupRoundedIcon sx={{ fontSize: 19 }} /> : initialsOf(headerTitle)}
-            </Avatar>
+            <Box sx={{ position: "relative", flexShrink: 0 }}>
+              <Avatar sx={{ width: 34, height: 34, fontSize: 13, bgcolor: isGroup ? GROUP_COLOR : tokens.kriyaInk }}>
+                {isGroup ? <GroupRoundedIcon sx={{ fontSize: 19 }} /> : initialsOf(headerTitle)}
+              </Avatar>
+              {dmOnline && (
+                <Box sx={{ position: "absolute", bottom: 0, right: 0, width: 10, height: 10, borderRadius: "50%",
+                  bgcolor: ONLINE_GREEN, border: `2px solid ${tokens.surface}` }} />
+              )}
+            </Box>
             <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography noWrap sx={{ fontSize: 14.5, fontWeight: 700, color: tokens.ink }}>{headerTitle}</Typography>
-              <Typography noWrap sx={{ fontSize: 11.5, color: tokens.text3 }}>{headerSub}</Typography>
+              <Typography noWrap sx={{ fontSize: 11.5, color: headerSubColor, fontWeight: typingText ? 600 : 400 }}>
+                {headerSub}
+              </Typography>
             </Box>
             <Tooltip title={isGroup ? "Group options" : "Conversation options"}>
               <IconButton size="small" aria-label="Conversation options" onClick={(e) => setThreadMenu(e.currentTarget)}>
@@ -704,7 +769,7 @@ export default function MessagesPage() {
                     border: `1px solid ${editing ? tokens.kriyaGlow : tokens.line}`, maxHeight: 160, overflowY: "auto" }}>
                     <InputBase multiline maxRows={6} fullWidth value={draft}
                       placeholder={editing ? "Edit your message…" : "Type a message…"}
-                      onChange={(e) => setDraft(e.target.value)}
+                      onChange={(e) => onDraftChange(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
                         if (e.key === "Escape" && editing) { e.preventDefault(); cancelEditing(); }

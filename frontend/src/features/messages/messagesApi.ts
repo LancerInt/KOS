@@ -13,6 +13,8 @@ export interface Person {
   username: string;
   email: string;
   role: string;
+  online?: boolean;
+  last_seen?: string | null;
 }
 
 export interface LastMessage {
@@ -233,6 +235,24 @@ export async function reactToDirectMessage(id: number, emoji: string): Promise<D
 
 export async function reactToGroupMessage(id: number, emoji: string): Promise<GroupMessage> {
   const { data } = await api.post<GroupMessage>(`/group-messages/${id}/react/`, { emoji });
+  return data;
+}
+
+// --- Typing indicator (poll-based) ----------------------------------------- //
+export interface TypingInfo { typing: { id: number; name: string }[]; }
+
+function typingUrl(kind: "dm" | "group", id: number): string {
+  return kind === "group" ? `/group-threads/${id}/typing/` : `/conversations/${id}/typing/`;
+}
+
+/** Tell the other side you're typing here (call while the user types). */
+export async function pingTyping(kind: "dm" | "group", id: number): Promise<void> {
+  await api.post(typingUrl(kind, id));
+}
+
+/** Who is (freshly) typing in this thread, other than you. */
+export async function getTyping(kind: "dm" | "group", id: number): Promise<TypingInfo> {
+  const { data } = await api.get<TypingInfo>(typingUrl(kind, id));
   return data;
 }
 

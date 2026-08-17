@@ -25,10 +25,23 @@ from rest_framework.views import APIView
 from apps.audit.models import AuditAction
 from apps.audit.services import record
 
+from datetime import timedelta
+
 from .models import (
     Conversation, DirectMessage, GroupMembership, GroupMessage, GroupThread,
-    MessageAttachment, MessageReaction, attachment_kind,
+    MessageAttachment, MessageReaction, TypingState, attachment_kind,
 )
+
+# How recent a typing ping must be to still show "typing…".
+TYPING_FRESH_SECONDS = 6
+
+
+def _typing_response(request, others_qs):
+    fresh = timezone.now() - timedelta(seconds=TYPING_FRESH_SECONDS)
+    rows = others_qs.filter(updated_at__gte=fresh).exclude(user=request.user).select_related("user")
+    return Response({"typing": [
+        {"id": t.user_id, "name": t.user.get_full_name() or t.user.username} for t in rows
+    ]})
 from .permissions import can_start_conversation
 from .serializers import (
     ConversationSerializer, DirectMessageSerializer, GroupMessageSerializer,
@@ -293,6 +306,16 @@ class ConversationViewSet(
             "threads": rows.values("conversation_id").distinct().count(),
         })
 
+    @action(detail=True, methods=["get", "post"])
+    def typing(self, request: Request, pk=None) -> Response:
+        """POST: I'm typing here. GET: who else is (freshly) typing."""
+        conversation = self.get_object()
+        if request.method == "POST":
+            TypingState.objects.update_or_create(
+                conversation=conversation, user=request.user, defaults={"updated_at": timezone.now()})
+            return Response(status=204)
+        return _typing_response(request, TypingState.objects.filter(conversation=conversation))
+
     def _serialize(self, pk: int) -> dict:
         obj = self.base_queryset().get(pk=pk)
         return ConversationSerializer(obj, context={"request": self.request}).data
@@ -484,6 +507,17 @@ class GroupThreadViewSet(
     @action(detail=False, methods=["get"])
     def unread_count(self, request: Request) -> Response:
         return Response(total_group_unread(request.user))
+
+    @action(detail=True, methods=["get", "post"])
+    def typing(self, request: Request, pk=None) -> Response:
+        thread = self.get_object()
+        if request.method == "POST":
+            TypingState.objects.update_or_create(
+                group_thread=thread, user=request.user, defaults={"updated_at": timezone.now()})
+            return Response(status=204)
+        member_ids = set(thread.memberships.values_list("user_id", flat=True))
+        return _typing_response(
+            request, TypingState.objects.filter(group_thread=thread, user_id__in=member_ids))
 
 
 class GroupMessageViewSet(viewsets.GenericViewSet):

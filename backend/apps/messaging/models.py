@@ -338,3 +338,33 @@ class MessageReaction(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id} {self.emoji}"
+
+
+class TypingState(models.Model):
+    """One row per (thread, user) recording when they were last typing. Read back
+    within a few seconds to drive the "typing…" indicator; upserted by the client
+    while someone types. Poll-based, so it lags a beat behind real keystrokes."""
+
+    conversation = models.ForeignKey(
+        Conversation, null=True, blank=True, on_delete=models.CASCADE, related_name="typing_states"
+    )
+    group_thread = models.ForeignKey(
+        GroupThread, null=True, blank=True, on_delete=models.CASCADE, related_name="typing_states"
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(conversation__isnull=False) & Q(group_thread__isnull=True))
+                | (Q(conversation__isnull=True) & Q(group_thread__isnull=False)),
+                name="typing_exactly_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=["conversation", "user"], condition=Q(conversation__isnull=False), name="uniq_dm_typing",
+            ),
+            models.UniqueConstraint(
+                fields=["group_thread", "user"], condition=Q(group_thread__isnull=False), name="uniq_group_typing",
+            ),
+        ]

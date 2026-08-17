@@ -6,9 +6,13 @@ table per row, so listing threads stays one query.
 """
 from __future__ import annotations
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import Conversation, DirectMessage, GroupMessage, GroupThread, MessageAttachment
+
+# A user counts as "online" if they've made an authenticated request this recently.
+ONLINE_WINDOW_SECONDS = 90
 from .services import can_edit, group_unread_for
 
 
@@ -52,6 +56,12 @@ class PersonSerializer(serializers.Serializer):
     username = serializers.CharField()
     email = serializers.CharField()
     role = serializers.SerializerMethodField()
+    online = serializers.SerializerMethodField()
+    last_seen = serializers.DateTimeField(source="last_seen_at", read_only=True)
+
+    def get_online(self, user) -> bool:
+        ls = getattr(user, "last_seen_at", None)
+        return bool(ls and (timezone.now() - ls).total_seconds() < ONLINE_WINDOW_SECONDS)
 
     def get_name(self, user) -> str:
         return user.get_full_name() or user.username
