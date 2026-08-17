@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.text import slugify
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -1205,6 +1206,69 @@ class WorkspaceDeletedItemsView(APIView):
                new_value={"workspace": row.workspace, "name": getattr(row, "name", ""),
                           "kind": request.data.get("kind"), "restored": True}, request=request)
         return Response({"restored": True, "kind": request.data.get("kind"), "id": row.id})
+
+
+class CalendarView(APIView):
+    """Everything schedulable in one feed — workspace projects (placed on their
+    end date) and statutory filings (on their due date) — scoped to what the
+    viewer may see, within ``?start=&end=`` (default: this month, ~2 months
+    ahead). Powers the Calendar / Timeline page."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = timezone.localdate()
+        start = parse_date(request.query_params.get("start") or "") or today.replace(day=1)
+        end = parse_date(request.query_params.get("end") or "") or (start + timedelta(days=62))
+        if end < start:
+            end = start
+        if (end - start).days > 400:              # bound the window
+            end = start + timedelta(days=400)
+
+        now = timezone.now()
+        items: list[dict] = []
+
+        # Projects: shown on their deadline, scoped exactly like the dashboard.
+        projects = _scope_to_open_projects(
+            WorkspaceProject.objects.filter(deleted_at__isnull=True, end_at__isnull=False),
+            request.user,
+        ).filter(end_at__date__gte=start, end_at__date__lte=end)
+        for p in projects:
+            end_d = timezone.localtime(p.end_at).date()
+            start_d = timezone.localtime(p.start_at).date() if p.start_at else end_d
+            if p.completed_at is not None:
+                status = "completed"
+            elif p.review_state == "blocked":
+                status = "blocked"
+            elif p.end_at < now:
+                status = "overdue"
+            else:
+                status = "active"
+            items.append({
+                "kind": "project", "id": p.id, "title": p.name, "workspace": p.workspace,
+                "date": end_d.isoformat(), "start": start_d.isoformat(), "end": end_d.isoformat(),
+                "status": status, "url": f"/workspaces/{p.workspace}/projects/{p.id}",
+            })
+
+        # Statutory filings: shown on their due date, scoped by workspace access.
+        acc = effective_access(request.user)      # None = supervisor (sees all)
+        filings = ComplianceDeadline.objects.filter(
+            due_date__gte=start, due_date__lte=end).select_related("obligation")
+        if acc is not None:
+            filings = filings.filter(obligation__workspace__in=set(acc.keys()))
+        for dl in filings:
+            status = "filed" if dl.filed_at else ("overdue" if dl.due_date < today else "pending")
+            items.append({
+                "kind": "filing", "id": dl.id,
+                "title": f"{dl.obligation.name} — {dl.period_label}",
+                "workspace": dl.obligation.workspace,
+                "date": dl.due_date.isoformat(), "start": dl.due_date.isoformat(),
+                "end": dl.due_date.isoformat(), "status": status,
+                "url": f"/workspaces/{dl.obligation.workspace}?filing={dl.id}",
+            })
+
+        items.sort(key=lambda it: (it["date"], it["kind"]))
+        return Response({"start": start.isoformat(), "end": end.isoformat(), "items": items})
 
 
 class ComplianceDeadlineViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):

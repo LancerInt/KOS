@@ -5,6 +5,7 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import GridViewRoundedIcon from "@mui/icons-material/GridViewRounded";
 import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import NotificationsRoundedIcon from "@mui/icons-material/NotificationsRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
@@ -49,6 +50,7 @@ interface NavGroup {
 const NAV_TOP: NavGroup = {
   items: [
     { to: "/", label: "Dashboard", icon: <HomeRoundedIcon fontSize="small" /> },
+    { to: "/calendar", label: "Calendar", icon: <CalendarMonthRoundedIcon fontSize="small" /> },
     { to: "/notifications", label: "Notifications", icon: <NotificationsRoundedIcon fontSize="small" /> },
     { to: "/messages", label: "Messages", icon: <ForumRoundedIcon fontSize="small" /> },
   ],

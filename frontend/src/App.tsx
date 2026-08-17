@@ -18,6 +18,7 @@ import RegistersPage from "./pages/RegistersPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import SOPsPage from "./pages/SOPsPage";
 import DashboardPage from "./pages/DashboardPage";
+import CalendarPage from "./pages/CalendarPage";
 import SearchPage from "./pages/SearchPage";
 import AutomationPage from "./pages/AutomationPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
@@ -56,6 +57,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppShell />}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/dashboard" element={<Navigate to="/" replace />} />
             <Route path="/reports" element={<Navigate to="/" replace />} />
             <Route path="/search" element={<SearchPage />} />
