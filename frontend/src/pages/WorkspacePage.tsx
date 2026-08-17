@@ -384,9 +384,10 @@ export default function WorkspacePage() {
             const sections = builtinCount + p.section_count;
             const overdue = p.duration.status === "due";
             return (
-              <Box key={p.id}>
+              <Box key={p.id} sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
                 <Paper onClick={() => navigate(`/workspaces/${ws.key}/projects/${p.id}`)}
                   sx={{ borderRadius: "10px", overflow: "hidden", cursor: "pointer", position: "relative",
+                    display: "flex", flexDirection: "column", flex: 1,
                     "& .del": { opacity: 0, transition: "opacity .14s" },
                     transition: "transform .16s, box-shadow .16s, border-color .16s",
                     "&:hover": { transform: "translateY(-2px)", boxShadow: "0 10px 26px rgba(20,22,29,.12)", borderColor: acc.soft },
@@ -420,7 +421,7 @@ export default function WorkspacePage() {
                     )}
                   </Box>
                   {/* body */}
-                  <Box sx={{ p: "10px 12px 12px" }}>
+                  <Box sx={{ p: "10px 12px 12px", flex: 1, display: "flex", flexDirection: "column" }}>
                     <Typography sx={{ fontFamily: '"Manrope Variable"', fontWeight: 700, fontSize: 13.5, lineHeight: 1.25, color: tokens.ink,
                       display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", minHeight: 34 }}>
                       {p.name}
@@ -436,17 +437,21 @@ export default function WorkspacePage() {
                         </Typography>
                       </Stack>
                     )}
-                    <Box sx={{ height: 6, borderRadius: 3, bgcolor: tokens.line, overflow: "hidden", mt: 1 }}>
-                      <Box sx={{ width: `${pct}%`, height: "100%", bgcolor: acc.base, transition: "width .3s" }} />
+                    {/* Progress + stats pinned to the bottom so every card's
+                        footer lines up regardless of how much sits above it. */}
+                    <Box sx={{ mt: "auto" }}>
+                      <Box sx={{ height: 6, borderRadius: 3, bgcolor: tokens.line, overflow: "hidden", mt: 1 }}>
+                        <Box sx={{ width: `${pct}%`, height: "100%", bgcolor: acc.base, transition: "width .3s" }} />
+                      </Box>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mt: 0.9 }}>
+                        <Typography noWrap sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3, minWidth: 0 }}>
+                          {sections} section{sections === 1 ? "" : "s"} · {p.record_count} record{p.record_count === 1 ? "" : "s"}
+                        </Typography>
+                        <Typography noWrap sx={{ fontFamily: monoFont, fontSize: 10.5, color: overdue ? tokens.attn : tokens.text3, fontWeight: overdue ? 600 : 400, flexShrink: 0 }}>
+                          {p.duration.end_label ?? "—"}
+                        </Typography>
+                      </Stack>
                     </Box>
-                    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 0.9 }}>
-                      <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: tokens.text3 }}>
-                        {sections} section{sections === 1 ? "" : "s"} · {p.record_count} record{p.record_count === 1 ? "" : "s"}
-                      </Typography>
-                      <Typography sx={{ fontFamily: monoFont, fontSize: 10.5, color: overdue ? tokens.attn : tokens.text3, fontWeight: overdue ? 600 : 400 }}>
-                        {p.duration.end_label ?? "—"}
-                      </Typography>
-                    </Stack>
                   </Box>
                 </Paper>
                 {/* the shelf under each card */}
