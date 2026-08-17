@@ -38,7 +38,7 @@ export default function LoginPage() {
         alignItems: "center",
         justifyContent: "center",
         gap: 3.5,
-        bgcolor: "background.default",
+        bgcolor: tokens.kriya,
         p: 2,
       }}
     >
@@ -48,7 +48,7 @@ export default function LoginPage() {
           onError={() => setLogoError(true)}
           sx={{ width: 250, maxWidth: "80%", height: "auto" }} />
       ) : (
-        <Typography variant="h4" sx={{ fontSize: 26, letterSpacing: "0.02em" }}>KOS</Typography>
+        <Typography variant="h4" sx={{ fontSize: 26, letterSpacing: "0.02em", color: "#fff" }}>KOS</Typography>
       )}
 
       <Box
