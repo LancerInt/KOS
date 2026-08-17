@@ -221,7 +221,12 @@ export default function NotificationsPage() {
                 options={[{ key: "on", label: "Email on" }, { key: "off", label: "Email off" }]}
               />
             )}
-            {updates.some((n) => !n.is_read) && <Button size="small" onClick={() => markAllRead().then(load)}>Mark all read</Button>}
+            {(items ?? []).some((n) => !n.is_read) && (
+              <Button size="small" variant="outlined" startIcon={<DoneAllRoundedIcon sx={{ fontSize: 16 }} />}
+                onClick={() => markAllRead().then(load)} sx={{ color: tokens.text2, borderColor: tokens.line }}>
+                Mark all read
+              </Button>
+            )}
           </Stack>
         </Stack>
 
