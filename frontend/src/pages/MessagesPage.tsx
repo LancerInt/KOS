@@ -26,12 +26,14 @@ import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import MicRoundedIcon from "@mui/icons-material/MicRounded";
 import DeleteRoundedIcon from "@mui/icons-material/DeleteRounded";
 import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
+import AddReactionOutlinedIcon from "@mui/icons-material/AddReactionOutlined";
 
 import {
   announceMessagesChanged, deleteConversation, deleteGroupMessage, deleteMessage, directory,
   editGroupMessage, editMessage, leaveGroup, listConversations, listGroupMessages,
-  listGroupThreads, listMessages, markGroupRead, markThreadRead, renameGroup, sendGroupMessage,
-  sendMessage, type Conversation, type GroupThread, type MessageAttachment,
+  listGroupThreads, listMessages, markGroupRead, markThreadRead, reactToDirectMessage,
+  reactToGroupMessage, renameGroup, sendGroupMessage, sendMessage,
+  type Conversation, type GroupThread, type MessageAttachment, type MessageReaction,
 } from "../features/messages/messagesApi";
 import MessagePersonDialog, { initialsOf } from "../features/messages/MessagePersonDialog";
 import MessageAttachments from "../features/messages/MessageAttachments";
@@ -50,7 +52,10 @@ type ChatMessage = {
   created_at: string; edited_at: string | null; deleted: boolean; can_edit: boolean;
   read_at?: string | null;
   attachments?: MessageAttachment[];
+  reactions?: MessageReaction[];
 };
+
+const REACTION_CHOICES = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 function recClock(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -116,6 +121,7 @@ export default function MessagesPage() {
   const [newMenu, setNewMenu] = useState<HTMLElement | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [menu, setMenu] = useState<{ el: HTMLElement; message: ChatMessage } | null>(null);
+  const [reactTarget, setReactTarget] = useState<{ el: HTMLElement; message: ChatMessage } | null>(null);
   const [confirmMessage, setConfirmMessage] = useState<ChatMessage | null>(null);
   const [threadMenu, setThreadMenu] = useState<HTMLElement | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -294,6 +300,13 @@ export default function MessagesPage() {
 
   const startEditing = (m: ChatMessage) => { setMenu(null); setEditing(m); setDraft(m.body); };
   const cancelEditing = () => { setEditing(null); setDraft(""); };
+
+  const doReact = (m: ChatMessage, emoji: string) => {
+    setReactTarget(null);
+    const p = isGroup ? reactToGroupMessage(m.id, emoji) : reactToDirectMessage(m.id, emoji);
+    p.then((updated) => setMessages((rows) => (rows ?? []).map((r) => (r.id === updated.id ? updated : r))))
+      .catch(() => setError("Couldn't add that reaction."));
+  };
 
   const doDeleteMessage = () => {
     const m = confirmMessage;
@@ -537,14 +550,24 @@ export default function MessagesPage() {
                     <Stack direction="row" alignItems="center" spacing={0.5}
                       justifyContent={m.mine ? "flex-end" : "flex-start"}
                       sx={{ "&:hover .msg-actions": { opacity: 1 } }}>
-                      {m.mine && !m.deleted && (
-                        <IconButton size="small" className="msg-actions" aria-label="Message actions"
-                          onClick={(e) => setMenu({ el: e.currentTarget, message: m })}
-                          sx={{ order: -1, opacity: isNarrow ? 1 : 0, transition: "opacity .12s",
-                            "&:focus-visible": { opacity: 1 } }}>
-                          <MoreVertRoundedIcon sx={{ fontSize: 16, color: tokens.text3 }} />
-                        </IconButton>
+                      {!m.deleted && (
+                        <Stack direction="row" alignItems="center" className="msg-actions"
+                          sx={{ order: m.mine ? -1 : 2, opacity: isNarrow ? 1 : 0, transition: "opacity .12s",
+                            "&:focus-within": { opacity: 1 } }}>
+                          <IconButton size="small" aria-label="Add reaction"
+                            onClick={(e) => setReactTarget({ el: e.currentTarget, message: m })}>
+                            <AddReactionOutlinedIcon sx={{ fontSize: 16, color: tokens.text3 }} />
+                          </IconButton>
+                          {m.mine && (
+                            <IconButton size="small" aria-label="Message actions"
+                              onClick={(e) => setMenu({ el: e.currentTarget, message: m })}>
+                              <MoreVertRoundedIcon sx={{ fontSize: 16, color: tokens.text3 }} />
+                            </IconButton>
+                          )}
+                        </Stack>
                       )}
+                      <Box sx={{ order: 1, display: "flex", flexDirection: "column", minWidth: 0,
+                        alignItems: m.mine ? "flex-end" : "flex-start" }}>
                       <Paper elevation={0}
                         sx={{ maxWidth: "min(78%, 560px)", px: 1.5, py: 1, borderRadius: "12px",
                           border: `1px solid ${m.deleted ? tokens.line : m.mine ? "transparent" : tokens.line}`,
@@ -591,6 +614,25 @@ export default function MessagesPage() {
                             : <CheckRoundedIcon sx={{ fontSize: 13, color: "rgba(255,255,255,.65)" }} />)}
                         </Stack>
                       </Paper>
+                      {m.reactions && m.reactions.length > 0 && (
+                        <Stack direction="row" spacing={0.5} useFlexGap
+                          sx={{ mt: 0.4, flexWrap: "wrap", justifyContent: m.mine ? "flex-end" : "flex-start" }}>
+                          {m.reactions.map((rx) => (
+                            <Box key={rx.emoji} onClick={() => doReact(m, rx.emoji)}
+                              sx={{ display: "inline-flex", alignItems: "center", gap: 0.3, px: 0.7, py: 0.1,
+                                borderRadius: 10, cursor: "pointer", fontSize: 12.5, lineHeight: 1.5, userSelect: "none",
+                                bgcolor: rx.mine ? tokens.kriyaWash : tokens.surface,
+                                border: `1px solid ${rx.mine ? tokens.kriya : tokens.line}` }}>
+                              <span>{rx.emoji}</span>
+                              {rx.count > 1 && (
+                                <Typography component="span" sx={{ fontSize: 10.5, fontWeight: 600,
+                                  color: rx.mine ? tokens.kriyaInk : tokens.text3 }}>{rx.count}</Typography>
+                              )}
+                            </Box>
+                          ))}
+                        </Stack>
+                      )}
+                      </Box>
                     </Stack>
                   </Box>
                 );
@@ -715,6 +757,22 @@ export default function MessagesPage() {
         groupId={activeGroup?.id}
         excludeIds={(activeGroup?.members ?? []).map((p) => p.id)}
         onAdded={(g) => { setGroups((gs) => (gs ?? []).map((x) => (x.id === g.id ? g : x))); }} />
+
+      {/* emoji reaction picker */}
+      <Menu anchorEl={reactTarget?.el ?? null} open={reactTarget !== null} onClose={() => setReactTarget(null)}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+        transformOrigin={{ vertical: "bottom", horizontal: "center" }}
+        MenuListProps={{ sx: { py: 0.5 } }}>
+        <Stack direction="row" sx={{ px: 0.5 }}>
+          {REACTION_CHOICES.map((e) => (
+            <IconButton key={e} aria-label={`React ${e}`}
+              onClick={() => reactTarget && doReact(reactTarget.message, e)}
+              sx={{ width: 40, height: 40, fontSize: 21 }}>
+              <span>{e}</span>
+            </IconButton>
+          ))}
+        </Stack>
+      </Menu>
 
       {/* per-message actions */}
       <Menu anchorEl={menu?.el ?? null} open={menu !== null} onClose={() => setMenu(null)}

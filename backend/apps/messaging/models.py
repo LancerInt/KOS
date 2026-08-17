@@ -297,3 +297,44 @@ def attachment_kind(content_type: str) -> str:
     if ct.startswith("audio/"):
         return MessageAttachment.AUDIO
     return MessageAttachment.FILE
+
+
+class MessageReaction(models.Model):
+    """One person's emoji reaction to a message (a DM or a group message).
+
+    A user has at most one reaction per message — reacting with a different
+    emoji replaces it, reacting with the same one clears it — so the whole thing
+    reads as a small set of emoji tallies under the bubble.
+    """
+
+    direct_message = models.ForeignKey(
+        DirectMessage, null=True, blank=True, on_delete=models.CASCADE, related_name="reactions"
+    )
+    group_message = models.ForeignKey(
+        GroupMessage, null=True, blank=True, on_delete=models.CASCADE, related_name="reactions"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="message_reactions"
+    )
+    emoji = models.CharField(max_length=16)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(direct_message__isnull=False) & Q(group_message__isnull=True))
+                | (Q(direct_message__isnull=True) & Q(group_message__isnull=False)),
+                name="reaction_exactly_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=["direct_message", "user"], condition=Q(direct_message__isnull=False),
+                name="uniq_dm_reaction_per_user",
+            ),
+            models.UniqueConstraint(
+                fields=["group_message", "user"], condition=Q(group_message__isnull=False),
+                name="uniq_group_reaction_per_user",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} {self.emoji}"

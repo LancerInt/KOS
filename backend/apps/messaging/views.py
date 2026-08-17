@@ -27,7 +27,7 @@ from apps.audit.services import record
 
 from .models import (
     Conversation, DirectMessage, GroupMembership, GroupMessage, GroupThread,
-    MessageAttachment, attachment_kind,
+    MessageAttachment, MessageReaction, attachment_kind,
 )
 from .permissions import can_start_conversation
 from .serializers import (
@@ -116,6 +116,25 @@ def _save_attachments(message, request, files, *, is_group):
             kind=kind,
             duration_ms=duration_ms if kind == MessageAttachment.AUDIO else None,
         )
+
+
+def _apply_reaction(message, user, emoji):
+    """Set (or replace, or toggle off) ``user``'s single reaction to a message."""
+    emoji = (emoji or "").strip()
+    if not emoji or len(emoji) > 16:
+        raise ValidationError({"emoji": "Pick a reaction."})
+    if message.deleted_at is not None:
+        raise ValidationError("You can't react to a deleted message.")
+    existing = message.reactions.filter(user=user).first()
+    if existing and existing.emoji == emoji:
+        existing.delete()                       # same emoji again → clear it
+    elif existing:
+        existing.emoji = emoji                  # different emoji → replace
+        existing.save(update_fields=["emoji"])
+    elif isinstance(message, GroupMessage):
+        MessageReaction.objects.create(group_message=message, user=user, emoji=emoji)
+    else:
+        MessageReaction.objects.create(direct_message=message, user=user, emoji=emoji)
 
 
 class ConversationViewSet(
@@ -242,7 +261,7 @@ class ConversationViewSet(
         rows = list(
             conversation.visible_messages(request.user)
             .select_related("sender")
-            .prefetch_related("attachments")
+            .prefetch_related("attachments", "reactions")
             .order_by("-created_at")[:THREAD_LIMIT]
         )
         rows.reverse()  # oldest → newest, the order a thread reads in
@@ -295,6 +314,12 @@ class DirectMessageViewSet(viewsets.GenericViewSet):
         return DirectMessage.objects.filter(
             conversation__in=Conversation.visible_to(self.request.user)
         ).select_related("sender", "conversation")
+
+    @action(detail=True, methods=["post"])
+    def react(self, request: Request, pk=None) -> Response:
+        message = self.get_object()
+        _apply_reaction(message, request.user, request.data.get("emoji"))
+        return Response(DirectMessageSerializer(message, context={"request": request}).data)
 
     def partial_update(self, request: Request, pk=None) -> Response:
         """Correct your own wording, within the edit window."""
@@ -399,7 +424,7 @@ class GroupThreadViewSet(
             return Response(GroupMessageSerializer(message, context={"request": request}).data, status=201)
         rows = list(
             thread.visible_messages(request.user).select_related("sender")
-            .prefetch_related("attachments").order_by("-created_at")[:THREAD_LIMIT]
+            .prefetch_related("attachments", "reactions").order_by("-created_at")[:THREAD_LIMIT]
         )
         rows.reverse()
         return Response(GroupMessageSerializer(rows, many=True, context={"request": request}).data)
@@ -471,6 +496,12 @@ class GroupMessageViewSet(viewsets.GenericViewSet):
         return GroupMessage.objects.filter(
             thread__in=GroupThread.visible_to(self.request.user)
         ).select_related("sender", "thread")
+
+    @action(detail=True, methods=["post"])
+    def react(self, request: Request, pk=None) -> Response:
+        message = self.get_object()
+        _apply_reaction(message, request.user, request.data.get("emoji"))
+        return Response(GroupMessageSerializer(message, context={"request": request}).data)
 
     def partial_update(self, request: Request, pk=None) -> Response:
         message = self.get_object()

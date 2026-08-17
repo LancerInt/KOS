@@ -32,6 +32,18 @@ class MessageAttachmentSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
 
+def grouped_reactions(message, viewer):
+    """Reactions on a message as ``[{emoji, count, mine}]``, preserving the order
+    they were first added. Reads a prefetched ``reactions`` set — no per-row query."""
+    groups: dict[str, dict] = {}
+    for r in message.reactions.all():
+        g = groups.setdefault(r.emoji, {"emoji": r.emoji, "count": 0, "mine": False})
+        g["count"] += 1
+        if viewer is not None and r.user_id == viewer.id:
+            g["mine"] = True
+    return list(groups.values())
+
+
 class PersonSerializer(serializers.Serializer):
     """The minimum needed to render someone in a thread list or picker."""
 
@@ -57,13 +69,17 @@ class DirectMessageSerializer(serializers.ModelSerializer):
     deleted = serializers.BooleanField(source="is_deleted", read_only=True)
     can_edit = serializers.SerializerMethodField()
     attachments = MessageAttachmentSerializer(many=True, read_only=True)
+    reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = DirectMessage
         fields = (
             "id", "conversation", "sender", "sender_name", "mine", "body",
-            "created_at", "read_at", "edited_at", "deleted", "can_edit", "attachments",
+            "created_at", "read_at", "edited_at", "deleted", "can_edit", "attachments", "reactions",
         )
+
+    def get_reactions(self, obj):
+        return grouped_reactions(obj, self._viewer())
         read_only_fields = ("conversation", "sender", "created_at", "read_at", "edited_at")
 
     def _viewer(self):
@@ -127,13 +143,17 @@ class GroupMessageSerializer(serializers.ModelSerializer):
     deleted = serializers.BooleanField(source="is_deleted", read_only=True)
     can_edit = serializers.SerializerMethodField()
     attachments = MessageAttachmentSerializer(many=True, read_only=True)
+    reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = GroupMessage
         fields = (
             "id", "thread", "sender", "sender_name", "mine", "body",
-            "created_at", "edited_at", "deleted", "can_edit", "attachments",
+            "created_at", "edited_at", "deleted", "can_edit", "attachments", "reactions",
         )
+
+    def get_reactions(self, obj):
+        return grouped_reactions(obj, self._viewer())
         read_only_fields = ("thread", "sender", "created_at", "edited_at")
 
     def _viewer(self):

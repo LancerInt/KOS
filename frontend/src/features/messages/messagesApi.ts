@@ -32,6 +32,12 @@ export interface MessageAttachment {
   duration_ms: number | null;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  count: number;
+  mine: boolean;
+}
+
 export interface SendExtras {
   files?: File[];
   /** Voice-note length in ms, attached to an audio upload. */
@@ -73,6 +79,7 @@ export interface DirectMessage {
   /** Whether *you* may still edit it (own message, inside the time window). */
   can_edit: boolean;
   attachments: MessageAttachment[];
+  reactions: MessageReaction[];
 }
 
 export async function listConversations(): Promise<Conversation[]> {
@@ -172,6 +179,7 @@ export interface GroupMessage {
   deleted: boolean;
   can_edit: boolean;
   attachments: MessageAttachment[];
+  reactions: MessageReaction[];
 }
 
 export async function listGroupThreads(): Promise<GroupThread[]> {
@@ -215,6 +223,16 @@ export async function renameGroup(id: number, name: string): Promise<GroupThread
 
 export async function editGroupMessage(messageId: number, body: string): Promise<GroupMessage> {
   const { data } = await api.patch<GroupMessage>(`/group-messages/${messageId}/`, { body });
+  return data;
+}
+
+export async function reactToDirectMessage(id: number, emoji: string): Promise<DirectMessage> {
+  const { data } = await api.post<DirectMessage>(`/direct-messages/${id}/react/`, { emoji });
+  return data;
+}
+
+export async function reactToGroupMessage(id: number, emoji: string): Promise<GroupMessage> {
+  const { data } = await api.post<GroupMessage>(`/group-messages/${id}/react/`, { emoji });
   return data;
 }
 
