@@ -290,6 +290,13 @@ export default function NotificationsPage() {
                             )}
                           </Stack>
                         </Box>
+                        {/* Double-tick: clear this from your queue in one tap. */}
+                        <Tooltip title="Mark as done">
+                          <IconButton size="small" onClick={() => dismiss(n.id)}
+                            sx={{ flexShrink: 0, mt: -0.25, color: tokens.text3, "&:hover": { color: edge, bgcolor: "rgba(0,0,0,0.04)" } }}>
+                            <DoneAllRoundedIcon sx={{ fontSize: dense ? 17 : 19 }} />
+                          </IconButton>
+                        </Tooltip>
                       </Stack>
 
                       {kind === "approval" ? (() => {
