@@ -632,9 +632,9 @@ export default function MessagesPage() {
                         </Stack>
                       )}
                       <Box sx={{ order: 1, display: "flex", flexDirection: "column", minWidth: 0,
-                        alignItems: m.mine ? "flex-end" : "flex-start" }}>
+                        maxWidth: "min(72%, 520px)", alignItems: m.mine ? "flex-end" : "flex-start" }}>
                       <Paper elevation={0}
-                        sx={{ maxWidth: "min(72%, 520px)", px: 1.5, py: 1, borderRadius: "12px",
+                        sx={{ maxWidth: "100%", px: 1.5, py: 1, borderRadius: "12px",
                           border: `1px solid ${m.deleted ? tokens.line : m.mine ? "transparent" : tokens.line}`,
                           borderTopRightRadius: m.mine ? "4px" : "12px",
                           borderTopLeftRadius: m.mine ? "12px" : "4px",
