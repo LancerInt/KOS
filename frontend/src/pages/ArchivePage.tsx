@@ -51,7 +51,7 @@ export default function ArchivePage() {
   const itemsPaged = usePaged(items ?? [], 15);
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Typography variant="h1" sx={{ fontSize: 28, mb: 0.5 }}>Archive</Typography>
       <Typography color="text.secondary" sx={{ mb: 3, fontSize: 13.5 }}>
         {isSup

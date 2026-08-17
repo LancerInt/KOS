@@ -59,7 +59,7 @@ export default function SOPsPage() {
   );
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mb: 0.5 }}>
         <Typography variant="h1" sx={{ fontSize: 27 }}>SOPs</Typography>
         {canAuthor && (

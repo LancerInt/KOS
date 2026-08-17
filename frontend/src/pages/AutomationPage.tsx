@@ -56,7 +56,7 @@ export default function AutomationPage() {
   const remove = (r: AutomationRule) => { if (window.confirm(`Delete "${r.name}"?`)) deleteRule(r.id).then(load); };
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Stack direction="row" alignItems="center" spacing={0.5} onClick={() => navigate(`/projects/${id}`)}
         sx={{ cursor: "pointer", color: tokens.text2, width: "fit-content", "&:hover": { color: tokens.kriyaInk } }}>
         <ArrowBackRoundedIcon sx={{ fontSize: 17 }} /><Typography sx={{ fontSize: 13 }}>Back to project</Typography>

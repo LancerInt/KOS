@@ -324,7 +324,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       {/* head */}
       <Stack direction="row" alignItems="flex-end" justifyContent="space-between" gap={2} flexWrap="wrap" sx={{ mb: 2 }}>
         <Box>

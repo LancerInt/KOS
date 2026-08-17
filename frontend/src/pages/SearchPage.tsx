@@ -33,7 +33,7 @@ export default function SearchPage() {
   const wsLabel = (key: string) => getWorkspace(key)?.label ?? key;
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Typography variant="h1" sx={{ fontSize: 27, mb: 2 }}>Search</Typography>
 
       <TextField

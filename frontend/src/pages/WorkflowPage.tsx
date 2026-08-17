@@ -76,14 +76,14 @@ export default function WorkflowPage() {
     setTransitions((prev) => [...prev.filter((t) => t.from !== from), ...tos.map((to) => ({ from, to }))]);
 
   if (error && !wf) {
-    return <Box sx={{ px: 3, py: 2.5 }}><Back onClick={() => navigate(`/projects/${id}`)} /><Typography sx={{ color: tokens.attn, mt: 2 }}>{error}</Typography></Box>;
+    return <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}><Back onClick={() => navigate(`/projects/${id}`)} /><Typography sx={{ color: tokens.attn, mt: 2 }}>{error}</Typography></Box>;
   }
   if (!wf) return <Stack alignItems="center" sx={{ py: 8 }}><CircularProgress size={24} /></Stack>;
 
   const editable = wf.has_custom && canManage;
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Back onClick={() => navigate(`/projects/${id}`)} />
 
       <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mt: 2, mb: 1 }}>

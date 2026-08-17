@@ -40,7 +40,7 @@ export default function IntegrationsPage() {
   const [tab, setTab] = useState<Tab>(canErp ? "connections" : "email");
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Typography variant="h1" sx={{ fontSize: 27, mb: 0.5 }}>{canErp ? "Integrations" : "Email Integration"}</Typography>
       <Typography sx={{ fontSize: 13.5, color: tokens.text3, mb: 2 }}>
         {canErp

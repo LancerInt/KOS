@@ -202,7 +202,7 @@ export default function NotificationsPage() {
   const updatesPaged = usePaged(updates, 15);
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Box>
         <Stack direction="row" alignItems="flex-end" justifyContent="space-between" sx={{ mb: 2.5 }} gap={2} flexWrap="wrap">
           <Box>

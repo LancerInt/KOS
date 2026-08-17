@@ -129,7 +129,7 @@ export default function EmailPage() {
   };
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Typography variant="h1" sx={{ fontSize: 28, mb: 0.5 }}>Email</Typography>
       <Typography color="text.secondary" sx={{ mb: 2.5, fontSize: 13.5 }}>
         Write and send emails from KOS. Messages go out from the shared KOS account.

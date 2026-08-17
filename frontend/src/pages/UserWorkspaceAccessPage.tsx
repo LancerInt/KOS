@@ -70,7 +70,7 @@ export default function UserWorkspaceAccessPage() {
   const selectedUser = useMemo(() => users?.find((u) => u.id === userId), [users, userId]);
 
   return (
-    <Box sx={{ px: 3, py: 2.5 }}>
+    <Box sx={{ px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
       <Button size="small" startIcon={<ArrowBackRoundedIcon sx={{ fontSize: 17 }} />} onClick={() => navigate("/admin/roles")}
         sx={{ color: tokens.text2, mb: 1, ml: -0.5 }}>
         Roles &amp; Access
