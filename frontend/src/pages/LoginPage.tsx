@@ -38,17 +38,36 @@ export default function LoginPage() {
         alignItems: "center",
         justifyContent: "center",
         gap: 3.5,
-        bgcolor: tokens.kriya,
+        position: "relative",
+        overflow: "hidden",
+        background:
+          "radial-gradient(1120px 700px at 14% -8%, rgba(62,142,62,.40), transparent 62%)," +
+          "radial-gradient(1020px 700px at 106% 108%, rgba(95,184,106,.36), transparent 58%)," +
+          "radial-gradient(640px 520px at 62% 52%, rgba(198,230,188,.40), transparent 66%)," +
+          "#EEF4E7",
         p: 2,
       }}
     >
+      {/* Soft leaf watermarks — decorative, sit behind the content */}
+      <Box component="svg" viewBox="0 0 100 100" aria-hidden
+        sx={{ position: "absolute", zIndex: 0, right: -60, top: 40, width: 440, opacity: 0.16,
+          transform: "rotate(12deg)", pointerEvents: "none" }}>
+        <path d="M10 90C10 40 50 10 90 10 90 60 50 90 10 90Z" fill="#3E8E3E" />
+        <path d="M20 80C40 55 65 35 82 22" stroke="#2F7A34" strokeWidth={2} fill="none" />
+      </Box>
+      <Box component="svg" viewBox="0 0 100 100" aria-hidden
+        sx={{ position: "absolute", zIndex: 0, left: -70, bottom: -40, width: 380, opacity: 0.16,
+          transform: "rotate(-18deg)", pointerEvents: "none" }}>
+        <path d="M10 90C10 40 50 10 90 10 90 60 50 90 10 90Z" fill="#4FA352" />
+        <path d="M20 80C40 55 65 35 82 22" stroke="#2F7A34" strokeWidth={2} fill="none" />
+      </Box>
       {/* Kriya logo at the top */}
       {!logoError ? (
         <Box component="img" src="/kriya-logo-t.png" alt="Kriya — Delightfully Organic"
           onError={() => setLogoError(true)}
-          sx={{ width: 250, maxWidth: "80%", height: "auto" }} />
+          sx={{ width: 250, maxWidth: "80%", height: "auto", position: "relative", zIndex: 1 }} />
       ) : (
-        <Typography variant="h4" sx={{ fontSize: 26, letterSpacing: "0.02em", color: "#fff" }}>KOS</Typography>
+        <Typography variant="h4" sx={{ fontSize: 26, letterSpacing: "0.02em", position: "relative", zIndex: 1 }}>KOS</Typography>
       )}
 
       <Box
@@ -62,6 +81,8 @@ export default function LoginPage() {
           borderRadius: 3,
           p: 4,
           boxShadow: "0 2px 4px rgba(20,22,29,.05), 0 16px 40px rgba(20,22,29,.08)",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <Stack spacing={0.5} alignItems="center" sx={{ mb: 3 }}>
