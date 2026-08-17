@@ -81,6 +81,11 @@ def get_provider(config=None, *, force: str = "") -> AIProvider:
         )
         provider_class = MockProvider
 
+    from django.conf import settings as dj_settings
+
+    # Empty env → None → the provider falls back to its own curated chain.
+    fallback_models = getattr(dj_settings, "AI_MODEL_FALLBACKS", None) or None
+
     return provider_class(
         api_key=api_key,
         model=config.model,
@@ -88,4 +93,5 @@ def get_provider(config=None, *, force: str = "") -> AIProvider:
         temperature=config.temperature,
         max_tokens=config.max_tokens,
         timeout=config.timeout_seconds,
+        fallback_models=fallback_models,
     )

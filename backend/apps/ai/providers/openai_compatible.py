@@ -48,9 +48,9 @@ class OpenAICompatibleProvider(AIProvider):
             "Content-Type": "application/json",
         }
 
-    def _payload(self, messages, *, temperature, max_tokens, json_mode) -> dict:
+    def _payload(self, messages, *, model, temperature, max_tokens, json_mode) -> dict:
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -60,6 +60,33 @@ class OpenAICompatibleProvider(AIProvider):
             payload["response_format"] = {"type": "json_object"}
         return payload
 
+    def _candidate_models(self) -> list[str]:
+        """The primary model first, then each configured fallback once."""
+        models: list[str] = []
+        for name in [self.model, *self.fallback_models]:
+            name = (name or "").strip()
+            if name and name not in models:
+                models.append(name)
+        return models or [self.default_model]
+
+    @staticmethod
+    def _worth_another_model(error: AIProviderError) -> bool:
+        """Whether a *different model* could succeed where this one failed.
+
+        Only two failures are about the model itself: a 404 (retired or not
+        entitled — exactly what happened when Groq dropped Llama 3.x) and a 400
+        JSON-validation error (the model could not satisfy the ``json_object``
+        contract, e.g. a reasoning model that spent its budget thinking). A 401,
+        a timeout or a 5xx are not the model's fault, so the next model would
+        fail identically — we don't waste the call.
+        """
+        if error.status == 404:
+            return True
+        if error.status == 400:
+            low = str(error).lower()
+            return "json_validate" in low or "validate json" in low
+        return False
+
     def _complete(self, messages, *, temperature, max_tokens, json_mode):
         if not self.api_key:
             raise AIProviderError(
@@ -67,7 +94,37 @@ class OpenAICompatibleProvider(AIProvider):
                 "Set it in the server environment and restart.",
             )
 
-        payload = self._payload(messages, temperature=temperature, max_tokens=max_tokens, json_mode=json_mode)
+        candidates = self._candidate_models()
+        last_error: AIProviderError | None = None
+        for index, model in enumerate(candidates):
+            try:
+                text, usage = self._complete_once(
+                    model, messages, temperature=temperature,
+                    max_tokens=max_tokens, json_mode=json_mode,
+                )
+            except AIProviderError as exc:
+                last_error = exc
+                if index < len(candidates) - 1 and self._worth_another_model(exc):
+                    logger.warning(
+                        "%s model %r failed (%s) — falling back to %r",
+                        self.name, model, exc, candidates[index + 1],
+                    )
+                    continue
+                raise
+            # Record which model actually served so the request log and the
+            # AIResult name the real one, not the primary we started from.
+            if model != self.model:
+                logger.info("%s served by fallback model %r", self.name, model)
+                self.model = model
+            return text, usage
+
+        raise last_error or AIProviderError(f"{self.name} call failed")
+
+    def _complete_once(self, model, messages, *, temperature, max_tokens, json_mode):
+        payload = self._payload(
+            messages, model=model, temperature=temperature,
+            max_tokens=max_tokens, json_mode=json_mode,
+        )
         last_error: AIProviderError | None = None
 
         for attempt in range(1, MAX_ATTEMPTS + 1):

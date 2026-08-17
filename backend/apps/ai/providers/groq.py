@@ -26,6 +26,11 @@ class GroqProvider(OpenAICompatibleProvider):
     #: default leaves room. If large analyses ever truncate, set AI_MODEL to the
     #: non-reasoning ``qwen/qwen3.6-27b`` instead.
     default_model = "openai/gpt-oss-120b"
+    #: If gpt-oss-120b is unavailable, or its reasoning starves the JSON budget,
+    #: drop to a non-reasoning model that fills the contract directly, then a
+    #: smaller gpt-oss. All three are on the 2026 Groq line-up (Llama is not).
+    #: Override with AI_MODEL_FALLBACKS.
+    default_fallback_models = ("qwen/qwen3.6-27b", "openai/gpt-oss-20b")
     supports_json_mode = True
     #: Groq hosts Whisper too, so dictation needs no second vendor or key. The
     #: turbo variant is the one to use for a person waiting on their own words:

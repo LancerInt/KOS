@@ -110,6 +110,11 @@ class AIProvider(ABC):
     name: str = "base"
     #: Used when neither the DB settings nor the environment names a model.
     default_model: str = ""
+    #: Ordered chat models to fall back to when :attr:`model` is unavailable
+    #: (HTTP 404) or rejects the JSON contract. Vendor-specific — a Groq chain
+    #: is meaningless to OpenAI — so each subclass sets its own. Overridable
+    #: globally with the AI_MODEL_FALLBACKS env var.
+    default_fallback_models: tuple[str, ...] = ()
     #: Whether this vendor can turn speech into text. Transcription is a second
     #: primitive rather than a variation of ``_complete`` — different endpoint,
     #: different wire format, different model — and most vendors do not offer
@@ -129,6 +134,7 @@ class AIProvider(ABC):
         temperature: float = 0.3,
         max_tokens: int = 1200,
         timeout: int = 60,
+        fallback_models: Sequence[str] | None = None,
     ) -> None:
         self.api_key = api_key
         self.model = model or self.default_model
@@ -136,6 +142,12 @@ class AIProvider(ABC):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.timeout = timeout
+        # Models to try, in order, when the chosen one is unavailable or cannot
+        # satisfy the JSON contract. An explicit list wins; otherwise the
+        # vendor's own curated chain. The primary is prepended at call time, so
+        # this holds only the fallbacks.
+        chain = list(fallback_models) if fallback_models is not None else list(self.default_fallback_models)
+        self.fallback_models = [m.strip() for m in chain if (m or "").strip()]
 
     # --- transport (the only thing a vendor must implement) ---------------- #
     @abstractmethod

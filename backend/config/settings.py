@@ -365,6 +365,11 @@ AI_API_KEYS = {
 # Seeds the settings singleton the first time it is created.
 AI_DEFAULT_PROVIDER = env("AI_PROVIDER", default="grok")
 AI_DEFAULT_MODEL = env("AI_MODEL", default="")
+# Ordered chat models to try when the primary is unavailable (HTTP 404) or can't
+# satisfy the JSON contract. Blank uses the active provider's own curated chain.
+# Provider-specific — a Groq chain means nothing to OpenAI — so only set this if
+# you have pinned a provider. e.g. AI_MODEL_FALLBACKS=qwen/qwen3.6-27b,openai/gpt-oss-20b
+AI_MODEL_FALLBACKS = env.list("AI_MODEL_FALLBACKS", default=[])
 
 # --------------------------------------------------------------------------- #
 # Security (tightened in prod via env) — PRD §31.1, §32
