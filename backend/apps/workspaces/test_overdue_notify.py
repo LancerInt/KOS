@@ -1,5 +1,7 @@
-"""Overdue workspace-project reminders reach the whole assigned team (not just
-the creator), fire as soon as the project runs late, and never duplicate."""
+"""Overdue workspace-project reminders reach the assigned team — everyone with
+current access to the workspace — fire as soon as the project runs late, and
+never duplicate. Someone with no access to the workspace isn't chased (the
+"creator who lost access" case lives in test_project_members)."""
 from datetime import timedelta
 
 import pytest
@@ -19,7 +21,8 @@ def test_overdue_project_notifies_every_member_once():
     member = User.objects.create_user(username="member", email="m@kos.test", password="x")
     stranger = User.objects.create_user(username="stranger", email="s@kos.test", password="x")
 
-    # `member` is on the workspace team; `stranger` is not.
+    # creator and member are both on the workspace team; stranger is not.
+    WorkspaceMember.objects.create(user=creator, workspace="amazon-usa", access=WorkspaceMember.EDIT)
     WorkspaceMember.objects.create(user=member, workspace="amazon-usa", access=WorkspaceMember.EDIT)
 
     now = timezone.now()
@@ -38,7 +41,7 @@ def test_overdue_project_notifies_every_member_once():
             recipient=user, url=url, event=NotificationEvent.OVERDUE
         )
 
-    assert overdue_for(creator).count() == 1     # creator always included
+    assert overdue_for(creator).count() == 1     # creator, on the team, is notified
     assert overdue_for(member).count() == 1      # the assigned team member gets it too
     assert overdue_for(stranger).count() == 0    # someone with no access does not
 
