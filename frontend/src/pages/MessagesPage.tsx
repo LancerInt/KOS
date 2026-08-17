@@ -542,7 +542,7 @@ export default function MessagesPage() {
   );
 
   const threadPane = (
-    <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%", bgcolor: tokens.paper }}>
+    <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, height: "100%", bgcolor: tokens.paper }}>
       {activeId === null ? (
         <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ flex: 1, px: 4, textAlign: "center" }}>
           <ForumRoundedIcon sx={{ fontSize: 44, color: tokens.text3 }} />
@@ -590,7 +590,7 @@ export default function MessagesPage() {
           </Stack>
 
           {/* thread */}
-          <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 2, py: 2 }}>
+          <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, minWidth: 0, overflowY: "auto", overflowX: "hidden", px: 2, py: 2 }}>
             {messages === null && <Stack alignItems="center" sx={{ py: 4 }}><CircularProgress size={22} /></Stack>}
             {messages !== null && messages.length === 0 && (
               <Typography sx={{ textAlign: "center", fontSize: 13, color: tokens.text3, py: 4 }}>
@@ -634,7 +634,7 @@ export default function MessagesPage() {
                       <Box sx={{ order: 1, display: "flex", flexDirection: "column", minWidth: 0,
                         alignItems: m.mine ? "flex-end" : "flex-start" }}>
                       <Paper elevation={0}
-                        sx={{ maxWidth: "min(78%, 560px)", px: 1.5, py: 1, borderRadius: "12px",
+                        sx={{ maxWidth: "min(72%, 520px)", px: 1.5, py: 1, borderRadius: "12px",
                           border: `1px solid ${m.deleted ? tokens.line : m.mine ? "transparent" : tokens.line}`,
                           borderTopRightRadius: m.mine ? "4px" : "12px",
                           borderTopLeftRadius: m.mine ? "12px" : "4px",
@@ -806,8 +806,8 @@ export default function MessagesPage() {
 
   return (
     <>
-      <Box sx={{ height: "100%", display: "grid", minHeight: 0,
-        gridTemplateColumns: isNarrow ? "1fr" : "320px 1fr" }}>
+      <Box sx={{ height: "100%", display: "grid", minHeight: 0, overflow: "hidden",
+        gridTemplateColumns: isNarrow ? "minmax(0, 1fr)" : "320px minmax(0, 1fr)" }}>
         {showList && listPane}
         {showThread && threadPane}
       </Box>

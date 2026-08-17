@@ -475,8 +475,9 @@ export default function AppShell() {
 
       {isMobile ? mobileMain : desktopMain}
 
-      {/* Floating assistant — available from every page (AI spec §Frontend). */}
-      <AiAssistantDrawer />
+      {/* Floating assistant — available from every page except Messages, where
+          its button would sit on top of the chat composer / send control. */}
+      {!location.pathname.startsWith("/messages") && <AiAssistantDrawer />}
 
       {isMobile && spacesDrawer}
 
