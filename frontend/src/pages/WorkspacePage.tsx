@@ -106,8 +106,13 @@ export default function WorkspacePage() {
     listMembers(ws.key).then((m) => setMemberCount(m.length)).catch(() => {});
   };
 
+  // Clear first, then load: without the reset the previous workspace's projects
+  // keep rendering for the 2-3s the new fetch takes (worse on a cold backend),
+  // which reads as "wrong projects". Nulling shows the loading spinner instead.
+  // Only the key-change effect resets — useAutoRefresh calls load() directly, so
+  // a periodic refresh updates in place without flashing the spinner.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [key]);
+  useEffect(() => { setProjects(null); load(); }, [key]);
   useAutoRefresh(load);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (ws && !accessLoading) refreshMemberCount(); }, [key, accessLoading]);
