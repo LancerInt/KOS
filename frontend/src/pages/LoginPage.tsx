@@ -7,6 +7,7 @@ import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { useAppDispatch, useAppSelector } from "../hooks";
 import { clearError, login } from "../features/auth/authSlice";
 import { tokens } from "../theme";
+import { getHealth } from "../api/client";
 
 export default function LoginPage() {
   const dispatch = useAppDispatch();
@@ -18,10 +19,31 @@ export default function LoginPage() {
   const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [logoError, setLogoError] = useState(false);
+  // True once a sign-in has been pending long enough to look stuck — almost
+  // always the free-tier backend cold-starting. Drives a reassuring label.
+  const [slow, setSlow] = useState(false);
 
   useEffect(() => {
     if (user) navigate("/", { replace: true });
   }, [user, navigate]);
+
+  // Wake the (possibly sleeping) free-tier backend the moment this page loads,
+  // so it warms up while the user types. The sign-in click then lands on an
+  // awake server instead of paying the full cold start after clicking.
+  useEffect(() => {
+    getHealth().catch(() => {});
+  }, []);
+
+  // After a few seconds of "loading", assume a cold start and say so — the wait
+  // then reads as the server waking rather than the form being frozen.
+  useEffect(() => {
+    if (status !== "loading") {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), 3000);
+    return () => clearTimeout(timer);
+  }, [status]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -151,7 +173,9 @@ export default function LoginPage() {
             disabled={status === "loading"}
             sx={{ py: 1.2 }}
           >
-            {status === "loading" ? "Signing in…" : mfaRequired ? "Verify & sign in" : "Sign in"}
+            {status === "loading"
+              ? slow ? "Waking the server, one moment…" : "Signing in…"
+              : mfaRequired ? "Verify & sign in" : "Sign in"}
           </Button>
         </Stack>
       </Box>
