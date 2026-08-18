@@ -66,6 +66,11 @@ const localNowInput = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+// Projects cached per workspace so re-visiting one is instant: show what we last
+// saw immediately, then refetch in the background to update (stale-while-
+// revalidate). Survives in-app navigation; a full page reload clears it.
+const projectCache = new Map<string, WorkspaceProject[]>();
+
 export default function WorkspacePage() {
   const { key } = useParams<{ key: string }>();
   const navigate = useNavigate();
@@ -98,7 +103,11 @@ export default function WorkspacePage() {
 
   const load = () => {
     if (!ws) { setProjects([]); return; }
-    listProjects(ws.key).then(setProjects).catch(() => setProjects([]));
+    listProjects(ws.key)
+      .then((rows) => { projectCache.set(ws.key, rows); setProjects(rows); })
+      // Keep whatever we're showing on a failed refresh; only fall back to
+      // empty if we had nothing yet.
+      .catch(() => setProjects((prev) => prev ?? []));
   };
 
   const refreshMemberCount = () => {
@@ -106,13 +115,12 @@ export default function WorkspacePage() {
     listMembers(ws.key).then((m) => setMemberCount(m.length)).catch(() => {});
   };
 
-  // Clear first, then load: without the reset the previous workspace's projects
-  // keep rendering for the 2-3s the new fetch takes (worse on a cold backend),
-  // which reads as "wrong projects". Nulling shows the loading spinner instead.
-  // Only the key-change effect resets — useAutoRefresh calls load() directly, so
-  // a periodic refresh updates in place without flashing the spinner.
+  // On workspace switch, show this workspace's cached projects immediately (so a
+  // re-visit is instant, no spinner), else null for the loading spinner — never
+  // the *previous* workspace's projects. Then load() refetches to update. The
+  // periodic auto-refresh calls load() directly, updating in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setProjects(null); load(); }, [key]);
+  useEffect(() => { setProjects(ws ? projectCache.get(ws.key) ?? null : null); load(); }, [key]);
   useAutoRefresh(load);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (ws && !accessLoading) refreshMemberCount(); }, [key, accessLoading]);
