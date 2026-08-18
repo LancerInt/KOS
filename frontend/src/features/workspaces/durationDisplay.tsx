@@ -106,25 +106,33 @@ export function DurationPanel({
 }) {
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  // The end is split into date + optional time. A single <datetime-local> reports
+  // an EMPTY value until BOTH parts are filled, so picking only a date silently
+  // saved "no end". A date input always yields a value; a blank time = end of day.
+  const [endDate, setEndDate] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [busy, setBusy] = useState(false);
   const hasDur = duration.status !== "none";
   const startOnly = !hasDur && !!duration.start_at;
   if (!hasDur && !startOnly && !(canEdit && allowSet)) return null;
 
-  // The end is optional; when given it must fall after the start.
-  const endBeforeStart = !!start && !!end && new Date(end).getTime() <= new Date(start).getTime();
+  // The end is optional; a bare date means end-of-day. When given it must fall
+  // after the start.
+  const endLocal = endDate ? `${endDate}T${endTime || "23:59"}` : "";
+  const endBeforeStart = !!start && !!endLocal && new Date(endLocal).getTime() <= new Date(start).getTime();
   const valid = !!start && !endBeforeStart;
   const openDialog = () => {
     setStart(toLocalInput(duration.start_at));
-    setEnd(duration.end_at ? toLocalInput(duration.end_at) : "");
+    const local = duration.end_at ? toLocalInput(duration.end_at) : "";
+    setEndDate(local.slice(0, 10));
+    setEndTime(local.slice(11, 16));
     setOpen(true);
   };
   const save = async () => {
     if (!valid) return;
     setBusy(true);
     try {
-      await onSet(new Date(start).toISOString(), end ? new Date(end).toISOString() : null);
+      await onSet(new Date(start).toISOString(), endLocal ? new Date(endLocal).toISOString() : null);
       setOpen(false);
     } finally { setBusy(false); }
   };
@@ -215,10 +223,17 @@ export function DurationPanel({
           <Stack spacing={1.5} sx={{ mt: 0.5 }}>
             <TextField size="small" type="datetime-local" label="Starts" InputLabelProps={{ shrink: true }}
               value={start} onChange={(e) => setStart(e.target.value)} fullWidth />
-            <TextField size="small" type="datetime-local" label="Ends (optional)" InputLabelProps={{ shrink: true }}
-              value={end} onChange={(e) => setEnd(e.target.value)} fullWidth
-              error={endBeforeStart} helperText={endBeforeStart ? "The end must be after the start." : ""} />
-            <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>Set the date and time. The end is optional — add one to get reminders as it nears, and if it's overdue.</Typography>
+            <Stack direction="row" spacing={1}>
+              <TextField size="small" type="date" label="Ends (optional)" InputLabelProps={{ shrink: true }}
+                value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth error={endBeforeStart} />
+              <TextField size="small" type="time" label="Time" InputLabelProps={{ shrink: true }}
+                value={endTime} onChange={(e) => setEndTime(e.target.value)} disabled={!endDate}
+                sx={{ width: 132 }} />
+            </Stack>
+            {endBeforeStart && (
+              <Typography sx={{ fontSize: 11.5, color: tokens.attn }}>The end must be after the start.</Typography>
+            )}
+            <Typography sx={{ fontSize: 11.5, color: tokens.text3 }}>Pick an end date — the time is optional and defaults to end of day. Add an end to get reminders as it nears, and if it's overdue.</Typography>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
